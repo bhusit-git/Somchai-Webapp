@@ -1,0 +1,1294 @@
+<!--
+ /* Font Definitions */
+ @font-face
+	{font-family:"Angsana New";
+	panose-1:2 2 6 3 5 4 5 2 3 4;
+	mso-font-charset:222;
+	mso-generic-font-family:roman;
+	mso-font-pitch:variable;
+	mso-font-signature:-2130706429 0 0 0 65537 0;}
+@font-face
+	{font-family:"Cambria Math";
+	panose-1:2 4 5 3 5 4 6 3 2 4;
+	mso-font-charset:0;
+	mso-generic-font-family:roman;
+	mso-font-pitch:variable;
+	mso-font-signature:-536870145 1107305727 0 0 415 0;}
+ /* Style Definitions */
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	mso-fareast-font-family:Arial;
+	mso-bidi-font-family:"Angsana New";}
+h1
+	{mso-style-priority:9;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin-top:20.0pt;
+	margin-right:0cm;
+	margin-bottom:6.0pt;
+	margin-left:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:1;
+	font-size:18.0pt;
+	font-family:"Arial",sans-serif;
+	color:#1B3A6B;
+	mso-font-kerning:0pt;}
+h2
+	{mso-style-priority:9;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin-top:14.0pt;
+	margin-right:0cm;
+	margin-bottom:5.0pt;
+	margin-left:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:2;
+	font-size:14.0pt;
+	font-family:"Arial",sans-serif;
+	color:#1B3A6B;}
+h3
+	{mso-style-priority:9;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin-top:10.0pt;
+	margin-right:0cm;
+	margin-bottom:4.0pt;
+	margin-left:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:3;
+	font-size:12.0pt;
+	font-family:"Arial",sans-serif;
+	color:#5F5E5A;}
+h4
+	{mso-style-noshow:yes;
+	mso-style-priority:9;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:4;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	color:#2E74B5;
+	font-weight:normal;
+	font-style:italic;}
+h5
+	{mso-style-noshow:yes;
+	mso-style-priority:9;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:5;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	color:#2E74B5;
+	font-weight:normal;}
+h6
+	{mso-style-noshow:yes;
+	mso-style-priority:9;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	mso-outline-level:6;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	color:#1F4D78;
+	font-weight:normal;}
+p.MsoFootnoteText, li.MsoFootnoteText, div.MsoFootnoteText
+	{mso-style-noshow:yes;
+	mso-style-priority:99;
+	mso-style-parent:"";
+	mso-style-link:"ข้อความเชิงอรรถ อักขระ";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Arial",sans-serif;
+	mso-fareast-font-family:Arial;}
+span.MsoFootnoteReference
+	{mso-style-noshow:yes;
+	mso-style-priority:99;
+	mso-style-parent:"";
+	vertical-align:super;}
+p.MsoTitle, li.MsoTitle, div.MsoTitle
+	{mso-style-priority:10;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	font-size:28.0pt;
+	font-family:"Arial",sans-serif;
+	mso-fareast-font-family:Arial;}
+a:link, span.MsoHyperlink
+	{mso-style-priority:99;
+	mso-style-parent:"";
+	color:#0563C1;
+	text-decoration:underline;
+	text-underline:single;}
+a:visited, span.MsoHyperlinkFollowed
+	{mso-style-noshow:yes;
+	mso-style-priority:99;
+	color:#96607D;
+	mso-themecolor:followedhyperlink;
+	text-decoration:underline;
+	text-underline:single;}
+p.MsoListParagraph, li.MsoListParagraph, div.MsoListParagraph
+	{mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	mso-fareast-font-family:Arial;}
+p.1, li.1, div.1
+	{mso-style-name:ตัวเข้ม1;
+	mso-style-unhide:no;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	margin:0cm;
+	mso-pagination:widow-orphan;
+	font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	mso-fareast-font-family:Arial;
+	font-weight:bold;}
+span.a
+	{mso-style-name:"ข้อความเชิงอรรถ อักขระ";
+	mso-style-noshow:yes;
+	mso-style-priority:99;
+	mso-style-locked:yes;
+	mso-style-parent:"";
+	mso-style-link:ข้อความเชิงอรรถ;
+	mso-ansi-font-size:10.0pt;
+	mso-bidi-font-size:10.0pt;}
+.MsoChpDefault
+	{mso-style-type:export-only;
+	mso-default-props:yes;
+	font-size:11.0pt;
+	mso-ansi-font-size:11.0pt;
+	mso-bidi-font-size:11.0pt;
+	font-family:"Arial",sans-serif;
+	mso-ascii-font-family:Arial;
+	mso-fareast-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	mso-font-kerning:0pt;
+	mso-ligatures:none;}
+ /* Page Definitions */
+ @page
+	{mso-footnote-separator:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") fs;
+	mso-footnote-continuation-separator:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") fcs;
+	mso-endnote-separator:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") es;
+	mso-endnote-continuation-separator:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") ecs;}
+@page WordSection1
+	{size:612.0pt 792.0pt;
+	margin:72.0pt 72.0pt 72.0pt 72.0pt;
+	mso-header-margin:35.4pt;
+	mso-footer-margin:35.4pt;
+	mso-header:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") h1;
+	mso-footer:url("Restaurant_CashSync_ERP_MasterPRD_v5.fld/header.html") f1;
+	mso-paper-source:0;}
+div.WordSection1
+	{page:WordSection1;}
+ /* List Definitions */
+ @list l0
+	{mso-list-id:80492695;
+	mso-list-type:hybrid;
+	mso-list-template-ids:-979841668 -1373062236 -57535116 -2025686772 1703153678 1275905642 1460929822 -1500630500 -1086292380 1388226618;}
+@list l0:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:●;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level2
+	{mso-level-number-format:bullet;
+	mso-level-text:○;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level3
+	{mso-level-number-format:bullet;
+	mso-level-text:■;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level4
+	{mso-level-number-format:bullet;
+	mso-level-text:●;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level5
+	{mso-level-number-format:bullet;
+	mso-level-text:○;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level6
+	{mso-level-number-format:bullet;
+	mso-level-text:■;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level7
+	{mso-level-number-format:bullet;
+	mso-level-text:●;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level8
+	{mso-level-number-format:bullet;
+	mso-level-text:●;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l0:level9
+	{mso-level-number-format:bullet;
+	mso-level-text:●;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l1
+	{mso-list-id:482623001;
+	mso-list-type:hybrid;
+	mso-list-template-ids:271993576 -132766032 -1721190102 827496360 -1333985424 263979680 -154749326 -432644742 -1381611970 1009275296;}
+@list l1:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:•;
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	text-indent:-18.0pt;}
+@list l1:level2
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level3
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level4
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level5
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level6
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level7
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level8
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+@list l1:level9
+	{mso-level-start-at:0;
+	mso-level-text:"";
+	mso-level-tab-stop:none;
+	mso-level-number-position:left;
+	margin-left:0cm;
+	text-indent:0cm;}
+ol
+	{margin-bottom:0cm;}
+ul
+	{margin-bottom:0cm;}
+-->
+Restaurant
+Cash-Sync & ERP
+Master
+Product Requirements Document (PRD)
+ฉบับสมบูรณ์
+—
+พร้อมส่ง Developer ประเมินราคา
+12 Modules
+10 core + 2
+  insights
+4 Roles
+Staff →
+  Owner
+2–5
+สาขา
+5 Phases
+Build Plan
+1. ภาพรวมระบบ
+ระบบ
+Restaurant Cash-Sync & ERP ออกแบบมาเพื่อแก้ปัญหาหลัก 4
+ด้านของธุรกิจร้านอาหารไทย ได้แก่ การทุจริตเงินสด เงินหมุนไม่ทัน
+สต๊อกวัตถุดิบหาย และขาดข้อมูลกำไรจริง
+โดยครอบคลุมตั้งแต่การลงเวลาพนักงานไปจนถึงการวิเคราะห์กำไรและวิศวกรรมเมนู
+ขอบเขตระบบ
+•
+รองรับ 2–5 สาขา —
+multi-branch ด้วย branch_id บังคับในทุก table
+•
+4 ระดับสิทธิ์ — Staff,
+Store Manager, Area Manager, Owner
+•
+Platform — ยังไม่ lock
+(แนะนำ PWA สำหรับขนาด 2–5 สาขา)
+•
+Notification — Line
+Official Account (Messaging API) + Push (FCM)
+•
+Offline mode — Nice to
+have; ต้อง architect offline-first POS ตั้งแต่ Phase 1
+2. 10 โมดูลหลัก (+ 2 Sub-modules)
+Phase 1 — Core Operations (ระบบปฏิบัติการรายวัน)
+ใช้งานได้จริงตั้งแต่วันแรก:
+เปิด-ปิดกะ, ขายของ, บันทึกค่าใช้จ่าย
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M1
+Time Attendance
+Tap & Snap (จิ้มชื่อ+ถ่ายรูป 5 วิ), anti-buddy-punch,
+  timestamp เป๊ะ
+Staff, All
+M2
+Shift & Drawer
+เปิด/ปิดกะ, เงินทอนตั้งต้น, shortage reason บังคับ,
+  ส่งยอดต่อกะ
+Cashier, Mgr
+M3A
+POS
+เลือกเมนู+qty, split payment (เงินสด/โอน/แอป/เครดิต),
+  auto-depletion ทันที, void ผ่าน Mgr
+Cashier
+M3B
+Expense Entry
+Planned / Emergency expense, approval threshold, link to
+  inventory
+Cashier, Mgr
+M10
+Ops Checklist
+เช็คลิสต์เปิด-ปิดร้าน, hard block mandatory, photo proof,
+  audit log, escalate ไป Line OA
+All
+รายละเอียด M3A — POS
+•
+Menu picker: แสดงรายการเมนูพร้อมราคา
+แตะเพื่อเพิ่มออเดอร์
+•
+Payment split: เงินสด
+(คำนวณทอนอัตโนมัติ) / โอน / แอปเดลิเวอรี / เครดิต (sign bill)
+•
+Auto-depletion: ทันทีที่
+confirm บิล ระบบตัดสต๊อกตาม BOM อัตโนมัติ
+•
+Delivery order: รับออเดอร์จาก
+Grab/LineMan แยก channel — ระบบหัก GP+VAT อัตโนมัติ
+•
+Void/Refund: เฉพาะ Store
+Manager เท่านั้น + บังคับสาเหตุ + reverse stock & cash
+รายละเอียด M3B — Expense Entry
+•
+Planned: ค่าใช้จ่ายที่วางแผนได้
+— ค่าแก๊ส, น้ำแข็ง, ถุง
+•
+Emergency: ซื้อของฉุกเฉิน —
+บังคับแนบรูปใบเสร็จ + สาเหตุ
+•
+Link to inventory: ถ้าซื้อวัตถุดิบฉุกเฉิน
+เชื่อม GRN ได้ทันที (ไม่ double-entry)
+•
+Approval threshold: จ่ายเกิน
+X บาท → ต้องขอ approve จาก Mgr ก่อนดึงเงินออก
+รายละเอียด M10 — Digital Ops Checklist
+•
+เช็คลิสต์เปิดร้าน: 10
+รายการ (เช็คแก๊ส, เปิด POS, กรอกเงินทอนตั้งต้น, ยืนยันทีม ฯลฯ)
+•
+เช็คลิสต์ปิดร้าน: 9 รายการ
+(ปิด POS, นับเงิน, นับสต๊อก, ทำความสะอาด, ล็อคร้าน ฯลฯ)
+•
+Hard block: mandatory items
+ไม่ครบ → ปิดกะไม่ได้ใน shift close API
+•
+Template: เจ้าของ/Area Mgr
+กำหนด template ต้นแบบ ทุกสาขาใช้ร่วมกัน
+•
+Audit log: บันทึกทุก tick:
+user_id, timestamp, item_id, photo_url
+•
+Escalation: mandatory ไม่ครบภายใน
+time window → แจ้ง Line OA ผู้จัดการร้านอัตโนมัติ
+Phase 2 — Cash Management (ระบบจัดการเงินสด)
+เงินหมุนข้ามกะ,
+ลูกหนี้พาร์ทเนอร์, ตู้เซฟหัวหน้า, Owner Dashboard
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M4
+Cross-Shift Cash Liquidity
+ค้างจ่ายข้ามกะ (ลิ้นชักไม่ติดลบ), จ่ายบิลค้างกะถัดไป,
+  cross-shift ledger
+Store Mgr
+M5
+Credit & AR Management
+Credit sale / sign bill, AR Dashboard, ส่งบิลทวง, กดรับชำระ,
+  ปิดบิลอัตโนมัติ
+Mgr, Owner
+M6
+Profit & Manager Safe
+Manager Safe สะสมรายวัน, ตัดรอบ 15/30 วัน, Auto GP/VAT, Owner
+  Dashboard
+Mgr, Owner
+รายละเอียด M6 — Manager Safe & Owner
+Dashboard
+•
+Manager Safe: เงินสดสุทธิแต่ละวันสะสมใน
+'กระเป๋าจำลอง' — ดึงฉุกเฉินได้
+•
+ตัดรอบ:
+เจ้าของกดรับยอดเงินสดทุก 15/30 วัน
+•
+Auto GP/VAT: กรอกยอด
+Grab/LineMan → ระบบหัก GP และ VAT → แสดงยอดสุทธิโอนพรุ่งนี้
+•
+Owner Dashboard: Revenue,
+COGS, Gross Profit, Waste/Loss, Manager Safe balance — รายวัน
+•
+Consolidated view: เจ้าของเห็นภาพรวมทุกสาขาในหน้าเดียว
+•
+Fixed Cost Entry: บันทึกต้นทุนคงที่รายเดือน
+ค่าเช่า เงินเดือนประจำ สาธารณูปโภค เพื่อให้คำนวณ Net Profit ได้แม่นยำ
+•
+Net Profit % KPI: ตั้งเป้า
+Net Profit % รายสาขาได้ เป้าหมายมาตรฐาน 10-20% ของยอดขาย
+Phase 3 — Inventory Management (ระบบจัดการสต๊อก)
+Dual-unit
+inventory, BOM, Stock Receiving จากโรงงาน
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M7A
+Dual-Unit Inventory
+Purchase unit (ลัง/ถุง) → Stock unit (กรัม/ชิ้น/มล.) via
+  conversion factor, reorder alert
+Store Mgr
+M7B
+Stock Receiving (GRN)
+รับของโรงงาน, WAC อัปเดตทันที, partial receive, photo
+  required, Credit Note
+Store Mgr
+รายละเอียด M7A — Dual-Unit Inventory
+•
+Purchase Unit: หน่วยที่โรงงานส่ง
+(ลัง, ถุง, กก., ขวด)
+•
+Stock Unit: หน่วยที่ BOM
+ใช้ตัดสต๊อก (กรัม, ชิ้น, มล.) — เก็บในหน่วยนี้เสมอ
+•
+Conversion factor: ตั้งค่าต่อ
+item เช่น 1 ลัง = 500 ชิ้น, 1 กก. = 1,000 กรัม
+•
+Reorder point: แจ้งเตือน
+(Line OA) เมื่อ current_stock ต่ำกว่าเกณฑ์
+•
+cost_per_stock_unit: ราคาต้นทุนต่อหน่วย
+stock (Weighted Average) ใช้คำนวณ COGS
+•
+Yield %: ระบุ %
+ที่ใช้ได้จริงหลังตัดแต่ง default 100% เช่น ปลาแซลมอน Yield 80% ซื้อ 1
+กิโลใช้ได้จริง 800 กรัม ระบบคำนวณ True Cost = WAC / Yield% อัตโนมัติ ทำให้ COGS
+แม่นยำไม่ต่ำกว่าความเป็นจริง
+•
+Par Level + Lead Time: ระบุสต๊อกขั้นต่ำที่ต้องมีเสมอ
+(safety buffer) และจำนวนวันที่โรงงานส่งของ ระบบคำนวณ Suggested Order Qty =
+(par_level - current_stock) + (avg_daily_use × lead_time_days)
+รายละเอียด M7B — Stock Receiving (GRN)
+•
+GRN (Goods Received Note): เลข
+GRN อัตโนมัติ, ผูก supplier_id, invoice_ref โรงงาน
+•
+Receiving flow: สร้าง GRN →
+เพิ่มรายการ (qty in Purchase Unit) → ระบบแปลงเป็น Stock Unit → ถ่ายรูปใบส่งของ
+→ Confirm
+•
+Partial receive: รับไม่ครบ
+— บันทึก qty จริง ระบบจำ pending_qty ให้อัตโนมัติ
+•
+Weighted Average Cost: อัปเดตทุกครั้งที่
+confirm GRN → กระทบ COGS บิลถัดไปทันที
+•
+แก้ไขหลัง confirm ไม่ได้ —
+ต้องทำ Credit Note แทน (audit trail สมบูรณ์)
+•
+เฉพาะ Store Manager
+ขึ้นไปเท่านั้นที่รับของได้
+•
+FIFO Enforcement: ทุก GRN
+ได้รับ lot_id อัตโนมัติ Depletion engine เลือกตัด lot ที่ received_at
+เก่าสุดก่อนเสมอ ป้องกันของเก่าค้างและ WAC คลาดเคลื่อน
+•
+Expiry Alert: แจ้งเตือนอัตโนมัติเมื่อมี
+lot ในตู้เย็นใกล้หมดอายุ
+Phase 4 — Analytics & Intelligence (ระบบวิเคราะห์)
+COGS
+Engine, Menu Engineering — ต้องมี data สะสมอย่างน้อย 1 เดือนก่อนเปิดใช้
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M8
+COGS Engine
+Weighted Avg Cost, Theoretical vs Actual, Food Cost %,
+  Variance alert, Period reconcile
+Mgr, Owner
+M9
+Menu Engineering
+Monthly batch (วันที่ 1), Star/Plow Horse/Puzzle/Dog matrix,
+  suggested actions รายเมนู
+Area Mgr, Owner
+รายละเอียด M8 — COGS Engine
+•
+COGS per menu = Σ (BOM qty
+÷ yield% × true_cost_per_unit) — รวม Yield Loss ไว้ในต้นทุนแล้ว
+•
+True Cost per unit = WAC ÷
+yield_percent — ถ้า Yield 80% ต้นทุนจริงสูงกว่าราคาซื้อ 25%
+•
+Daily COGS = Σ
+(qty_sold[menu] × COGS_per_menu)
+•
+Food Cost % = COGS ÷
+Revenue × 100
+[เป้าหมายทั่วไป 28–35%]
+•
+Theoretical vs Actual COGS:
+ส่วนต่างคือของหาย/เน่าเสีย — แจ้งเตือนถ้าเกิน threshold
+•
+Yield Loss Cost: แสดงมูลค่าความสูญเสียจาก
+yield% รายวัน เพื่อให้เจ้าของรู้ว่าสูญเงินไปกับ yield loss
+เท่าไหร่และพิจารณาปรับราคาหรือเปลี่ยน supplier
+•
+Cost Structure Benchmark:
+FC% Labor% Rent% Utilities% เทียบ benchmark มาตรฐาน FC 28-35% Labor 20-30% Rent
+10-20% Net Profit เป้า 10-20% แจ้งเตือนหมวดที่บวมเกิน
+•
+Period COGS: Opening Stock
++ GRN received − Closing Stock = ยืนยันตัวเลขสิ้นรอบ
+•
+COGS snapshot: บันทึกต้นทุน
+ณ เวลาขายกับทุก POS order — ย้อนดูรายบิลได้เสมอ
+รายละเอียด M9 — Menu Engineering
+•
+คำนวณรายเดือน (batch วันที่
+1) — ใช้ POS data × COGS Engine
+•
+Popularity: qty_sold เทียบ
+average ทุกเมนูในรอบนั้น
+•
+Profitability: Contribution
+Margin = ราคาขาย − COGS ต่อจาน
+•
+Star: ขายดี + กำไรสูง →
+รักษาคุณภาพ, โปรโมตต่อเนื่อง
+•
+Plow Horse: ขายดี + กำไรต่ำ
+→ ลดต้นทุน หรือขึ้นราคาทีละน้อย
+•
+Puzzle: ขายน้อย + กำไรสูง →
+โปรโมตเพิ่ม, ปรับตำแหน่งในเมนู
+•
+Dog: ขายน้อย + กำไรต่ำ →
+พิจารณาตัดออกจากเมนู
+•
+Suggested action: ระบบ
+generate คำแนะนำอัตโนมัติ + บันทึก trend รายเดือน
+Phase 5 — Pricing & Smart Insights
+ต่อยอดจากข้อมูลที่มีอยู่แล้วทั้งหมด
+ไม่ต้องเพิ่ม data ใหม่
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M11
+Menu Pricing Engine
+คำนวณราคาแนะนำ 3 วิธี: Cost-Plus / CM Target / Competitive
+  Floor — trigger อัตโนมัติเมื่อ COGS เปลี่ยน
+Owner, Area Mgr
+M12
+Smart Insights Dashboard
+Progress rings, Heatmap calendar, Behavioral insights, Health
+  Score, Flow direction, Best/Worst day
+Mgr, Owner
+รายละเอียด M11 — Menu Pricing Engine
+ใช้ข้อมูลจาก
+COGS Engine (M8) และ Menu Engineering (M9) คำนวณราคาแนะนำ 3 วิธี
+ให้เจ้าของเลือกตามกลยุทธ์ร้าน
+วิธีคำนวณ
+สูตร
+เหมาะกับ
+Cost-Plus Pricing
+ราคาขาย = COGS / Food Cost % เป้าหมาย
+เมนูทั่วไป ต้องการ FC% คงที่
+CM Target
+ราคาขาย = COGS + Contribution Margin เป้า
+ต้องการกำไรต่อจานคงที่ คำนวณ break-even
+Competitive Floor
+ตรวจสอบว่า ราคาตลาด >= COGS x (1 + margin floor %)
+เมนูที่ต้องสู้ราคากับคู่แข่ง
+•
+Output: ราคาแนะนำ 3 ระดับ —
+Min (คุ้มทุน) / Target (ตาม FC% เป้า) / Premium (maximize CM)
+•
+Trigger อัตโนมัติเมื่อ GRN
+confirm แล้ว WAC เปลี่ยน → flag เมนูที่ FC% เกิน threshold → แจ้ง Line OA
+•
+Trigger อัตโนมัติเมื่อสร้างเมนูใหม่
+→ คำนวณราคาแนะนำ 3 วิธีทันทีก่อนนำขึ้นเมนู
+•
+Trigger อัตโนมัติเมื่อ Menu
+Engineering พบ Plow Horse → แสดง projected impact ถ้าขึ้นราคา
+•
+Fields เพิ่มเติม:
+food_cost_target, cm_target, market_price, suggested_price_history,
+price_change_log
+•
+ข้อจำกัด:
+ไม่ดึงราคาคู่แข่งอัตโนมัติ, ไม่มี price elasticity, ไม่มี dynamic pricing
+รายละเอียด M12 — Smart Insights Dashboard
+Dashboard
+อัจฉริยะที่แสดงผลด้วย Gamification และ Behavioral Insights — บอกว่าต้องทำอะไร
+ไม่ใช่แค่แสดงตัวเลข
+Store Manager Dashboard
+•
+Progress Rings — วงกลม %
+เป้าวันนี้ real-time: ยอดขาย, Food Cost %, Checklist compliance
+•
+Heatmap Calendar — ยอดขายรายวันทั้งเดือน
+สีแสดงความเข้มของ revenue มองปราดเดียวเห็น pattern
+•
+Flow Direction — trend ต้นเดือน
+/ กลางเดือน / ปลายเดือน เทียบเดือนก่อนอัตโนมัติ
+•
+Day-of-Week Analysis — bar
+chart ยอดขายรายวันในสัปดาห์ ไฮไลต์วันดีสุด/แย่สุดอัตโนมัติ
+•
+Behavioral Insights — คำแนะนำอัตโนมัติ
+เช่น วันศุกร์ดีสุดควรเตรียมของเพิ่ม, Stock หมดใน 2 วันสั่งวันนี้
+Owner Dashboard
+•
+Health Score 0-100 — gauge รวม
+GP%, FC%, Cash flow, AR status เป็นตัวเลขเดียว
+•
+Cross-Branch Heatmap —
+Heatmap ทุกสาขาในหน้าเดียว เห็นสาขาไหนวันไหน revenue สูงต่ำ
+•
+Revenue Multiplier — แสดงอัตราสร้างรายได้
+เช่น ใช้ 1 บาท ได้ 3.4 บาท เข้าใจง่าย
+•
+Behavioral Insights ข้ามสาขา
+— เช่น ทองหล่อ GP% ดีสุด 3 เดือนติด ให้เป็น benchmark สาขาอื่น
+Insight Rule Engine
+Generate
+คำแนะนำอัตโนมัติจาก rule-based engine ไม่ต้องใช้ AI — ตั้ง rule ไว้ล่วงหน้า
+•
+FC% เกิน threshold X
+วันติดต่อกัน → แจ้งเตือน + แนะนำขึ้นราคา / ตรวจ waste
+•
+Stock item จะหมดใน Z วันตาม
+depletion rate → แจ้งให้สั่งซื้อ
+•
+AR ค้างชำระเกิน N วัน →
+แจ้งเตือนเจ้าของ
+•
+Compliance ลดลงต่อเนื่อง M
+วัน → flag ผู้จัดการเขต
+•
+Menu อยู่ใน Dog quadrant 2
+เดือนติด → แนะนำตัดเมนู พร้อม projected cost saving
+3. Daily Flow — การทำงานจริง 1 วัน
+1
+เปิดกะ
+พนักงานกดชื่อ+ถ่ายรูปเข้างาน (M1) → แคชเชียร์ทำ Checklist
+  เปิดร้านให้ครบ (M10) → กรอกเงินทอนตั้งต้น (M2)
+2
+ระหว่างวัน
+POS รับออเดอร์ตัดสต๊อกทันที (M3A) → บันทึกค่าใช้จ่ายย่อย (M3B)
+  → ถ้าเงินไม่พอจ่ายค่าแรงให้กด 'ค้างจ่าย' (M4)
+3
+ลูกค้าเครดิต
+บริษัททัวร์/VIP เซ็นบิล (M5) →
+  ยอดขายเพิ่มแต่ไม่กระทบเงินสดลิ้นชัก
+4
+รับของโรงงาน
+สร้าง GRN รับวัตถุดิบ (M7B) → ระบบอัปเดต WAC → เพิ่มสต๊อกใน
+  stock_unit
+5
+สิ้นวัน
+กรอกยอด Grab/LineMan → ระบบหัก GP+VAT แสดงยอดสุทธิ (M6) →
+  ระบบคำนวณ Daily COGS (M8)
+6
+ปิดกะ
+ทำ Checklist ปิดร้านให้ครบ (M10, hard block) → นับเงินสด +
+  physical count สต๊อก → กรอกเทียบระบบ (M2, M7A)
+7
+ปิดวัน
+เงินสดสุทธิสะสมใน Manager Safe (M6) → Owner เปิดดู Dashboard
+  จากบ้าน → Reorder alert ถ้าสต๊อกต่ำ
+8
+สิ้นเดือน
+Menu Engineering batch รัน (M9) → AR ส่งบิลทวงลูกหนี้ (M5) →
+  Owner กดตัดรอบรับเงินสดจากหัวหน้า (M6)
+4. Permission Matrix — 4 ระดับสิทธิ์
+Full = เต็มสิทธิ์
+|
+Read = อ่านอย่างเดียว
+|
+Own shift = เฉพาะกะ/สาขาตัวเอง
+|
+None = ไม่มีสิทธิ์
+Module
+Staff
+Store Mgr
+Area Mgr
+Owner
+M1 Time Attendance
+Own shift
+Full
+Read
+Full
+M2 Shift & Drawer
+Own shift
+Full
+Read
+Full
+M3A POS
+Own shift
+Full
+Read
+Full
+M3B Expense Entry
+Own shift
+Full
+Read
+Full
+M4 Cash Liquidity
+None
+Full
+Read
+Full
+M5 Credit & AR
+None
+Full
+Read
+Full
+M6 Manager Safe & Dashboard
+None
+Read
+Read
+Full
+M7A Dual-Unit Inventory
+None
+Full
+Read
+Full
+M7B Stock Receiving (GRN)
+None
+Full
+Read
+Full
+M8 COGS Engine
+None
+Read
+Full
+Full
+M9 Menu Engineering
+None
+None
+Read
+Full
+M10 Ops Checklist
+Full
+Full
+Read
+Full
+M11 Menu Pricing Engine
+None
+None
+Read
+Full
+M12 Smart Insights Dashboard
+None
+Full
+Full
+Full
+Multi-Branch Data Scope
+•
+Staff / Store Manager: เห็นเฉพาะ
+branch_id ที่ผูกกับ account ตัวเอง
+•
+Area Manager: เห็นทุกสาขาในเขต
+— read analytics, write บางฟังก์ชัน
+•
+Owner: Consolidated view ทุกสาขา
++ ตัดรอบ + ดู Menu Engineering cross-branch
+5. Technical Decisions ที่ Lock แล้ว
+หัวข้อ
+Decision ที่ Lock
+Impact ต่อ Dev
+สาขา
+2–5 สาขา (multi-branch)
+branch_id บังคับในทุก table; consolidated dashboard สำหรับ
+  Owner
+Menu Engineering
+Monthly batch (วันที่ 1 ของเดือน)
+ไม่ต้องทำ real-time pipeline; ประหยัด infra cost
+Checklist block
+Hard block — ปิดกะไม่ได้ถ้า mandatory ไม่ครบ
+shift close API ต้อง validate checklist_status ก่อน commit
+COGS method
+Weighted Average Cost (WAC)
+อัปเดตทุก GRN confirm; snapshot ต้นทุนกับทุก POS order
+GRN แก้ไขหลัง confirm
+ไม่ได้ — ใช้ Credit Note แทน
+audit trail สมบูรณ์ ไม่มีลบย้อนหลัง
+Void / Refund
+Store Manager เท่านั้น + บังคับสาเหตุ
+reverse stock + reverse cash อัตโนมัติ
+Notification
+Line OA (Messaging API) + Push (FCM)
+ผู้ใช้ add Line OA ครั้งเดียว; FCM ผ่าน Firebase project
+Offline mode
+Nice to have — architect offline-first ตั้งแต่ Phase 1
+POS + Shift ทำ offline ได้; COGS/AR ต้องมีเน็ต
+Platform (ยังไม่ lock)
+แนะนำ
+PWA สำหรับ 2–5 สาขา: 1 codebase, offline ได้ผ่าน Service Worker, กล้องผ่าน
+MediaDevices API, push ผ่าน Web Push API (iOS 16.4+), update instant ไม่ผ่าน
+App Store, dev cost ต่ำกว่า native 30–40%
+เกณฑ์
+Native iOS+Android
+PWA (แนะนำ)
+Web-only
+กล้อง (M1)
+ดีที่สุด
+ดี (MediaDevices)
+จำกัด
+Offline POS
+ดีที่สุด
+ดี (Service Worker)
+ไม่ได้
+Push notification
+ดีที่สุด
+ดี (iOS 16.4+)
+ไม่ได้
+Line OA integration
+ได้
+ได้
+ได้
+Dev cost
+สูงสุด
+กลาง
+ต่ำสุด
+Time to market
+นาน
+กลาง
+เร็ว
+Update app
+ผ่าน App Store
+Instant
+Instant
+6. Build Phases — แผนการพัฒนา
+Phase
+  1 — Core Operations
+M1, M2, M3A, M3B, M10
+ใช้งานได้จริงวันแรก เปิด-ปิดกะ ขายของ บันทึกค่าใช้จ่าย
+Phase
+  2 — Cash Management
+M4, M5, M6
+เงินหมุนข้ามกะ ลูกหนี้ ตู้เซฟ Owner Dashboard
+Phase
+  3 — Inventory
+M7A, M7B
+BOM dual-unit GRN จากโรงงาน auto-depletion real-time — ต้องรอ
+  setup BOM ก่อน
+Phase
+  4 — Analytics
+M8, M9
+COGS Engine Menu Engineering — ต้องมี data สะสมอย่างน้อย 1
+  เดือน
+Phase
+  5 — Pricing & Smart Insights
+M11, M12
+Menu Pricing Engine + Smart Insights Dashboard — ต่อยอดจาก
+  data ทุก module ที่มี
+7. Key Data Fields
+Inventory Item (Dual-Unit)
+Field
+Type
+คำอธิบาย
+item_id
+UUID PK
+รหัสวัตถุดิบ
+item_name
+VARCHAR
+ชื่อวัตถุดิบ
+purchase_unit
+VARCHAR
+หน่วยที่รับจากโรงงาน (ลัง, ถุง, กก.)
+stock_unit
+VARCHAR
+หน่วยตัดสต๊อก (กรัม, ชิ้น, มล.)
+conversion_factor
+DECIMAL
+1 purchase_unit = N stock_unit
+current_stock
+DECIMAL
+ยอดคงเหลือในหน่วย stock_unit เสมอ
+reorder_point
+DECIMAL
+แจ้งเตือนเมื่อ stock ต่ำกว่านี้
+cost_per_stock_unit
+DECIMAL
+ราคา WAC ปัจจุบัน
+supplier_id
+UUID FK
+ผูกกับซัพพลายเออร์/โรงงาน
+branch_id
+UUID FK
+สาขาที่เป็นเจ้าของ stock นี้
+yield_percent
+DECIMAL
+% ของที่ใช้ได้จริง default 100 เช่น ปลา Yield 80% ทำให้ True
+  Cost = WAC / 0.80
+par_level
+DECIMAL
+สต๊อกขั้นต่ำที่ต้องมีเสมอ safety buffer ต่างจาก reorder_point
+lead_time_days
+INTEGER
+วันที่โรงงานใช้ส่งของ ใช้คำนวณ suggested_order_qty
+GRN (Goods Received Note)
+Field
+Type
+คำอธิบาย
+grn_id
+UUID PK
+เลข GRN อัตโนมัติ
+supplier_id
+UUID FK
+โรงงาน/ซัพพลายเออร์
+invoice_ref
+VARCHAR
+เลข invoice โรงงาน (จับคู่บัญชี)
+received_by
+UUID FK
+user_id ผู้รับของ
+received_at
+TIMESTAMP
+วัน-เวลารับของจริง
+items[]
+JSON
+item_id, qty_purchase, qty_stock, cost_per_unit
+receipt_photo
+TEXT (URL)
+รูปใบส่งของ (required)
+status
+ENUM
+draft / confirmed / partial
+branch_id
+UUID FK
+สาขาที่รับของ
+lot_id
+UUID auto
+รหัส lot ต่อ GRN Depletion ใช้ FIFO: ตัด lot received_at
+  เก่าสุดก่อนเสมอ
+expiry_date
+DATE optional
+วันหมดอายุ lot แจ้งเตือนถ้าค้างเกิน expiry
+8. Notification Matrix
+Event
+Channel
+Recipient
+Timing
+Checklist mandatory ไม่ครบ
+Line OA + Push
+Store Manager
+ทันที (เกิน time window)
+Reorder point ต่ำกว่าเกณฑ์
+Line OA
+Store Mgr + Area Mgr
+Daily batch (สิ้นวัน)
+COGS variance เกิน threshold
+Line OA
+Owner + Area Mgr
+Daily batch (สิ้นวัน)
+AR ค้างชำระเกิน X วัน
+Line OA
+Owner
+Weekly + สิ้นเดือน
+Void/Refund request
+Push
+Store Manager
+Real-time
+Expense เกิน approval threshold
+Push + Line OA
+Store Manager
+Real-time
+Shift ไม่ได้เปิดตามเวลา
+Line OA
+Area Manager
+ตาม schedule
+9. Tech Stack & All Decisions
+หัวข้อ
+Decision ที่ Lock
+หมายเหตุ
+Platform
+Web App (React + Vite) — LOCKED
+Upgrade เป็น PWA ทีหลังได้ใน 1–2 วัน โดยไม่ต้องแก้ code
+Database
+Supabase (PostgreSQL)
+Free tier → Pro $25/เดือน เมื่อ scale;
+  Auth+DB+Realtime+Storage ในที่เดียว
+Hosting
+Cloudflare Pages (ฟรี)
+Commercial OK, ไม่จำกัด bandwidth, auto-deploy จาก GitHub
+Push Notification
+FCM — ฟรีตลอด
+Supabase Edge Function ยิง FCM API ได้ตรงๆ ไม่ต้องมี Firebase
+  project เต็ม
+Line Notification
+Line Official Account (Messaging API)
+Reply-triggered ฟรีไม่จำกัด; broadcast ฟรี 200/เดือน
+Email
+Resend (ฟรี 3,000/เดือน)
+Auth OTP + ส่ง AR Invoice email
+Version Control / CI
+GitHub (ฟรี) + GitHub Actions
+Auto-deploy ไป Cloudflare Pages ทุกครั้งที่ push
+Error Tracking
+Sentry (ฟรี 5K errors/เดือน)
+ติดตาม error ใน Web App และ Supabase Edge Functions
+PRD สมบูรณ์
+100% — พร้อมส่ง Developer ประเมินราคาและ timeline ได้ทันที
+10. User Management & Authentication
+Login — Tap name → PIN → Done
+ทุก
+role ใช้วิธีเดียวกันหมด ตั้งแต่พนักงานถึงเจ้าของร้าน — ไม่มี email/password
+ทุกคนใช้ PIN 6 หลัก
+•
+ครั้งแรก (ผูกเครื่อง ~2
+นาที): เจ้าของสร้าง QR code ต่อพนักงาน 1 คน → พนักงานสแกน QR บนมือถือตัวเอง →
+ตั้ง PIN 6 หลัก → เสร็จ เครื่องนั้นรู้จักตัวเองตลอดไป
+•
+ทุกวัน (2 ขั้นตอน): เปิดแอป
+→ เห็นชื่อและรูปตัวเองทันที → กด PIN → เข้าระบบ ใช้เวลา ~5 วินาที
+•
+Remember 7 วัน:
+ถ้ายังไม่หมดอายุ เปิดแอปแล้วเข้าได้เลยโดยไม่ต้องกด PIN ใหม่
+•
+ไม่มี self-signup:
+เจ้าของหรือ Manager เป็นคนสร้าง account และ QR code ให้เท่านั้น
+•
+ใช้โทรศัพท์ส่วนตัว:
+ทุกคนมีมือถือเป็นของตัวเอง — 1 เครื่อง 1 คน ไม่มี shared device
+Shift Handover — ส่งมอบลิ้นชักระหว่างผู้รับผิดชอบ
+รองรับ
+pattern จริงของร้าน เช่น พี่พิมเปิดร้านตี 4 วายุมาต่อ 6 โมง — 1 ลิ้นชัก 1 วัน
+แต่แบ่ง sub_shift ตามผู้รับผิดชอบแต่ละช่วง
+•
+Sub-shift: 1 shift_id ต่อวัน
+แบ่งเป็นหลาย sub_shift ต่อกันเหมือนห่วงโซ่ — เงินไม่รีเซ็ต สะสมต่อเนื่องตลอดวัน
+•
+Handover (~5 นาที): คน A กด
+'สรุปยอด' → คน B นับเงินจริงและกด 'รับมอบ' → ระบบ snapshot ยอดคน A → คน B
+กลายเป็น Primary ต่อทันที
+•
+Assist Cashier: หลัง
+handover คน A กลายเป็น Assist อัตโนมัติ ขายออเดอร์ต่อได้ ทุกบิลบันทึกชื่อผู้ขาย
+•
+ความรับผิดชอบแยกตาม
+sub_shift: variance (เงินขาด/เกิน) ของแต่ละช่วงเป็นของ primary คนนั้น
+ตรวจสอบได้ทีหลัง
+•
+Multi-cashier per shift: พนักงานหลายคนขายพร้อมกันได้
+แต่มี Primary Cashier คนเดียวต่อช่วงที่รับผิดชอบยอดรวม
+Device Binding — ผูกเครื่องครั้งเดียว
+ใช้ได้ตลอด
+สถานการณ์
+สิ่งที่เกิดขึ้น
+Action
+เครื่องใหม่ / ลบ data
+Device token หาย
+สแกน QR ใหม่จากเจ้าของ ผูกเครื่องใหม่ 1 ครั้ง
+โทรศัพท์หาย
+เจ้าของ revoke device
+Session ถูก invalidate ทันที ทำ QR ใหม่เมื่อได้เครื่องใหม่
+ลืม PIN
+Staff: Manager reset / Manager+Owner: OTP ผ่าน Line OA
+ตั้ง PIN ใหม่ได้เลย
+ลาออก / ไล่ออก
+Deactivate account
+Login ไม่ได้ทันที แม้ยัง remember อยู่ ประวัติงานยังเก็บครบ
+11. HR & Payroll — Module 13
+รองรับพนักงาน
+2 ประเภท: ประจำ (เงินเดือนคงที่) และรายวัน (อัตราต่อวัน × วันทำงานจริงจาก M1) —
+แบ่งพัฒนา 3 Phase ตามความซับซ้อน
+Phase A — ทำก่อน (3 ฟีเจอร์หลัก)
+Module
+ชื่อ
+Feature หลัก
+Role ที่ใช้
+M13A
+E-Payslip
+สลิปอิเล็กทรอนิกส์บนมือถือ ดู/ดาวน์โหลด PDF ได้ · แจ้งเตือน
+  Push + Line OA เมื่อออกสลิป · ประวัติย้อนหลังทุกเดือน
+Staff, Manager, Owner
+M13B
+Leave Management
+ขอลา 4 ประเภท (ป่วย/กิจ/พักร้อน/อื่นๆ) · อนุมัติผ่าน Push
+  notification · วันลาคงเหลืออัปเดตอัตโนมัติ · หักสลิปถ้าลาไม่รับค่าจ้าง
+All
+M13C
+Salary Adjustment
+เพิ่ม/หักรายการพิเศษก่อนออกสลิป (โบนัส, OT, ค่าเสียหาย) ·
+  เบิกล่วงหน้า (M3) ดึงมาหักอัตโนมัติ · Preview ก่อน confirm
+Manager, Owner
+รายละเอียด M13A — E-Payslip
+•
+พนักงานดูสลิปบนมือถือตัวเอง
+— เห็นรายได้ทุกรายการ รายการหักทุกรายการ ยอดสุทธิ วันที่จ่าย
+•
+ดาวน์โหลด PDF: generate
+ฝั่ง server (Supabase Edge Function) ดาวน์โหลดหรือแชร์ได้ทันที
+•
+แจ้งเตือนอัตโนมัติ: Push
+notification + Line OA ส่งให้พนักงานทุกคนเมื่อออกสลิป
+•
+สิทธิ์: Staff/Manager
+เห็นเฉพาะสลิปตัวเอง · Store Manager ออกสลิปพนักงานในสาขาได้ · Owner
+อนุมัติและดูทุกคนทุกสาขา
+รายละเอียด M13B — Leave Management
+•
+ลาป่วย: กฎหมายกำหนด 30
+วัน/ปี ได้รับค่าจ้าง — ระบบตรวจสอบวันคงเหลืออัตโนมัติ
+•
+ลากิจ: ตามที่เจ้าของกำหนด
+(เช่น 3 วัน/ปี) ตั้งค่าได้รายสาขา
+•
+ลาพักร้อน: สะสมตามอายุงาน
+ตั้งค่าเกณฑ์ได้เอง
+•
+Approval flow: พนักงานขอลา
+→ Push แจ้ง Store Manager → อนุมัติ/ปฏิเสธจากมือถือ → แจ้งผลพนักงานทันที →
+อัปเดตสลิปอัตโนมัติ
+รายละเอียด M13C — Salary Adjustment
+ประเภท
+ตัวอย่าง
+บวก/หัก
+ที่มา
+รายได้พิเศษ
+โบนัส, ค่าเดินทาง, เบี้ยขยัน
++ บวก
+Manager กรอกเอง
+OT
+ล่วงเวลา × อัตราค่าจ้าง
++ บวก
+คำนวณจาก Time Attendance M1
+เบิกล่วงหน้า
+Wage Advance จาก M3
+- หัก
+ดึงอัตโนมัติจาก M3
+ขาด/สาย
+ขาด 1 วัน หักตามสัดส่วน
+- หัก
+คำนวณจาก Time Attendance M1
+ลาไม่รับค่าจ้าง
+ลากิจเกินสิทธิ์
+- หัก
+ดึงอัตโนมัติจาก M13B
+ค่าเสียหาย
+ทำอุปกรณ์แตก ฯลฯ
+- หัก
+Manager กรอกเอง พร้อมเหตุผล
+Phase B — ถัดไป: Payroll อัตโนมัติ
+คำนวณเงินเดือน+รายวันจาก
+Time Attendance อัตโนมัติ · OT+เบี้ยขยันตามกฎแรงงาน · หักประกันสังคม 5%
+Phase C — อนาคต: Tax & SSO อัตโนมัติ
+ภ.ง.ด.1
+รายเดือน / ภ.ง.ด.1ก รายปี · ประกันสังคม (SSO) นายจ้าง+ลูกจ้าง · กองทุนเงินทดแทน
+(WCF) · export ไฟล์นำส่งกรมสรรพากรและประกันสังคม
+Fields ที่ต้องเพิ่มใน Users Table
+Field
+Type
+คำอธิบาย
+employment_type
+ENUM
+monthly (ประจำ) หรือ daily (รายวัน)
+base_salary
+DECIMAL nullable
+เงินเดือนฐานต่อเดือน สำหรับพนักงานประจำ
+daily_rate
+DECIMAL nullable
+อัตราค่าจ้างต่อวัน สำหรับพนักงานรายวัน
+tax_id
+VARCHAR nullable
+เลขประจำตัวผู้เสียภาษี — เตรียมไว้สำหรับ Phase C
+sso_id
+VARCHAR nullable
+เลขประกันสังคม — เตรียมไว้สำหรับ Phase B/C
+Tables ใหม่ที่ต้องสร้างใน Phase A
+Table
+Fields หลัก
+leave_requests
+user_id, leave_type, start_date, end_date, days, reason,
+  status, approved_by, approved_at
+leave_balances
+user_id, year, leave_type, total_days, used_days,
+  remaining_days
+salary_adjustments
+user_id, period (yyyymm), type (income/deduction), label,
+  amount, note, created_by
+payslips
+user_id, period, gross, total_deductions, net, pdf_url,
+  issued_at, issued_by
+Restaurant
+Cash-Sync & ERP
+—
+Master PRD
+|
+จัดทำด้วย Claude
+(Anthropic)
+|
+สงวนสิทธิ์

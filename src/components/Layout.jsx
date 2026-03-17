@@ -1,0 +1,61 @@
+import { Outlet, useLocation } from 'react-router-dom';
+import { Bell, Search, Sun, Moon } from 'lucide-react';
+import Sidebar from './Sidebar';
+import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
+
+const pageTitles = {
+  '/': 'แดชบอร์ด',
+  '/attendance': 'ลงเวลา (M1)',
+  '/shifts': 'เปิด-ปิดกะ (M2)',
+  '/pos': 'ขายหน้าร้าน (M3A)',
+  '/expenses': 'ค่าใช้จ่าย (M3B)',
+  '/cash-ledger': 'เงินค้างกะ (M4)',
+  '/ar-management': 'ลูกหนี้-AR (M5)',
+  '/profit-dashboard': 'ตู้เซฟและกำไร (M6)',
+  '/inventory': 'คลังสินค้า (M7A)',
+  '/stock-receiving': 'รับของ GRN (M7B)',
+  '/cogs-engine': 'COGS Engine (M8)',
+  '/menu-engineering': 'Menu Engineering (M9)',
+  '/menu-pricing': 'Menu Pricing (M11)',
+  '/smart-insights': 'Smart Insights (M12)',
+  '/hr-payroll': 'HR & Payroll (M13)',
+  '/settings': 'ตั้งค่าระบบ',
+};
+export default function Layout() {
+  const location = useLocation();
+  const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const title = pageTitles[location.pathname] || 'Somchai App';
+
+  return (
+    <div className="app-layout">
+      <Sidebar />
+      <main className="main-content">
+        <header className="main-header">
+          <div className="main-header-left">
+            <h2>{title}</h2>
+          </div>
+          <div className="main-header-right">
+            <button className="btn-icon" title="ค้นหา">
+              <Search size={18} />
+            </button>
+            <button className="btn-icon" title="สลับธีม มืด/สว่าง" onClick={toggleTheme}>
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+            <button className="btn-icon" title="แจ้งเตือน">
+              <Bell size={18} />
+            </button>
+            <span className="bg-violet-500/10 text-violet-400 border border-violet-500/20 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-sm shadow-violet-900/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse"></span>
+              {user?.branch_name || 'ไม่ระบุสาขา'}
+            </span>
+          </div>
+        </header>
+        <div className="page-content">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  );
+}
