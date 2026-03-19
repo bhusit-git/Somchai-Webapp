@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Receipt, Plus, CheckCircle, XCircle, Clock, Upload, FileImage, CreditCard, Banknote, Edit2, Trash2, AlertCircle, Save } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
@@ -26,20 +27,29 @@ export default function Expenses() {
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [actionReason, setActionReason] = useState('');
   const [authorizer, setAuthorizer] = useState('');
+  const { user } = useAuth();
 
   const managerUsers = users.filter(u => ['store_manager', 'area_manager', 'owner', 'admin'].includes(u.role));
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    if (user?.branch_id) loadData();
+  }, [user?.branch_id]);
 
   async function loadData() {
+    if (!user?.branch_id) return;
     setLoading(true);
     try {
+      let expQuery = supabase.from('expenses')
+        .select('*, creator:users!created_by(name, full_name), approver:users!approved_by(name, full_name)')
+        .eq('branch_id', user.branch_id);
+      if (user.role === 'staff') {
+        expQuery = expQuery.eq('created_by', user.id);
+      }
+      expQuery = expQuery.order('created_at', { ascending: false }).limit(50);
+
       const [expRes, userRes, catRes] = await Promise.all([
-        supabase.from('expenses')
-          .select('*, creator:users!created_by(name, full_name), approver:users!approved_by(name, full_name)')
-          .order('created_at', { ascending: false })
-          .limit(50),
-        supabase.from('users').select('id, name, full_name, role').eq('is_active', true),
+        expQuery,
+        supabase.from('users').select('id, name, full_name, role').eq('is_active', true).eq('branch_id', user.branch_id),
         supabase.from('expense_categories').select('*').eq('is_active', true).order('sort_order').order('name'),
       ]);
       setExpenses(expRes.data || []);
@@ -51,13 +61,12 @@ export default function Expenses() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.created_by || !form.category || !form.amount || !form.description) {
+    if (!form.category || !form.amount || !form.description) {
       return alert('กรุณากรอกข้อมูลให้ครบ');
     }
 
-    const { data: branches } = await supabase.from('branches').select('id').limit(1);
-    const branch_id = branches?.[0]?.id;
-    if (!branch_id) return alert('ไม่พบสาขา');
+    const branch_id = user?.branch_id;
+    if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
 
     // Get active shift if any
     const { data: shifts } = await supabase.from('shifts').select('id').eq('status', 'open').limit(1);
@@ -65,7 +74,7 @@ export default function Expenses() {
     const { error } = await supabase.from('expenses').insert({
       branch_id,
       shift_id: shifts?.[0]?.id || null,
-      created_by: form.created_by,
+      created_by: form.created_by || user?.id,
       category: form.category,
       description: form.description,
       amount: parseFloat(form.amount),
@@ -79,7 +88,7 @@ export default function Expenses() {
     if (error) alert('Error: ' + error.message);
     else {
       setShowModal(false);
-      setForm({ created_by: '', category: '', description: '', amount: '', expense_type: 'planned', payment_method: 'cash', notes: '', receipt_url: null });
+      setForm({ category: '', description: '', amount: '', expense_type: 'planned', payment_method: 'cash', notes: '', receipt_url: null });
       loadData();
     }
   }
@@ -142,45 +151,46 @@ export default function Expenses() {
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!actionReason || !authorizer) {
-       alert("กรุณาระบุผู้อนุมัติและเหตุผลในการแก้ไข");
-       return;
+      alert("กรุณาระบุผู้อนุมัติและเหตุผลในการแก้ไข");
+      return;
     }
 
     const { error } = await supabase.from('expenses').update({
-       category: form.category,
-       description: form.description,
-       amount: parseFloat(form.amount),
-       expense_type: form.expense_type,
-       payment_method: form.payment_method,
-       notes: form.notes || null,
-       receipt_url: form.receipt_url,
-       edit_reason: `[โดย ${users.find(u=>u.id===authorizer)?.name}] ${actionReason}`,
-       status: 'pending' // Reset status so it can be re-approved
+      created_by: form.created_by || selectedExpense.created_by,
+      category: form.category,
+      description: form.description,
+      amount: parseFloat(form.amount),
+      expense_type: form.expense_type,
+      payment_method: form.payment_method,
+      notes: form.notes || null,
+      receipt_url: form.receipt_url,
+      edit_reason: `[โดย ${users.find(u => u.id === authorizer)?.name}] ${actionReason}`,
+      status: 'pending' // Reset status so it can be re-approved
     }).eq('id', selectedExpense.id);
 
     if (error) alert('Error: ' + error.message);
     else {
-       setShowEditModal(false);
-       loadData();
+      setShowEditModal(false);
+      loadData();
     }
   };
 
   const handleCancelSubmit = async (e) => {
     e.preventDefault();
     if (!actionReason || !authorizer) {
-       alert("กรุณาระบุผู้อนุมัติและเหตุผลในการยกเลิก");
-       return;
+      alert("กรุณาระบุผู้อนุมัติและเหตุผลในการยกเลิก");
+      return;
     }
 
     const { error } = await supabase.from('expenses').update({
-       status: 'cancelled',
-       cancel_reason: `[โดย ${users.find(u=>u.id===authorizer)?.name}] ${actionReason}`
+      status: 'cancelled',
+      cancel_reason: `[โดย ${users.find(u => u.id === authorizer)?.name}] ${actionReason}`
     }).eq('id', selectedExpense.id);
 
     if (error) alert('Error: ' + error.message);
     else {
-       setShowCancelPrompt(false);
-       loadData();
+      setShowCancelPrompt(false);
+      loadData();
     }
   };
 
@@ -202,7 +212,8 @@ export default function Expenses() {
       </div>
 
       {/* Stats */}
-      <div className="stats-grid">
+      {user?.role !== 'staff' && (
+        <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon orange">
             <Receipt size={22} />
@@ -230,7 +241,8 @@ export default function Expenses() {
             <p>อนุมัติแล้ว</p>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 mb-4">
@@ -261,7 +273,6 @@ export default function Expenses() {
                 <th>รายละเอียด</th>
                 <th>จำนวน</th>
                 <th>ช่องทาง</th>
-                <th>ประเภท</th>
                 <th>ผู้บันทึก</th>
                 <th>สถานะ</th>
                 <th>วันที่</th>
@@ -272,7 +283,7 @@ export default function Expenses() {
               {loading ? (
                 <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan="9"><div className="empty-state"><Receipt size={48}/><h3>ยังไม่มีรายจ่าย</h3><p>กดปุ่ม "เพิ่มค่าใช้จ่าย"</p></div></td></tr>
+                <tr><td colSpan="9"><div className="empty-state"><Receipt size={48} /><h3>ยังไม่มีรายจ่าย</h3><p>กดปุ่ม "เพิ่มค่าใช้จ่าย"</p></div></td></tr>
               ) : (
                 filtered.map(exp => (
                   <tr key={exp.id}>
@@ -291,19 +302,14 @@ export default function Expenses() {
                         {exp.payment_method === 'cash' ? '💵 เงินสด' : '🏦 เงินโอน'}
                       </span>
                     </td>
-                    <td>
-                      <span className={`badge ${exp.expense_type === 'planned' ? 'badge-info' : 'badge-warning'}`}>
-                        {exp.expense_type === 'planned' ? '📋 วางแผน' : '🚨 ฉุกเฉิน'}
-                      </span>
-                    </td>
-                    <td>{exp.creator?.full_name || exp.creator?.name || '—'}</td>
+                    <td>{exp.creator?.name || '—'}</td>
                     <td>
                       <span className={`badge ${exp.status === 'approved' ? 'badge-success' : exp.status === 'rejected' ? 'badge-danger' : exp.status === 'cancelled' ? 'badge-secondary' : 'badge-warning'}`}>
                         {exp.status === 'approved' ? '✅ อนุมัติ' : exp.status === 'rejected' ? '❌ ไม่อนุมัติ' : exp.status === 'cancelled' ? '🚫 ยกเลิก' : '⏳ รอ'}
                       </span>
                       {exp.status === 'cancelled' && exp.cancel_reason && (
                         <div className="text-[10px] text-slate-500 mt-1 flex items-start max-w-xs">
-                           <AlertCircle size={10} className="mr-1 mt-0.5 shrink-0" /> {exp.cancel_reason}
+                          <AlertCircle size={10} className="mr-1 mt-0.5 shrink-0" /> {exp.cancel_reason}
                         </div>
                       )}
                     </td>
@@ -320,14 +326,14 @@ export default function Expenses() {
                             </button>
                           </>
                         )}
-                        {exp.status !== 'cancelled' && (
+                        {exp.status !== 'cancelled' && !(user?.role === 'staff' && exp.status === 'approved') && (
                           <>
-                           <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-blue-400 hover:border-blue-500 bg-transparent py-1 px-2" onClick={() => openEditModal(exp)} title="แก้ไข">
-                             <Edit2 size={14} />
-                           </button>
-                           <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-red-400 hover:border-red-500 bg-transparent py-1 px-2" onClick={() => openCancelPrompt(exp)} title="ยกเลิกรายการ">
-                             <Trash2 size={14} />
-                           </button>
+                            <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-blue-400 hover:border-blue-500 bg-transparent py-1 px-2" onClick={() => openEditModal(exp)} title="แก้ไข">
+                              <Edit2 size={14} />
+                            </button>
+                            <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-red-400 hover:border-red-500 bg-transparent py-1 px-2" onClick={() => openCancelPrompt(exp)} title="ยกเลิกรายการ">
+                              <Trash2 size={14} />
+                            </button>
                           </>
                         )}
                       </div>
@@ -350,28 +356,23 @@ export default function Expenses() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
+                {['area_manager', 'owner', 'admin'].includes(user?.role) && (
+                  <div className="form-group">
+                    <label className="form-label text-amber-500">ผู้ทำรายการ (ระบุแทนพนักงาน)</label>
+                    <select className="form-select border-amber-500/30 bg-amber-500/5 focus:border-amber-500" value={form.created_by || ''} onChange={e => setForm({ ...form, created_by: e.target.value })}>
+                      <option value="">-- ตัวฉันเอง ({user?.name}) --</option>
+                      {users.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div className="form-group">
-                  <label className="form-label">ผู้บันทึก *</label>
-                  <select className="form-select" value={form.created_by} onChange={e => setForm({ ...form, created_by: e.target.value })} required>
-                    <option value="">-- เลือกพนักงาน --</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.name}</option>)}
+                  <label className="form-label">หมวดหมู่ *</label>
+                  <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required>
+                    <option value="">-- เลือก --</option>
+                    {categories
+                      .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                      .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
-                </div>
-                <div className="grid-2">
-                  <div className="form-group">
-                    <label className="form-label">หมวดหมู่ *</label>
-                    <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required>
-                      <option value="">-- เลือก --</option>
-                      {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">ประเภท *</label>
-                    <select className="form-select" value={form.expense_type} onChange={e => setForm({ ...form, expense_type: e.target.value })}>
-                      <option value="planned">📋 วางแผน (Planned)</option>
-                      <option value="emergency">🚨 ฉุกเฉิน (Emergency)</option>
-                    </select>
-                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">รายละเอียด *</label>
@@ -381,7 +382,7 @@ export default function Expenses() {
                   <label className="form-label">จำนวนเงิน (บาท) *</label>
                   <input type="number" className="form-input" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0.00" required min="0" step="0.01" />
                 </div>
-                
+
                 <div className="form-group">
                   <label className="form-label">ช่องทางการชำระเงิน *</label>
                   <div className="grid grid-cols-2 gap-3 mt-2">
@@ -400,7 +401,7 @@ export default function Expenses() {
 
                 <div className="form-group">
                   <label className="form-label mb-2 block">รูปใบเสร็จ / สลิปโอนเงิน (ถ้ามี)</label>
-                  <div 
+                  <div
                     onClick={() => fileRef.current?.click()}
                     className="w-full flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-600 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden h-32"
                   >
@@ -452,34 +453,37 @@ export default function Expenses() {
             <form onSubmit={handleEditSubmit}>
               <div className="modal-body">
                 <div className="p-4 mb-4 rounded-xl border border-blue-500/30 bg-blue-500/10 space-y-3">
-                   <div className="form-group mb-0">
-                     <label className="form-label text-blue-400">ผู้อนุมัติการแก้ไข (ผจก.ขึ้นไป) *</label>
-                     <select className="form-select border-blue-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
-                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                       {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
-                     </select>
-                   </div>
-                   <div className="form-group mb-0">
-                     <label className="form-label text-blue-400">เหตุผลที่แก้ไข *</label>
-                     <input type="text" className="form-input border-blue-500/30" value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="เช่น ใส่จำนวนเงินผิด..." required />
-                   </div>
+                  <div className="form-group mb-0">
+                    <label className="form-label text-blue-400">ผู้อนุมัติการแก้ไข (ผจก.ขึ้นไป) *</label>
+                    <select className="form-select border-blue-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
+                      <option value="">-- เลือกผู้อนุมัติ --</option>
+                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group mb-0">
+                    <label className="form-label text-blue-400">เหตุผลที่แก้ไข *</label>
+                    <input type="text" className="form-input border-blue-500/30" value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="เช่น ใส่จำนวนเงินผิด..." required />
+                  </div>
                 </div>
 
-                <div className="grid-2">
+                {['area_manager', 'owner', 'admin'].includes(user?.role) && (
                   <div className="form-group">
-                    <label className="form-label">หมวดหมู่ *</label>
-                    <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required>
-                      <option value="">-- เลือก --</option>
-                      {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    <label className="form-label text-amber-500">ผู้ทำรายการ (แก้ไขผู้บันทึก)</label>
+                    <select className="form-select border-amber-500/30 bg-amber-500/5 focus:border-amber-500" value={form.created_by || ''} onChange={e => setForm({ ...form, created_by: e.target.value })}>
+                      <option value="">-- ตัวฉันเอง ({user?.name}) --</option>
+                      {users.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
                     </select>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">ประเภท *</label>
-                    <select className="form-select" value={form.expense_type} onChange={e => setForm({ ...form, expense_type: e.target.value })}>
-                      <option value="planned">📋 วางแผน (Planned)</option>
-                      <option value="emergency">🚨 ฉุกเฉิน (Emergency)</option>
-                    </select>
-                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">หมวดหมู่ *</label>
+                  <select className="form-select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} required>
+                    <option value="">-- เลือก --</option>
+                    {categories
+                      .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                      .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label">รายละเอียด *</label>
@@ -489,7 +493,7 @@ export default function Expenses() {
                   <label className="form-label">จำนวนเงิน (บาท) *</label>
                   <input type="number" className="form-input" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required min="0" step="0.01" />
                 </div>
-                
+
                 <div className="form-group">
                   <label className="form-label">ช่องทางการชำระเงิน *</label>
                   <div className="grid grid-cols-2 gap-3 mt-2">
@@ -532,17 +536,17 @@ export default function Expenses() {
                   คุณกำลังจะยกเลิกรายจ่าย: <strong className="text-white">{selectedExpense?.description}</strong> มูลค่า ฿{Number(selectedExpense?.amount).toLocaleString()}
                 </p>
                 <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 space-y-3">
-                   <div className="form-group mb-0">
-                     <label className="form-label text-red-400">ผู้อนุมัติยกเลิก (ผจก.ขึ้นไป) *</label>
-                     <select className="form-select border-red-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
-                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                       {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
-                     </select>
-                   </div>
-                   <div className="form-group mb-0">
-                     <label className="form-label text-red-400">เหตุผลที่ยกเลิก *</label>
-                     <input type="text" className="form-input border-red-500/30 focus:border-red-500" value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="เช่น ซ้ำซ้อน, ยกเลิกการซื้อ..." required />
-                   </div>
+                  <div className="form-group mb-0">
+                    <label className="form-label text-red-400">ผู้อนุมัติยกเลิก (ผจก.ขึ้นไป) *</label>
+                    <select className="form-select border-red-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
+                      <option value="">-- เลือกผู้อนุมัติ --</option>
+                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group mb-0">
+                    <label className="form-label text-red-400">เหตุผลที่ยกเลิก *</label>
+                    <input type="text" className="form-input border-red-500/30 focus:border-red-500" value={actionReason} onChange={e => setActionReason(e.target.value)} placeholder="เช่น ซ้ำซ้อน, ยกเลิกการซื้อ..." required />
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">

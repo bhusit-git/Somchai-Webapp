@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
-import { 
-  Package, 
-  Search, 
-  Filter, 
-  Plus, 
-  Edit2, 
+import {
+  Package,
+  Search,
+  Filter,
+  Plus,
+  Edit2,
   AlertTriangle,
   TrendingDown,
   CircleDollarSign
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 /*
   Supabase Schema reference:
@@ -53,25 +54,30 @@ export default function Inventory() {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (user?.branch_id) {
+      loadData();
+    }
+  }, [user?.branch_id]);
 
   async function loadData() {
     setLoading(true);
     try {
-      // In a real app we'd filter by branch_id from context
+      if (!user?.branch_id) return;
+      
       const { data, error } = await supabase
         .from('inventory_items')
         .select('*')
         .eq('is_active', true)
+        .eq('branch_id', user.branch_id)
         .order('name');
-        
+
       if (error && error.code !== '42P01') {
         console.error('Error fetching inventory:', error);
       }
-      
+
       // If table doesnt exist yet (code 42P01), we just show empty array
       setItems(data || []);
     } catch (err) {
@@ -84,11 +90,10 @@ export default function Inventory() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const { data: branches } = await supabase.from('branches').select('id').limit(1);
-      const branch_id = branches?.[0]?.id;
+      const branch_id = user?.branch_id;
 
       if (!branch_id && !editingItem) {
-        alert('ไม่พบสาขา กรุณาสร้างสาขาก่อน');
+        alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
         return;
       }
 
@@ -172,7 +177,7 @@ export default function Inventory() {
   const filteredItems = items.filter(item => {
     const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase());
     const isLow = Number(item.current_stock) <= Number(item.reorder_point);
-    
+
     if (statusFilter === 'low') return matchesSearch && isLow;
     if (statusFilter === 'ok') return matchesSearch && !isLow;
     return matchesSearch;
@@ -241,10 +246,10 @@ export default function Inventory() {
           <div className="flex items-center gap-4" style={{ display: 'flex', width: '100%' }}>
             <div style={{ position: 'relative', flex: 1, maxWidth: '300px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="ค้นหาสินค้า..." 
+              <input
+                type="text"
+                className="form-input"
+                placeholder="ค้นหาสินค้า..."
                 style={{ paddingLeft: '36px' }}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -252,8 +257,8 @@ export default function Inventory() {
             </div>
             <div style={{ position: 'relative', width: '200px' }}>
               <Filter size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
-              <select 
-                className="form-select" 
+              <select
+                className="form-select"
                 style={{ paddingLeft: '36px' }}
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
@@ -265,7 +270,7 @@ export default function Inventory() {
             </div>
           </div>
         </div>
-        
+
         <div className="table-container">
           <table>
             <thead>
@@ -285,7 +290,7 @@ export default function Inventory() {
               {loading ? (
                 <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : filteredItems.length === 0 ? (
-                <tr><td colSpan="9"><div className="empty-state"><Package size={48}/><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
+                <tr><td colSpan="9"><div className="empty-state"><Package size={48} /><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
               ) : (
                 filteredItems.map((item) => {
                   const currentStock = Number(item.current_stock);
@@ -293,10 +298,10 @@ export default function Inventory() {
                   const isOut = currentStock <= 0;
                   // isLow: below reorder point but NOT zero (separate from fully out-of-stock)
                   const isLow = !isOut && currentStock <= reorderPoint;
-                  
+
                   return (
                     <tr key={item.id}>
-                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{item.id?.substring(0,8) || '-'}</td>
+                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{item.id?.substring(0, 8) || '-'}</td>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</td>
                       <td style={{ fontWeight: 600, color: isOut ? 'var(--accent-danger)' : (isLow ? 'var(--accent-warning)' : 'var(--accent-success)') }}>
                         {currentStock.toLocaleString()}
@@ -306,7 +311,7 @@ export default function Inventory() {
                       <td>{item.stock_unit}</td>
                       <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                         1 {item.purchase_unit} = {Number(item.conversion_factor)} {item.stock_unit}
-                        <br/>
+                        <br />
                         (Yield {Number(item.yield_pct)}%)
                       </td>
                       <td>
@@ -344,17 +349,17 @@ export default function Inventory() {
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">ชื่อสินค้า *</label>
-                  <input type="text" className="form-input" required value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="เช่น เนื้อวัวสไลด์" />
+                  <input type="text" className="form-input" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="เช่น เนื้อวัวสไลด์" />
                 </div>
-                
+
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">หน่วยซื้อ (Purchase Unit) *</label>
-                    <input type="text" className="form-input" required value={formData.purchase_unit} onChange={(e) => setFormData({...formData, purchase_unit: e.target.value})} placeholder="เช่น กิโลกรัม, ลัง, ถุง" />
+                    <input type="text" className="form-input" required value={formData.purchase_unit} onChange={(e) => setFormData({ ...formData, purchase_unit: e.target.value })} placeholder="เช่น กิโลกรัม, ลัง, ถุง" />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">หน่วยสต๊อก (Stock Unit) *</label>
-                    <input type="text" className="form-input" required value={formData.stock_unit} onChange={(e) => setFormData({...formData, stock_unit: e.target.value})} placeholder="เช่น กรัม, ชิ้น, มล." />
+                    <input type="text" className="form-input" required value={formData.stock_unit} onChange={(e) => setFormData({ ...formData, stock_unit: e.target.value })} placeholder="เช่น กรัม, ชิ้น, มล." />
                   </div>
                 </div>
 
@@ -364,7 +369,7 @@ export default function Inventory() {
                     <span style={{ fontSize: '14px' }}>1 {formData.purchase_unit || 'หน่วยซื้อ'}</span>
                     <span style={{ color: 'var(--text-muted)' }}>=</span>
                     <div style={{ width: '100px' }}>
-                      <input type="number" className="form-input" required min="0.01" step="0.01" value={formData.conversion_factor} onChange={(e) => setFormData({...formData, conversion_factor: e.target.value})} />
+                      <input type="number" className="form-input" required min="0.01" step="0.01" value={formData.conversion_factor} onChange={(e) => setFormData({ ...formData, conversion_factor: e.target.value })} />
                     </div>
                     <span style={{ fontSize: '14px' }}>{formData.stock_unit || 'หน่วยสต๊อก'}</span>
                   </div>
@@ -373,16 +378,16 @@ export default function Inventory() {
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">Yield % *</label>
-                    <input type="number" className="form-input" required min="1" max="100" value={formData.yield_pct} onChange={(e) => setFormData({...formData, yield_pct: e.target.value})} placeholder="100" />
+                    <input type="number" className="form-input" required min="1" max="100" value={formData.yield_pct} onChange={(e) => setFormData({ ...formData, yield_pct: e.target.value })} placeholder="100" />
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>% ที่ใช้ได้จริงหลังตัดแต่ง</span>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">ต้นทุนต่อหน่วยสต๊อก (฿)</label>
-                    <input type="number" className="form-input" min="0" step="0.01" value={formData.cost_per_stock_unit} onChange={(e) => setFormData({...formData, cost_per_stock_unit: e.target.value})} />
+                    <input type="number" className="form-input" min="0" step="0.01" value={formData.cost_per_stock_unit} onChange={(e) => setFormData({ ...formData, cost_per_stock_unit: e.target.value })} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">สต๊อกปัจจุบัน</label>
-                    <input type="number" className="form-input" min="0" step="0.01" value={formData.current_stock} onChange={(e) => setFormData({...formData, current_stock: e.target.value})} />
+                    <input type="number" className="form-input" min="0" step="0.01" value={formData.current_stock} onChange={(e) => setFormData({ ...formData, current_stock: e.target.value })} />
                   </div>
                 </div>
 
@@ -391,17 +396,17 @@ export default function Inventory() {
                 <div style={{ display: 'flex', gap: '16px' }}>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">Par Level *</label>
-                    <input type="number" className="form-input" required min="0" value={formData.par_level} onChange={(e) => setFormData({...formData, par_level: e.target.value})} />
+                    <input type="number" className="form-input" required min="0" value={formData.par_level} onChange={(e) => setFormData({ ...formData, par_level: e.target.value })} />
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>สต๊อกหลังร้านที่ควรมี</span>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">Reorder Point *</label>
-                    <input type="number" className="form-input" required min="0" value={formData.reorder_point} onChange={(e) => setFormData({...formData, reorder_point: e.target.value})} />
+                    <input type="number" className="form-input" required min="0" value={formData.reorder_point} onChange={(e) => setFormData({ ...formData, reorder_point: e.target.value })} />
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>จุดสั่งซื้อ (แจ้งเตือน)</span>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">Lead Time (วัน) *</label>
-                    <input type="number" className="form-input" required min="0" value={formData.lead_time_days} onChange={(e) => setFormData({...formData, lead_time_days: e.target.value})} />
+                    <input type="number" className="form-input" required min="0" value={formData.lead_time_days} onChange={(e) => setFormData({ ...formData, lead_time_days: e.target.value })} />
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระยะเวลารอของ</span>
                   </div>
                 </div>

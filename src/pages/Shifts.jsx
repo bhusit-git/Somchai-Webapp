@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeftRight, Plus, DollarSign, Lock, Unlock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import Checklist from '../components/Checklist';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Shifts() {
   const [shifts, setShifts] = useState([]);
@@ -8,20 +10,26 @@ export default function Shifts() {
   const [loading, setLoading] = useState(true);
   const [showOpen, setShowOpen] = useState(false);
   const [showClose, setShowClose] = useState(null);
+  const [isChecklistComplete, setIsChecklistComplete] = useState(false);
   const [openForm, setOpenForm] = useState({ opened_by: '', opening_cash: '' });
   const [closeForm, setCloseForm] = useState({ closed_by: '', closing_cash: '', notes: '' });
+  const { user } = useAuth();
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { 
+    if (user?.branch_id) loadData(); 
+  }, [user?.branch_id]);
 
   async function loadData() {
+    if (!user?.branch_id) return;
     setLoading(true);
     try {
       const [shiftRes, userRes] = await Promise.all([
         supabase.from('shifts')
           .select('*, opener:users!opened_by(name, full_name), closer:users!closed_by(name, full_name)')
+          .eq('branch_id', user.branch_id)
           .order('opened_at', { ascending: false })
           .limit(30),
-        supabase.from('users').select('id, name, full_name, role').eq('is_active', true),
+        supabase.from('users').select('id, name, full_name, role').eq('is_active', true).eq('branch_id', user.branch_id),
       ]);
       setShifts(shiftRes.data || []);
       setUsers(userRes.data || []);
@@ -33,9 +41,8 @@ export default function Shifts() {
     e.preventDefault();
     if (!openForm.opened_by || !openForm.opening_cash) return alert('กรุณากรอกข้อมูลให้ครบ');
 
-    const { data: branches } = await supabase.from('branches').select('id').limit(1);
-    const branch_id = branches?.[0]?.id;
-    if (!branch_id) return alert('ไม่พบสาขา กรุณาสร้างสาขาก่อน');
+    const branch_id = user?.branch_id;
+    if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
 
     const { error } = await supabase.from('shifts').insert({
       branch_id,
@@ -73,6 +80,7 @@ export default function Shifts() {
     if (error) alert('Error: ' + error.message);
     else {
       setShowClose(null);
+      setIsChecklistComplete(false);
       setCloseForm({ closed_by: '', closing_cash: '', notes: '' });
       loadData();
     }
@@ -170,7 +178,7 @@ export default function Shifts() {
                     </td>
                     <td>
                       {sh.status === 'open' && (
-                        <button className="btn btn-sm btn-warning" onClick={() => setShowClose(sh)}>
+                        <button className="btn btn-sm btn-warning" onClick={() => { setShowClose(sh); setIsChecklistComplete(false); }}>
                           <Lock size={14} /> ปิดกะ
                         </button>
                       )}
@@ -218,11 +226,11 @@ export default function Shifts() {
 
       {/* Close Shift Modal */}
       {showClose && (
-        <div className="modal-overlay" onClick={() => setShowClose(null)}>
+        <div className="modal-overlay" onClick={() => { setShowClose(null); setIsChecklistComplete(false); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>ปิดกะ</h3>
-              <button className="btn-icon" onClick={() => setShowClose(null)}>✕</button>
+              <button className="btn-icon" onClick={() => { setShowClose(null); setIsChecklistComplete(false); }}>✕</button>
             </div>
             <form onSubmit={handleCloseShift}>
               <div className="modal-body">
@@ -246,10 +254,13 @@ export default function Shifts() {
                   <label className="form-label">หมายเหตุ</label>
                   <textarea className="form-textarea" value={closeForm.notes} onChange={(e) => setCloseForm({ ...closeForm, notes: e.target.value })} placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" />
                 </div>
+                <Checklist onComplete={setIsChecklistComplete} />
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setShowClose(null)}>ยกเลิก</button>
-                <button type="submit" className="btn btn-warning"><Lock size={16} /> ยืนยันปิดกะ</button>
+                <button type="button" className="btn btn-ghost" onClick={() => { setShowClose(null); setIsChecklistComplete(false); }}>ยกเลิก</button>
+                <button type="submit" className="btn btn-warning" disabled={!isChecklistComplete} style={{ opacity: isChecklistComplete ? 1 : 0.5 }}>
+                  <Lock size={16} /> ยืนยันปิดกะ
+                </button>
               </div>
             </form>
           </div>

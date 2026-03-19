@@ -10,6 +10,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 /*
   Supabase Schema reference:
@@ -54,12 +55,14 @@ export default function StockReceiving() {
     received_by: ''
   });
   const [lineItems, setLineItems] = useState([]);
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (user?.branch_id) loadData();
+  }, [user?.branch_id]);
 
   async function loadData() {
+    if (!user?.branch_id) return;
     setLoading(true);
     try {
       // 1. Fetch GRNs
@@ -70,6 +73,7 @@ export default function StockReceiving() {
           receiver:users!received_by(name, full_name),
           items:grn_items(count)
         `)
+        .eq('branch_id', user.branch_id)
         .order('created_at', { ascending: false });
 
       if (grnError && grnError.code !== '42P01') console.error(grnError);
@@ -87,7 +91,8 @@ export default function StockReceiving() {
         .from('users')
         .select('id, name, full_name, role')
         .in('role', ['store_manager', 'area_manager', 'owner'])
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('branch_id', user.branch_id);
 
       setGrns(grnData || []);
       setInventoryItems(invData || []);
@@ -153,8 +158,8 @@ export default function StockReceiving() {
     }
 
     try {
-      const { data: branches } = await supabase.from('branches').select('id').limit(1);
-      const branch_id = branches?.[0]?.id;
+      const branch_id = user?.branch_id;
+      if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
 
       // Calculate total value
       const total_value = lineItems.reduce((sum, item) => sum + (Number(item.qty_purchase) * Number(item.unit_cost)), 0);

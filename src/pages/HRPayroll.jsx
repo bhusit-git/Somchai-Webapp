@@ -14,6 +14,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 /*
   Supabase Schema Integration
@@ -213,6 +214,7 @@ function PayslipPrintView({ payslip, employee }) {
 
 /* ── TAB 1: E-PAYSLIP ── */
 function EPayslipTab({ role }) {
+  const { user } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0,7));
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [selectedPayslip, setSelectedPayslip] = useState(null);
@@ -225,7 +227,11 @@ function EPayslipTab({ role }) {
   async function loadPayslips() {
     setLoading(true);
     try {
-      const { data: usersData } = await supabase.from('users').select('*').eq('is_active', true);
+      let query = supabase.from('users').select('*, branches(name)').eq('is_active', true);
+      if (role !== 'owner') {
+        query = query.eq('id', user?.id);
+      }
+      const { data: usersData } = await query;
       const userList = usersData || [];
       setUsers(userList);
       
@@ -237,8 +243,9 @@ function EPayslipTab({ role }) {
 
       const [attRes, adjRes] = await Promise.all([
         supabase.from('attendance')
-          .select('user_id, type')
+          .select('user_id, type, timestamp')
           .eq('type', 'clock_in')
+          .eq('is_deleted', false)
           .gte('timestamp', startOfMonth)
           .lt('timestamp', endOfMonth),
         supabase.from('hr_salary_adjustments')
@@ -253,12 +260,26 @@ function EPayslipTab({ role }) {
       const newPayslips = userList.map(u => {
         const uAtt = attData.filter(a => a.user_id === u.id);
         const clockInCount = uAtt.length;
+        const customRates = u.custom_rates || {};
+        const hasCustomRates = Object.keys(customRates).length > 0;
         
         let basicIncome = 0;
         let incomeLabel = '';
         if (u.employment_type === 'daily') {
-          basicIncome = clockInCount * (u.daily_rate || 0);
-          incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน)`;
+          if (hasCustomRates) {
+            // Sum per-day wages using custom_rates; fall back to daily_rate for unset days
+            basicIncome = uAtt.reduce((sum, att) => {
+              const dayOfWeek = new Date(att.timestamp).getDay(); // 0=Sun..6=Sat
+              const rate = customRates[dayOfWeek] !== undefined
+                ? Number(customRates[dayOfWeek])
+                : (u.daily_rate || 0);
+              return sum + rate;
+            }, 0);
+            incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน, อัตราแยกตามวัน)`;
+          } else {
+            basicIncome = clockInCount * (u.daily_rate || 0);
+            incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน)`;
+          }
         } else {
           basicIncome = u.base_salary || 0;
           incomeLabel = 'เงินเดือน (Base Salary)';
@@ -288,9 +309,9 @@ function EPayslipTab({ role }) {
           payCycleColor: payCycleInfo.color,
           employee: {
             id: u.id,
-            name: u.full_name || u.name,
-            position: roleLabels[u.role]?.label || u.role,
-            branch: 'ไม่ระบุสาขา',
+            name: u.name,
+            position: roleLabels[u.role] || u.role,
+            branch: u.branches?.name || 'ไม่ระบุสาขา',
             bankAccount: u.bank_account || '-',
             bankName: u.bank_name || '-'
           },
@@ -314,7 +335,7 @@ function EPayslipTab({ role }) {
     }
   }
 
-  const roleLabels = { owner:'เจ้าของ', manager:'ผู้จัดการ', store_manager:'ผจก.ร้าน', cook:'พ่อครัว', staff:'พนักงาน' };
+  const roleLabels = { owner:'เจ้าของ', manager:'Area Mgr', store_manager:'ผจก.ร้าน', cook:'พ่อครัว', staff:'พนักงาน' };
 
   const empPayslips = generatedPayslips.filter(p => p.empId === selectedEmp?.id);
   const handlePrint = () => window.print();
@@ -333,7 +354,7 @@ function EPayslipTab({ role }) {
           />
         </div>
 
-        {(role === 'manager' || role === 'owner') && !selectedPayslip && (
+        {role === 'owner' && !selectedPayslip && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <label style={{ fontWeight: '600', fontSize: '14px', whiteSpace: 'nowrap' }}>เลือกพนักงาน:</label>
             <div style={{ position: 'relative', minWidth: '240px' }}>
@@ -346,7 +367,7 @@ function EPayslipTab({ role }) {
                 style={{ width: '100%', padding: '8px 36px 8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: '14px', appearance: 'none', cursor: 'pointer' }}
               >
                 {users.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.full_name || emp.name}</option>
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
                 ))}
               </select>
             </div>
@@ -359,7 +380,7 @@ function EPayslipTab({ role }) {
       ) : !selectedPayslip ? (
         <div>
           <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '12px', color: 'var(--text-primary)' }}>
-            สลิปเงินเดือน — {selectedEmp?.full_name || selectedEmp?.name || '-'}
+            สลิปเงินเดือน — {selectedEmp?.name || '-'}
           </div>
           {empPayslips.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
@@ -415,17 +436,21 @@ function EPayslipTab({ role }) {
 
 /* ── TAB 2: LEAVE MANAGEMENT ── */
 function LeaveManagementTab({ role }) {
+  const { user } = useAuth();
   const [requests, setRequests] = useState([]);
   const [users, setUsers] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ user_id: '', leave_type: 'ลาป่วย', startDate: '', endDate: '', reason: '' });
 
-  // Static leave balance display (can be made dynamic later)
-  const mockLeaveBalances = [
-    { type: 'ลาป่วย', used: 2, total: 30, color: '#ef4444' },
-    { type: 'ลากิจ', used: 1, total: 6, color: '#f59e0b' },
-    { type: 'ลาพักร้อน', used: 0, total: 6, color: '#3b82f6' },
+  // Dynamically calculate used days for the current logged-in user
+  const approvedLeaves = requests.filter(r => r.status === 'approved' && r.user_id === user?.id);
+  const getUsedDays = (type) => approvedLeaves.filter(r => r.leave_type === type).reduce((sum, r) => sum + r.days, 0);
+
+  const leaveStats = [
+    { type: 'ลาป่วย', used: getUsedDays('ลาป่วย'), color: '#ef4444' },
+    { type: 'ลากิจ', used: getUsedDays('ลากิจ'), color: '#f59e0b' },
+    { type: 'ลาพักร้อน', used: getUsedDays('ลาพักร้อน'), color: '#3b82f6' },
   ];
 
   useEffect(() => { loadData(); }, []);
@@ -433,9 +458,13 @@ function LeaveManagementTab({ role }) {
   async function loadData() {
     setLoading(true);
     try {
+      let leaveQuery = supabase.from('hr_leave_requests').select('*, users(name)').order('created_at', { ascending: false });
+      if (role !== 'owner') {
+        leaveQuery = leaveQuery.eq('user_id', user?.id);
+      }
       const [leaveRes, userRes] = await Promise.all([
-        supabase.from('hr_leave_requests').select('*, users(name, full_name)').order('created_at', { ascending: false }),
-        supabase.from('users').select('id, name, full_name').eq('is_active', true)
+        leaveQuery,
+        supabase.from('users').select('id, name').eq('is_active', true)
       ]);
       setRequests(leaveRes.data || []);
       setUsers(userRes.data || []);
@@ -469,7 +498,7 @@ function LeaveManagementTab({ role }) {
     const startDate = new Date(form.startDate);
     const endDate = new Date(form.endDate);
     const diffDays = Math.ceil(Math.abs(endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
-    const targetUserId = role === 'staff' ? (users[0]?.id) : form.user_id;
+    const targetUserId = role === 'staff' ? user?.id : form.user_id;
     if (!targetUserId) return alert('ไม่พบข้อมูลพนักงาน');
     const { error } = await supabase.from('hr_leave_requests').insert({
       user_id: targetUserId,
@@ -495,22 +524,17 @@ function LeaveManagementTab({ role }) {
     <div>
       {/* Leave Balances */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
-        {mockLeaveBalances.map(lb => {
-          const pct = Math.round((lb.used / lb.total) * 100);
-          const remaining = lb.total - lb.used;
-          return (
-            <div key={lb.type} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ fontWeight: '700', fontSize: '14px' }}>{lb.type}</span>
-                <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>คงเหลือ <strong style={{ color: lb.color }}>{remaining}</strong>/{lb.total} วัน</span>
-              </div>
-              <div style={{ height: '6px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct}%`, background: lb.color, borderRadius: '99px' }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>ใช้ไป {lb.used} วัน ({pct}%)</div>
+        {leaveStats.map(lb => (
+          <div key={lb.type} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span style={{ fontWeight: '700', fontSize: '14px' }}>{lb.type}</span>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>จำนวนที่ใช้แล้ว</span>
             </div>
-          );
-        })}
+            <div style={{ fontSize: '24px', fontWeight: '800', color: lb.color }}>
+              {lb.used} <span style={{ fontSize: '14px', fontWeight: '500', color: 'var(--text-muted)' }}>วัน</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -524,12 +548,12 @@ function LeaveManagementTab({ role }) {
         <form onSubmit={handleSubmit} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
           <div style={{ fontWeight: '700', fontSize: '15px', marginBottom: '16px' }}>ยื่นใบลาใหม่</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            {role !== 'staff' && (
+            {role === 'owner' && (
               <div>
                 <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>พนักงาน</label>
                 <select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })}
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px' }}>
-                  {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.name}</option>)}
+                  {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
             )}
@@ -550,7 +574,7 @@ function LeaveManagementTab({ role }) {
               <input type="date" required value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
             </div>
-            <div style={{ gridColumn: role !== 'staff' ? '1 / -1' : 'auto' }}>
+            <div style={{ gridColumn: role === 'owner' ? '1 / -1' : 'auto' }}>
               <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>เหตุผล</label>
               <input type="text" placeholder="ระบุเหตุผล..." value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })}
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
@@ -563,7 +587,7 @@ function LeaveManagementTab({ role }) {
         </form>
       )}
 
-      {(role === 'manager' || role === 'owner') && pending.length > 0 && (
+      {role === 'owner' && pending.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
           <div style={{ fontWeight: '700', fontSize: '15px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <AlertCircle size={15} style={{ color: '#f59e0b' }} /> รอการอนุมัติ ({pending.length})
@@ -572,7 +596,7 @@ function LeaveManagementTab({ role }) {
             {pending.map(r => (
               <div key={r.id} style={{ background: 'var(--accent-warning-bg, rgba(245,158,11,0.08))', border: '1px solid #f59e0b', borderRadius: 'var(--radius-sm)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                 <div>
-                  <div style={{ fontWeight: '700', fontSize: '14px' }}>{r.users?.full_name || r.users?.name || '—'}</div>
+                  <div style={{ fontWeight: '700', fontSize: '14px' }}>{r.users?.name || '—'}</div>
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                     <span style={{ background: leaveTypeColor[r.leave_type], color: '#fff', borderRadius: '4px', padding: '1px 8px', fontSize: '11px', fontWeight: '700', marginRight: '6px' }}>{r.leave_type}</span>
                     {r.start_date} – {r.end_date} · {r.days} วัน
@@ -601,7 +625,7 @@ function LeaveManagementTab({ role }) {
             {requests.map(r => (
               <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: '13px', fontWeight: '700' }}>{r.users?.full_name || r.users?.name || '—'}</div>
+                  <div style={{ fontSize: '13px', fontWeight: '700' }}>{r.users?.name || '—'}</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                     <span style={{ background: leaveTypeColor[r.leave_type], color: '#fff', borderRadius: '4px', padding: '1px 6px', fontSize: '11px', fontWeight: '700', marginRight: '6px' }}>{r.leave_type}</span>
                     {r.start_date} – {r.end_date} · {r.days} วัน{r.reason ? ` · ${r.reason}` : ''}
@@ -697,7 +721,7 @@ function SalaryAdjTab() {
             <div>
               <label style={{ fontSize: '12px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>พนักงาน</label>
               <select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })} style={inputStyle}>
-                {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.name}</option>)}
+                {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
             </div>
             <div>
@@ -743,7 +767,7 @@ function SalaryAdjTab() {
                 }
                 <div>
                   <div style={{ fontWeight: '700', fontSize: '14px' }}>{adj.label}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{adj.users?.full_name || adj.users?.name || '—'} · {new Date(adj.action_date).toLocaleDateString()}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{adj.users?.name || '—'} · {new Date(adj.action_date).toLocaleDateString()}</div>
                   {adj.note && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>หมายเหตุ: {adj.note}</div>}
                 </div>
               </div>
@@ -761,8 +785,11 @@ function SalaryAdjTab() {
 
 // ────────────────────── MAIN COMPONENT ──────────────────────
 export default function HRPayroll() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('payslip');
-  const [role, setRole] = useState('manager'); // mock: staff / manager / owner
+  
+  // Replace the mock role toggler with actual user role
+  const role = user?.role || 'staff';
 
   const tabs = [
     { key: 'payslip', label: '📄 E-Payslip (M13A)', icon: FileText },
@@ -781,16 +808,6 @@ export default function HRPayroll() {
           </h2>
           <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '13px' }}>สลิปเงินเดือน · ระบบลางาน · ปรับเงินเดือน</p>
         </div>
-
-        {/* Role Switcher (Demo) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '6px 12px' }}>
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ดูในฐานะ:</span>
-          {['staff', 'manager', 'owner'].map(r => (
-            <button key={r} onClick={() => setRole(r)} style={{ padding: '4px 10px', borderRadius: '4px', border: 'none', background: role === r ? 'var(--accent-primary)' : 'transparent', color: role === r ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontWeight: role === r ? '700' : '400', fontSize: '12px' }}>
-              {r === 'staff' ? 'พนักงาน' : r === 'manager' ? 'ผู้จัดการ' : 'เจ้าของ'}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Tabs */}
@@ -807,8 +824,8 @@ export default function HRPayroll() {
         {activeTab === 'payslip' && <EPayslipTab role={role} />}
         {activeTab === 'leave' && <LeaveManagementTab role={role} />}
         {activeTab === 'adjust' && (
-          role === 'staff'
-            ? <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}><AlertCircle size={36} style={{ opacity: 0.3, marginBottom: '8px' }} /><div>เฉพาะผู้จัดการและเจ้าของเท่านั้น</div></div>
+          role !== 'owner'
+            ? <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}><AlertCircle size={36} style={{ opacity: 0.3, marginBottom: '8px' }} /><div>เฉพาะเจ้าของร้านเท่านั้น</div></div>
             : <SalaryAdjTab />
         )}
       </div>

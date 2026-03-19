@@ -1,15 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Users, Building2, Info, Settings as SettingsIcon, Plus, Eye, EyeOff,
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
   Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
+import { useAuth } from '../contexts/AuthContext';
 
 const roleLabels = {
   owner: { label: 'เจ้าของ', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
-  area_manager: { label: 'Area Manager', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
-  manager: { label: 'ผู้จัดการ', color: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' },
+  manager: { label: 'Area Manager', color: 'bg-blue-500/20 text-blue-300 border border-blue-500/30' },
   store_manager: { label: 'ผู้จัดการสาขา', color: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' },
   cook: { label: 'พ่อครัว', color: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
   staff: { label: 'พนักงาน', color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' },
@@ -28,6 +28,60 @@ const STORAGE_KEY = 'companyInfo';
 
 // Helper to generate a random 6-digit PIN
 const genPIN = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+/* ── Per-Day Rate Configuration Component ── */
+const DAY_LABELS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const DAY_FULL_LABELS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+const WEEKEND_DAYS = new Set([0, 6]); // 0=Sun, 6=Sat
+
+function DayRatesEditor({ baseRate, value, onChange }) {
+  // value is an object like { "0": 500, "1": 400, ... } or null/undefined
+  const rates = value || {};
+
+  const handleChange = (dayIndex, rawVal) => {
+    const updated = { ...rates };
+    if (rawVal === '' || rawVal === undefined) {
+      delete updated[dayIndex];
+    } else {
+      updated[dayIndex] = parseFloat(rawVal) || 0;
+    }
+    onChange(updated);
+  };
+
+  return (
+    <div style={{ marginTop: '12px' }}>
+      <label className="text-slate-400 text-xs mb-2 block">
+        🗓️ อัตราค่าจ้างแยกตามวัน (ว่างไว้ = ใช้ค่า Default)
+      </label>
+      <div className="grid grid-cols-7 gap-1.5">
+        {DAY_LABELS.map((day, i) => {
+          const isWeekend = WEEKEND_DAYS.has(i);
+          const currentRate = rates[i];
+          return (
+            <div key={i} className="flex flex-col items-center gap-1">
+              <span className={`text-xs font-semibold ${isWeekend ? 'text-amber-400' : 'text-slate-400'}`}>
+                {day}
+              </span>
+              <input
+                type="number"
+                min="0"
+                step="50"
+                placeholder={baseRate || '—'}
+                value={currentRate !== undefined ? currentRate : ''}
+                onChange={e => handleChange(i, e.target.value)}
+                title={DAY_FULL_LABELS[i]}
+                className={`w-full bg-slate-900/60 border rounded-lg p-1.5 text-white text-xs text-center focus:outline-none focus:border-violet-500 ${
+                  isWeekend ? 'border-amber-500/40' : 'border-slate-600'
+                }`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-slate-500 text-xs mt-1.5">วันเสาร์-อาทิตย์ (ไฮไลต์สีส้ม) สามารถตั้งเรทพิเศษได้</p>
+    </div>
+  );
+}
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('users');
@@ -92,11 +146,12 @@ export default function Settings() {
 // TAB 1: Users
 // ============================================================
 function UsersTab() {
+  const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [branches, setBranches] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [generatedPIN, setGeneratedPIN] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', role: 'staff', branch_id: '', employment_type: 'monthly', base_salary: 0, daily_rate: 0 });
+  const [newUser, setNewUser] = useState({ name: '', employee_id: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', base_salary: 0, daily_rate: 0, custom_rates: null });
   const [resetTarget, setResetTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState(null);
@@ -114,8 +169,8 @@ function UsersTab() {
       ]);
       setUsers(usersData || []);
       setBranches(branchesData || []);
-      if (branchesData?.length > 0 && !newUser.branch_id) {
-        setNewUser(prev => ({ ...prev, branch_id: branchesData[0].id }));
+      if (!newUser.branch_id && user?.branch_id) {
+        setNewUser(prev => ({ ...prev, branch_id: user.branch_id }));
       }
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -132,16 +187,21 @@ function UsersTab() {
       
       await createUser({
         name: newUser.name,
+        full_name: newUser.name,
+        employee_id: newUser.employee_id || null,
         role: newUser.role,
         branch_id: newUser.branch_id,
         employment_type: newUser.employment_type,
         base_salary: parseFloat(newUser.base_salary) || 0,
         daily_rate: parseFloat(newUser.daily_rate) || 0,
+        custom_rates: newUser.employment_type === 'daily' && newUser.custom_rates && Object.keys(newUser.custom_rates).length > 0
+          ? newUser.custom_rates
+          : null,
         pin_hash: pin, // In a real app, hash this before sending
       });
       
       setShowAddForm(false);
-      setNewUser({ name: '', role: 'staff', branch_id: branches[0]?.id || '', employment_type: 'monthly', base_salary: 0, daily_rate: 0 });
+      setNewUser({ name: '', employee_id: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', base_salary: 0, daily_rate: 0, custom_rates: null });
       loadData();
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการสร้างผู้ใช้งาน');
@@ -170,11 +230,16 @@ function UsersTab() {
     try {
       await updateUser(editUser.id, {
         name: editUser.name,
+        full_name: editUser.name,
+        employee_id: editUser.employee_id || null,
         role: editUser.role,
         branch_id: editUser.branch_id,
         employment_type: editUser.employment_type,
         base_salary: parseFloat(editUser.base_salary) || 0,
         daily_rate: parseFloat(editUser.daily_rate) || 0,
+        custom_rates: editUser.employment_type === 'daily' && editUser.custom_rates && Object.keys(editUser.custom_rates).length > 0
+          ? editUser.custom_rates
+          : null,
       });
       setEditUser(null);
       loadData();
@@ -229,7 +294,7 @@ function UsersTab() {
       {showAddForm && (
         <div className="bg-slate-800/70 border border-slate-700/50 rounded-xl p-5 space-y-4">
           <h3 className="text-white font-medium">เพิ่มผู้ใช้งานใหม่</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อ-นามสกุล *</label>
               <input
@@ -237,6 +302,15 @@ function UsersTab() {
                 placeholder="กรอกชื่อ..."
                 value={newUser.name}
                 onChange={e => setNewUser({ ...newUser, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">รหัสพนักงาน (ถ้ามี)</label>
+              <input
+                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                placeholder="เช่น EMP01"
+                value={newUser.employee_id}
+                onChange={e => setNewUser({ ...newUser, employee_id: e.target.value })}
               />
             </div>
             <div>
@@ -249,7 +323,7 @@ function UsersTab() {
                 {Object.entries(roleLabels).map(([val, { label }]) => (
                   <option key={val} value={val}>{label}</option>
                 ))}
-              </select>
+            </select>
             </div>
             <div>
               <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
@@ -288,14 +362,19 @@ function UsersTab() {
                 />
               </div>
             ) : (
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ (บาท)</label>
+              <div className="md:col-span-2">
+                <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
                 <input
                   type="number"
                   className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
                   placeholder="เช่น 380"
                   value={newUser.daily_rate}
                   onChange={e => setNewUser({ ...newUser, daily_rate: e.target.value })}
+                />
+                <DayRatesEditor
+                  baseRate={newUser.daily_rate}
+                  value={newUser.custom_rates}
+                  onChange={rates => setNewUser({ ...newUser, custom_rates: rates })}
                 />
               </div>
             )}
@@ -318,13 +397,24 @@ function UsersTab() {
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลผู้ใช้งาน</h3>
             
             <div className="space-y-4">
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ชื่อ-นามสกุล *</label>
-                <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                  value={editUser.name}
-                  onChange={e => setEditUser({ ...editUser, name: e.target.value })}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">ชื่อ-นามสกุล *</label>
+                  <input
+                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                    value={editUser.name}
+                    onChange={e => setEditUser({ ...editUser, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">รหัสพนักงาน (ถ้ามี)</label>
+                  <input
+                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                    placeholder="เช่น EMP01"
+                    value={editUser.employee_id || ''}
+                    onChange={e => setEditUser({ ...editUser, employee_id: e.target.value })}
+                  />
+                </div>
               </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">สิทธิ์</label>
@@ -374,13 +464,18 @@ function UsersTab() {
                 </div>
               ) : (
                 <div>
-                  <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ (บาท)</label>
+                  <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
                   <input
                     type="number"
                     className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
                     placeholder="เช่น 380"
                     value={editUser.daily_rate || 0}
                     onChange={e => setEditUser({ ...editUser, daily_rate: e.target.value })}
+                  />
+                  <DayRatesEditor
+                    baseRate={editUser.daily_rate}
+                    value={editUser.custom_rates}
+                    onChange={rates => setEditUser({ ...editUser, custom_rates: rates })}
                   />
                 </div>
               )}
@@ -414,6 +509,11 @@ function UsersTab() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-white font-medium">{user.name}</p>
+                {user.employee_id && (
+                  <span className="text-xs px-2 py-0.5 rounded-md bg-slate-700 text-slate-300 font-mono border border-slate-600">
+                    ID: {user.employee_id}
+                  </span>
+                )}
                 <span className={`text-xs px-2 py-0.5 rounded-full ${roleLabels[user.role]?.color || 'bg-gray-500/20 text-gray-300'}`}>
                   {roleLabels[user.role]?.label || user.role}
                 </span>
@@ -946,10 +1046,11 @@ function SystemConfigTab() {
 import { getExpenseCategories, createExpenseCategory, updateExpenseCategory, deleteExpenseCategory } from '../services/expenseService';
 
 function ExpenseCategoriesTab() {
+  const { user } = useAuth();
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newCat, setNewCat] = useState({ name: '', branch_id: '' });
+  const [newCat, setNewCat] = useState({ name: '', branch_id: user?.branch_id || '', is_admin_only: false });
   const [editCat, setEditCat] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -966,8 +1067,8 @@ function ExpenseCategoriesTab() {
       ]);
       setCategories(catsRes || []);
       setBranches(branchesRes || []);
-      if (branchesRes?.length > 0 && !newCat.branch_id) {
-        setNewCat(prev => ({ ...prev, branch_id: branchesRes[0].id }));
+      if (!newCat.branch_id && user?.branch_id) {
+        setNewCat(prev => ({ ...prev, branch_id: user.branch_id }));
       }
     } catch (err) {
       console.error(err);
@@ -979,8 +1080,8 @@ function ExpenseCategoriesTab() {
   const handleAdd = async () => {
     if (!newCat.name || !newCat.branch_id) return;
     try {
-      await createExpenseCategory({ name: newCat.name, branch_id: newCat.branch_id });
-      setNewCat(prev => ({ ...prev, name: '' }));
+      await createExpenseCategory({ name: newCat.name, branch_id: newCat.branch_id, is_admin_only: newCat.is_admin_only });
+      setNewCat(prev => ({ ...prev, name: '', branch_id: user?.branch_id || '', is_admin_only: false }));
       setShowAdd(false);
       loadData();
     } catch (err) {
@@ -991,7 +1092,7 @@ function ExpenseCategoriesTab() {
   const handleEdit = async () => {
     if (!editCat.name) return;
     try {
-      await updateExpenseCategory(editCat.id, { name: editCat.name, branch_id: editCat.branch_id });
+      await updateExpenseCategory(editCat.id, { name: editCat.name, branch_id: editCat.branch_id, is_admin_only: editCat.is_admin_only });
       setEditCat(null);
       loadData();
     } catch (err) {
@@ -1048,6 +1149,16 @@ function ExpenseCategoriesTab() {
                 ))}
               </select>
             </div>
+            <div className="md:col-span-2 flex items-center gap-2 mt-2">
+              <input 
+                type="checkbox" 
+                id="is_admin_only_new" 
+                className="w-4 h-4 rounded border-slate-600 bg-slate-900/60"
+                checked={newCat.is_admin_only || false} 
+                onChange={e => setNewCat({ ...newCat, is_admin_only: e.target.checked })} 
+              />
+              <label htmlFor="is_admin_only_new" className="text-slate-300 text-sm">แสดงเฉพาะผู้บริหาร (ซ่อนจากพนักงานทั่วไป)</label>
+            </div>
           </div>
           <div className="flex gap-3">
             <button onClick={handleAdd} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -1085,6 +1196,16 @@ function ExpenseCategoriesTab() {
                   ))}
                 </select>
               </div>
+              <div className="flex items-center gap-2 mt-4">
+                <input 
+                  type="checkbox" 
+                  id="is_admin_only_edit" 
+                  className="w-4 h-4 rounded border-slate-600 bg-slate-900/60"
+                  checked={editCat.is_admin_only || false} 
+                  onChange={e => setEditCat({ ...editCat, is_admin_only: e.target.checked })} 
+                />
+                <label htmlFor="is_admin_only_edit" className="text-slate-300 text-sm">แสดงเฉพาะผู้บริหาร (ซ่อนจากพนักงานทั่วไป)</label>
+              </div>
             </div>
 
             <div className="flex gap-3 justify-end mt-6">
@@ -1114,7 +1235,12 @@ function ExpenseCategoriesTab() {
                   <Tags className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <p className="text-white font-semibold">{cat.name}</p>
+                  <p className="text-white font-semibold flex items-center gap-2">
+                    {cat.name}
+                    {cat.is_admin_only && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">ผู้บริหารเท่านั้น</span>
+                    )}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -1145,10 +1271,11 @@ function ExpenseCategoriesTab() {
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '../services/customerService';
 
 function CustomersTab() {
+  const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [branches, setBranches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ name: '', company: '', phone: '', tax_id: '', ar_reminder_days: 30, branch_id: '' });
+  const [newCustomer, setNewCustomer] = useState({ name: '', company: '', phone: '', tax_id: '', ar_reminder_days: 30, branch_id: user?.branch_id || '' });
   const [editCustomer, setEditCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -1165,8 +1292,8 @@ function CustomersTab() {
       ]);
       setCustomers(custRes || []);
       setBranches(branchesRes || []);
-      if (branchesRes?.length > 0 && !newCustomer.branch_id) {
-        setNewCustomer(prev => ({ ...prev, branch_id: branchesRes[0].id }));
+      if (!newCustomer.branch_id && user?.branch_id) {
+        setNewCustomer(prev => ({ ...prev, branch_id: user.branch_id }));
       }
     } catch (err) {
       console.error(err);
@@ -1186,7 +1313,7 @@ function CustomersTab() {
         ar_reminder_days: parseInt(newCustomer.ar_reminder_days) || 30,
         branch_id: newCustomer.branch_id
       });
-      setNewCustomer(prev => ({ ...prev, name: '', company: '', phone: '', tax_id: '', ar_reminder_days: 30 }));
+      setNewCustomer(prev => ({ ...prev, name: '', company: '', phone: '', tax_id: '', ar_reminder_days: 30, branch_id: user?.branch_id || '' }));
       setShowAdd(false);
       loadData();
     } catch (err) {

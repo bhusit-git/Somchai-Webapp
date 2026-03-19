@@ -1,0 +1,2 @@
+ALTER TABLE public.branches ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS is_late BOOLEAN DEFAULT FALSE;

@@ -19,19 +19,23 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const loginWithPin = async (pin) => {
+  const loginWithPin = async (pin, userId = null) => {
     try {
       setLoading(true);
-      // In a real production app, we should use proper hashing/auth
-      // For this ERP, we are matching the pin_hash directly against the user table
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('users')
         .select(`
           *,
           branches:branch_id (name)
         `)
-        .eq('pin_hash', pin)
-        .single();
+        .eq('pin_hash', pin);
+
+      if (userId) {
+        query = query.eq('id', userId);
+      }
+
+      const { data, error } = await query.single();
 
       if (error || !data) {
         throw new Error('รหัส PIN ไม่ถูกต้อง หรือไม่พบผู้ใช้งาน');
@@ -43,6 +47,7 @@ export const AuthProvider = ({ children }) => {
       const userData = {
         id: data.id,
         name: data.name,
+        employee_id: data.employee_id || null,
         role: data.role,
         branch_id: data.branch_id,
         branch_name: data.branches?.name || 'ไม่ระบุสาขา'
@@ -50,11 +55,11 @@ export const AuthProvider = ({ children }) => {
 
       setUser(userData);
       localStorage.setItem('cashsync_user', JSON.stringify(userData));
-      
+
       // Redirect to dashboard or previous page
       const origin = location.state?.from?.pathname || '/';
       navigate(origin);
-      
+
       return { success: true };
     } catch (err) {
       console.error('Login error:', err);

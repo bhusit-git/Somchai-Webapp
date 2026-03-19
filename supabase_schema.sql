@@ -13,6 +13,7 @@ DROP TABLE IF EXISTS public.grn_items CASCADE;
 DROP TABLE IF EXISTS public.grn_headers CASCADE;
 DROP TABLE IF EXISTS public.ar_payments CASCADE;
 DROP TABLE IF EXISTS public.accounts_receivable CASCADE;
+DROP TABLE IF EXISTS public.customers CASCADE;
 DROP TABLE IF EXISTS public.safe_transactions CASCADE;
 DROP TABLE IF EXISTS public.manager_safes CASCADE;
 DROP TABLE IF EXISTS public.fixed_costs CASCADE;
@@ -226,6 +227,7 @@ CREATE TABLE public.attendance (
     type TEXT NOT NULL CHECK (type IN ('clock_in', 'clock_out')),
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     note TEXT,
+    shift_type TEXT,
     selfie_url TEXT,
     lat NUMERIC,
     lng NUMERIC,
@@ -240,7 +242,7 @@ CREATE TABLE public.employee_schedules (
     user_id UUID NOT NULL REFERENCES public.users(id),
     branch_id UUID REFERENCES public.branches(id),
     schedule_date DATE NOT NULL,
-    shift_type TEXT NOT NULL CHECK (shift_type IN ('morning', 'afternoon', 'fullday', 'off')),
+    shift_type TEXT NOT NULL CHECK (shift_type IN ('morning', 'afternoon', 'evening', 'night', 'fullday')),
     notes TEXT,
     created_by UUID REFERENCES public.users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -339,12 +341,17 @@ CREATE TABLE public.fixed_costs (
 -- =========================================================
 CREATE TABLE public.inventory_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
-    unit TEXT NOT NULL,
-    current_stock NUMERIC(10, 2) DEFAULT 0,
-    min_stock_level NUMERIC(10, 2) DEFAULT 0,
-    cost_per_unit NUMERIC(10, 2) DEFAULT 0,
-    category TEXT,
+    purchase_unit TEXT NOT NULL DEFAULT '',   -- หน่วยซื้อ เช่น ลัง, ถุง, แพ็ค
+    stock_unit TEXT NOT NULL DEFAULT '',      -- หน่วยสต๊อก เช่น ไม้, ชิ้น, กรัม
+    conversion_factor NUMERIC DEFAULT 1,      -- 1 purchase_unit = N stock_units
+    yield_pct NUMERIC DEFAULT 100,            -- % ที่ใช้ได้จริงหลังตัดแต่ง
+    reorder_point NUMERIC DEFAULT 0,          -- จุดสั่งซื้อ (แจ้งเตือน)
+    par_level NUMERIC DEFAULT 0,              -- สต๊อกที่ควรมีติดร้าน
+    lead_time_days INTEGER DEFAULT 1,         -- ระยะเวลารอของ (วัน)
+    cost_per_stock_unit NUMERIC DEFAULT 0,    -- ต้นทุนต่อหน่วยสต๊อก
+    current_stock NUMERIC DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -636,3 +643,137 @@ CREATE TRIGGER trigger_sync_full_name
     BEFORE INSERT OR UPDATE ON public.users
     FOR EACH ROW
     EXECUTE FUNCTION public.sync_full_name();
+
+-- =========================================================================================
+-- STORAGE: Selfie bucket for Attendance photos (Camera Integration — M1)
+-- Run this ONCE in Supabase Dashboard → SQL Editor
+-- =========================================================================================
+
+-- Create the selfies bucket (public read so selfie_url links work in the table)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('selfies', 'selfies', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow anyone to upload selfies (tighten with auth in production)
+CREATE POLICY "selfies_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'selfies');
+
+-- Allow public read of selfie images
+CREATE POLICY "selfies_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'selfies');
+
+
+-- =========================================================================================
+-- PRODUCTION RLS POLICIES — Role-Based (activate after migrating to Supabase Auth)
+-- =========================================================================================
+-- ⚠ Prerequisites:
+--   1. Migrate login from PIN-based → supabase.auth.signInWithPassword()
+--   2. Store role in auth.users.raw_user_meta_data.role
+--   3. DROP all existing "USING (true)" policies above before applying these
+--
+-- Helper expression:  (auth.jwt()->'user_metadata'->>'role')
+-- =========================================================================================
+
+/*
+-- ── branches: all authenticated users can read ──
+CREATE POLICY "branches_select_rbac" ON public.branches
+  FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "branches_manage_rbac" ON public.branches
+  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner'));
+
+-- ── users: mgmt can manage, staff/cook can read own ──
+CREATE POLICY "users_select_rbac" ON public.users
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR id = auth.uid()
+  );
+CREATE POLICY "users_manage_rbac" ON public.users
+  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+
+-- ── shifts: mgmt only ──
+CREATE POLICY "shifts_select_rbac" ON public.shifts
+  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+CREATE POLICY "shifts_manage_rbac" ON public.shifts
+  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','store_manager'));
+
+-- ── transactions: staff sees own, mgmt sees all ──
+CREATE POLICY "transactions_select_rbac" ON public.transactions
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR created_by = auth.uid()
+  );
+CREATE POLICY "transactions_insert_rbac" ON public.transactions
+  FOR INSERT WITH CHECK (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','staff')
+  );
+
+-- ── expenses: staff creates own, mgmt manages ──
+CREATE POLICY "expenses_select_rbac" ON public.expenses
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR created_by = auth.uid()
+  );
+CREATE POLICY "expenses_insert_rbac" ON public.expenses
+  FOR INSERT WITH CHECK (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','staff')
+  );
+CREATE POLICY "expenses_update_rbac" ON public.expenses
+  FOR UPDATE USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+
+-- ── attendance: staff/cook sees own, mgmt sees all ──
+CREATE POLICY "attendance_select_rbac" ON public.attendance
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR user_id = auth.uid()
+  );
+CREATE POLICY "attendance_insert_rbac" ON public.attendance
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- ── manager_safes / safe_transactions: mgmt only ──
+CREATE POLICY "manager_safes_select_rbac" ON public.manager_safes
+  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+CREATE POLICY "safe_transactions_select_rbac" ON public.safe_transactions
+  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+
+-- ── inventory_items: cook + mgmt ──
+CREATE POLICY "inventory_items_select_rbac" ON public.inventory_items
+  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','cook'));
+CREATE POLICY "inventory_items_manage_rbac" ON public.inventory_items
+  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+
+-- ── hr_leave_requests: own + mgmt ──
+CREATE POLICY "hr_leave_requests_select_rbac" ON public.hr_leave_requests
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR user_id = auth.uid()
+  );
+CREATE POLICY "hr_leave_requests_insert_rbac" ON public.hr_leave_requests
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+-- ── hr_salary_adjustments: own + mgmt ──
+CREATE POLICY "hr_salary_adjustments_select_rbac" ON public.hr_salary_adjustments
+  FOR SELECT USING (
+    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
+    OR user_id = auth.uid()
+  );
+CREATE POLICY "hr_salary_adjustments_manage_rbac" ON public.hr_salary_adjustments
+  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
+*/
+
+
+-- =========================================================================================
+-- MIGRATION: ถ้าตาราง inventory_items มีอยู่แล้ว (ไม่ต้องการ DROP ข้อมูลเดิม)
+-- คัดลอก block นี้ไปรันใน Supabase SQL Editor แยกต่างหาก
+-- =========================================================================================
+/*
+ALTER TABLE public.inventory_items
+    ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS purchase_unit TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS stock_unit TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS conversion_factor NUMERIC DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS yield_pct NUMERIC DEFAULT 100,
+    ADD COLUMN IF NOT EXISTS reorder_point NUMERIC DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS par_level NUMERIC DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS lead_time_days INTEGER DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS cost_per_stock_unit NUMERIC DEFAULT 0;
+*/

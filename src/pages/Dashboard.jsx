@@ -10,8 +10,10 @@ import {
   Receipt,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     todaySales: 0,
     totalOrders: 0,
@@ -22,15 +24,18 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
+    if (user?.branch_id) {
+      loadDashboardData();
+    }
+  }, [user?.branch_id]);
 
   async function loadDashboardData() {
+    if (!user?.branch_id) return;
     try {
       const [txRes, expRes, userRes] = await Promise.all([
-        supabase.from('transactions').select('*').eq('status', 'completed').order('created_at', { ascending: false }).limit(5),
-        supabase.from('expenses').select('amount'),
-        supabase.from('users').select('id').eq('is_active', true),
+        supabase.from('transactions').select('*').eq('status', 'completed').eq('branch_id', user.branch_id).order('created_at', { ascending: false }).limit(5),
+        supabase.from('expenses').select('amount').eq('branch_id', user.branch_id),
+        supabase.from('users').select('id').eq('is_active', true).eq('branch_id', user.branch_id),
       ]);
 
       const transactions = txRes.data || [];
