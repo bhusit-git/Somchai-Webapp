@@ -42,7 +42,8 @@ export default function Expenses() {
       let expQuery = supabase.from('expenses')
         .select('*, creator:users!created_by(name, full_name), approver:users!approved_by(name, full_name)')
         .eq('branch_id', user.branch_id);
-      if (user.role === 'staff') {
+      
+      if (!['owner', 'manager'].includes(user.role)) {
         expQuery = expQuery.eq('created_by', user.id);
       }
       expQuery = expQuery.order('created_at', { ascending: false }).limit(50);
@@ -102,14 +103,9 @@ export default function Expenses() {
   };
 
   async function handleApprove(expense) {
-    const { data: managers } = await supabase.from('users')
-      .select('id')
-      .in('role', ['store_manager', 'owner'])
-      .limit(1);
-
     const { error } = await supabase.from('expenses').update({
       status: 'approved',
-      approved_by: managers?.[0]?.id || expense.created_by,
+      approved_by: user?.id,
       approved_at: new Date().toISOString(),
     }).eq('id', expense.id);
 
@@ -212,7 +208,7 @@ export default function Expenses() {
       </div>
 
       {/* Stats */}
-      {user?.role !== 'staff' && (
+      {['owner', 'manager'].includes(user?.role) && (
         <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon orange">
@@ -316,7 +312,7 @@ export default function Expenses() {
                     <td>{new Date(exp.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</td>
                     <td>
                       <div className="flex gap-2">
-                        {exp.status === 'pending' && (
+                        {exp.status === 'pending' && ['owner', 'manager'].includes(user?.role) && (
                           <>
                             <button className="btn btn-sm btn-success" onClick={() => handleApprove(exp)} title="อนุมัติ">
                               <CheckCircle size={14} />
@@ -454,10 +450,10 @@ export default function Expenses() {
               <div className="modal-body">
                 <div className="p-4 mb-4 rounded-xl border border-blue-500/30 bg-blue-500/10 space-y-3">
                   <div className="form-group mb-0">
-                    <label className="form-label text-blue-400">ผู้อนุมัติการแก้ไข (ผจก.ขึ้นไป) *</label>
+                    <label className="form-label text-blue-400">ผู้อนุมัติการแก้ไข (ผจก.เขตขึ้นไป) *</label>
                     <select className="form-select border-blue-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                      {users.filter(u => ['manager', 'owner'].includes(u.role)).map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
                     </select>
                   </div>
                   <div className="form-group mb-0">
@@ -537,10 +533,10 @@ export default function Expenses() {
                 </p>
                 <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 space-y-3">
                   <div className="form-group mb-0">
-                    <label className="form-label text-red-400">ผู้อนุมัติยกเลิก (ผจก.ขึ้นไป) *</label>
+                    <label className="form-label text-red-400">ผู้อนุมัติยกเลิก (ผจก.เขตขึ้นไป) *</label>
                     <select className="form-select border-red-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                      {users.filter(u => ['manager', 'owner'].includes(u.role)).map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
                     </select>
                   </div>
                   <div className="form-group mb-0">
