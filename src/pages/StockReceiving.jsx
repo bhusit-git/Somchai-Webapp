@@ -42,7 +42,6 @@ import { useAuth } from '../contexts/AuthContext';
 export default function StockReceiving() {
   const [grns, setGrns] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
-  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(null);
@@ -71,7 +70,7 @@ export default function StockReceiving() {
         .select(`
           *,
           receiver:users!received_by(name, full_name),
-          items:grn_items(count)
+          items:grn_items(id, inventory_item_id, qty_purchase, qty_stock, unit_cost)
         `)
         .eq('branch_id', user.branch_id)
         .order('created_at', { ascending: false });
@@ -86,17 +85,8 @@ export default function StockReceiving() {
       
       if (invErr && invErr.code !== '42P01') console.error(invErr);
 
-      // 3. Fetch Users
-      const { data: userData } = await supabase
-        .from('users')
-        .select('id, name, full_name, role')
-        .in('role', ['store_manager', 'area_manager', 'owner'])
-        .eq('is_active', true)
-        .eq('branch_id', user.branch_id);
-
       setGrns(grnData || []);
       setInventoryItems(invData || []);
-      setUsers(userData || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -105,7 +95,7 @@ export default function StockReceiving() {
   }
 
   const openCreateModal = () => {
-    setHeaderForm({ supplier_name: '', invoice_ref: '', received_by: '' });
+    setHeaderForm({ supplier_name: '', invoice_ref: '', received_by: user?.id || '' });
     setLineItems([]);
     setShowModal(true);
   };
@@ -113,7 +103,7 @@ export default function StockReceiving() {
   const addLineItem = () => {
     setLineItems([
       ...lineItems, 
-      { id: Date.now().toString(), item_id: '', qty_purchase: '', unit_cost: '' }
+      { id: Date.now().toString(), item_id: '', qty_purchase: '' }
     ]);
   };
 
@@ -151,8 +141,8 @@ export default function StockReceiving() {
     
     // Validate line items
     for (let li of lineItems) {
-      if (!li.item_id || !li.qty_purchase || !li.unit_cost) {
-        alert('กรุณากรอกข้อมูลรายการสินค้าให้ครบถ้วน');
+      if (!li.item_id || !li.qty_purchase) {
+        alert('กรุณาเลือกสินค้าและกรอกจำนวนให้ครบถ้วน');
         return;
       }
     }
@@ -161,8 +151,8 @@ export default function StockReceiving() {
       const branch_id = user?.branch_id;
       if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
 
-      // Calculate total value
-      const total_value = lineItems.reduce((sum, item) => sum + (Number(item.qty_purchase) * Number(item.unit_cost)), 0);
+      // total_value not tracked here (pricing is recorded in Expenses)
+      const total_value = 0;
       const grn_number = `GRN-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
       const headerPayload = {
@@ -203,24 +193,31 @@ export default function StockReceiving() {
           inventory_item_id: li.item_id,
           qty_purchase: Number(li.qty_purchase),
           qty_stock,
-          unit_cost: Number(li.unit_cost)
+          unit_cost: 0,
+          // Fallbacks for older schema to prevent NOT NULL constraint errors
+          quantity: Number(li.qty_purchase),
+          unit: invItem ? invItem.purchase_unit : 'หน่วย',
+          cost_per_unit: 0,
+          total_cost: 0
         };
       });
 
       const { error: itemsErr } = await supabase.from('grn_items').insert(itemsPayload);
       if (itemsErr) throw itemsErr;
 
-      // If confirmed, update inventory stock & WAC (Simplified WAC logic for prototype)
+      // If confirmed, update inventory current_stock (เพิ่มสต๊อกตามจำนวนหน่วยสต๊อก)
       if (status === 'confirmed') {
-        const rpcPayload = itemsPayload.map(i => ({
-          item_id: i.inventory_item_id,
-          qty_added: i.qty_stock,
-          cost_added: i.qty_purchase * i.unit_cost
-        }));
-        
-        // In reality, we would call a Postgres RPC function or trigger to update safely:
-        // await supabase.rpc('process_grn_confirmation', { items: rpcPayload });
-        console.log('Would update inventory stock here:', rpcPayload);
+        for (const li of itemsPayload) {
+          const invItem = inventoryItems.find(i => i.id === li.inventory_item_id);
+          if (invItem) {
+            const newStock = Number(invItem.current_stock || 0) + li.qty_stock;
+            const { error: stockErr } = await supabase
+              .from('inventory_items')
+              .update({ current_stock: newStock })
+              .eq('id', li.inventory_item_id);
+            if (stockErr) console.error('Error updating stock:', stockErr);
+          }
+        }
       }
 
       setShowModal(false);
@@ -243,7 +240,6 @@ export default function StockReceiving() {
     return g.status === 'confirmed' &&
       new Date(dateField).toDateString() === new Date().toDateString();
   }).length;
-  const totalValueReceived = grns.filter(g => g.status === 'confirmed').reduce((sum, g) => sum + Number(g.total_value), 0);
 
   return (
     <div>
@@ -275,15 +271,6 @@ export default function StockReceiving() {
           <div className="stat-info">
             <h3>{confirmedTodayCount}</h3>
             <p>GRN ยืนยันแล้ว (วันนี้)</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon blue">
-            <FileText size={22} />
-          </div>
-          <div className="stat-info">
-            <h3>฿{totalValueReceived.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            <p>มูลค่ารับเข้าแล้วทั้งหมด</p>
           </div>
         </div>
       </div>
@@ -322,7 +309,7 @@ export default function StockReceiving() {
                 <th>ผู้จำหน่าย</th>
                 <th>อ้างอิงบิล</th>
                 <th>จำนวนรายการ</th>
-                <th>มูลค่ารวม (฿)</th>
+                <th>จำนวน (หน่วยซื้อ)</th>
                 <th>สถานะ</th>
                 <th>ผู้รับของ</th>
               </tr>
@@ -339,8 +326,8 @@ export default function StockReceiving() {
                     <td>{new Date(g.created_at).toLocaleString('th-TH')}</td>
                     <td>{g.supplier_name}</td>
                     <td>{g.invoice_ref || '-'}</td>
-                    <td>{g.items?.[0]?.count || g.items?.length || 0}</td>
-                    <td style={{ fontWeight: 600 }}>{Number(g.total_value).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td>{g.items?.length || 0}</td>
+                    <td style={{ fontWeight: 600 }}>{g.items?.reduce((sum, i) => sum + Number(i.qty_purchase || 0), 0).toLocaleString()}</td>
                     <td>
                       {g.status === 'confirmed' ? (
                         <span className="badge badge-success">ยืนยันแล้ว</span>
@@ -378,11 +365,14 @@ export default function StockReceiving() {
                   <input type="text" className="form-input" value={headerForm.invoice_ref} onChange={e => setHeaderForm({...headerForm, invoice_ref: e.target.value})} placeholder="เลขที่บิล" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">ผู้รับของ *</label>
-                  <select className="form-select" value={headerForm.received_by} onChange={e => setHeaderForm({...headerForm, received_by: e.target.value})}>
-                    <option value="">-- เลือกผู้จัดการ/พนักงานรับของ --</option>
-                    {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.name}</option>)}
-                  </select>
+                  <label className="form-label">ผู้รับของ</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={user?.full_name || user?.name || 'ผู้ใช้งานปัจจุบัน'}
+                    disabled
+                    style={{ opacity: 0.7 }}
+                  />
                 </div>
               </div>
 
@@ -405,17 +395,13 @@ export default function StockReceiving() {
                       <thead style={{ background: 'var(--bg-tertiary)' }}>
                         <tr>
                           <th>สินค้า</th>
-                          <th style={{ width: '120px' }}>จำนวนรับ (หน่วยซื้อ)</th>
-                          <th style={{ width: '150px' }}>ราคาต่อหน่วย (฿)</th>
-                          <th style={{ width: '150px' }}>แปลงเป็น (หน่วยสต๊อก)</th>
-                          <th style={{ width: '120px' }}>รวม (฿)</th>
+                          <th style={{ width: '150px' }}>จำนวนรับ (หน่วยซื้อ)</th>
+                          <th style={{ width: '180px' }}>แปลงเป็น (หน่วยสต๊อก)</th>
                           <th style={{ width: '50px' }}></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {lineItems.map(li => {
-                          const total = (Number(li.qty_purchase || 0) * Number(li.unit_cost || 0)).toFixed(2);
-                          return (
+                        {lineItems.map(li => (
                             <tr key={li.id}>
                               <td>
                                 <select className="form-select" value={li.item_id} onChange={(e) => updateLineItem(li.id, 'item_id', e.target.value)}>
@@ -428,31 +414,22 @@ export default function StockReceiving() {
                               <td>
                                 <input type="number" className="form-input" min="0.01" step="0.01" value={li.qty_purchase} onChange={(e) => updateLineItem(li.id, 'qty_purchase', e.target.value)} />
                               </td>
-                              <td>
-                                <input type="number" className="form-input" min="0" step="0.01" value={li.unit_cost} onChange={(e) => updateLineItem(li.id, 'unit_cost', e.target.value)} />
-                              </td>
                               <td style={{ color: 'var(--accent-info)', fontSize: '13px', fontWeight: 500 }}>
                                 {getStockQtyPlaceholder(li)}
                               </td>
-                              <td style={{ fontWeight: 600 }}>{total}</td>
                               <td>
                                 <button className="btn-icon" style={{ borderColor: 'transparent', color: 'var(--accent-danger)' }} onClick={() => removeLineItem(li.id)}>
                                   <Trash2 size={16} />
                                 </button>
                               </td>
                             </tr>
-                          );
-                        })}
+                          ))}
                       </tbody>
                     </table>
                   </div>
                 )}
                 
-                {lineItems.length > 0 && (
-                  <div style={{ textAlign: 'right', marginTop: '16px', fontSize: '16px', fontWeight: 700 }}>
-                    มูลค่าสุทธิ: ฿{lineItems.reduce((s, i) => s + (Number(i.qty_purchase||0) * Number(i.unit_cost||0)), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </div>
-                )}
+
               </div>
             </div>
 
@@ -474,7 +451,7 @@ export default function StockReceiving() {
       {/* Detail Modal */}
       {showDetailModal && (
         <div className="modal-overlay" onClick={() => setShowDetailModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
             <div className="modal-header">
               <h3>รายละเอียดใบรับสินค้า: {showDetailModal.grn_number}</h3>
               <button className="btn-icon" onClick={() => setShowDetailModal(null)}>✕</button>
@@ -488,13 +465,41 @@ export default function StockReceiving() {
                     <span style={{color: 'var(--accent-success)', fontWeight: 600}}>ยืนยันแล้ว</span> : 
                     <span style={{color: 'var(--accent-warning)', fontWeight: 600}}>ฉบับร่าง</span>
                 }</div>
-                <div><strong>มูลค่ารวม:</strong> ฿{Number(showDetailModal.total_value).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                <div><strong>ผู้รับของ:</strong> {showDetailModal.receiver?.full_name || showDetailModal.receiver?.name || '-'}</div>
+                <div><strong>วันที่รับ:</strong> {new Date(showDetailModal.received_at || showDetailModal.created_at).toLocaleString('th-TH')}</div>
+                <div><strong>จำนวนรวม (หน่วยซื้อ):</strong> {showDetailModal.items?.reduce((sum, i) => sum + Number(i.qty_purchase || 0), 0).toLocaleString()}</div>
               </div>
 
-              <h4 style={{ fontSize: '14px', marginBottom: '12px' }}>รายการที่สั่ง: {showDetailModal.items?.[0]?.count || 0} รายการ</h4>
-              <div style={{ padding: '20px', textAlign: 'center', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)' }}>
-                [แสดงตารางรายการสินค้า (grn_items) ที่เชื่อมกับฐานข้อมูล]
-              </div>
+              <h4 style={{ fontSize: '14px', marginBottom: '12px' }}>รายการสินค้า: {showDetailModal.items?.length || 0} รายการ</h4>
+              {showDetailModal.items && showDetailModal.items.length > 0 ? (
+                <div style={{ border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                  <table style={{ margin: 0 }}>
+                    <thead style={{ background: 'var(--bg-tertiary)' }}>
+                      <tr>
+                        <th>ชื่อสินค้า</th>
+                        <th>จำนวนรับ (หน่วยซื้อ)</th>
+                        <th>แปลงเป็น (หน่วยสต๊อก)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {showDetailModal.items.map((item, idx) => {
+                        const invItem = inventoryItems.find(i => i.id === item.inventory_item_id);
+                        return (
+                          <tr key={item.id || idx}>
+                            <td style={{ fontWeight: 600 }}>{invItem?.name || 'สินค้าไม่ทราบ'}</td>
+                            <td>{Number(item.qty_purchase || 0).toLocaleString()} {invItem?.purchase_unit || ''}</td>
+                            <td style={{ color: 'var(--accent-info)' }}>{Number(item.qty_stock || 0).toLocaleString()} {invItem?.stock_unit || ''}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)' }}>
+                  ไม่มีรายการสินค้า
+                </div>
+              )}
             </div>
           </div>
         </div>

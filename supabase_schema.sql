@@ -353,6 +353,7 @@ CREATE TABLE public.inventory_items (
     cost_per_stock_unit NUMERIC DEFAULT 0,    -- ต้นทุนต่อหน่วยสต๊อก
     current_stock NUMERIC DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
+    sku TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -386,12 +387,17 @@ CREATE TABLE public.grn_headers (
 CREATE TABLE public.grn_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     grn_id UUID REFERENCES public.grn_headers(id) ON DELETE CASCADE,
-    item_id UUID REFERENCES public.inventory_items(id),
-    item_name TEXT,
-    quantity NUMERIC(10, 2) NOT NULL,
+    inventory_item_id UUID REFERENCES public.inventory_items(id),
+    qty_purchase NUMERIC(10, 2) NOT NULL,
+    qty_stock NUMERIC(10, 2) NOT NULL,
+    unit_cost NUMERIC(10, 2) DEFAULT 0,
+    lot_id UUID DEFAULT gen_random_uuid(),
+    expiry_date DATE,
+    -- คอลัมน์เก่าเผื่อมีระบบที่ยังเรียกใช้ แล้วค่อยไปลบทีหลังด้วย all_updates.sql
+    quantity NUMERIC(10, 2),
     unit TEXT,
-    cost_per_unit NUMERIC(10, 2) NOT NULL,
-    total_cost NUMERIC(10, 2) NOT NULL,
+    cost_per_unit NUMERIC(10, 2),
+    total_cost NUMERIC(10, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -775,5 +781,6 @@ ALTER TABLE public.inventory_items
     ADD COLUMN IF NOT EXISTS reorder_point NUMERIC DEFAULT 0,
     ADD COLUMN IF NOT EXISTS par_level NUMERIC DEFAULT 0,
     ADD COLUMN IF NOT EXISTS lead_time_days INTEGER DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS cost_per_stock_unit NUMERIC DEFAULT 0;
+    ADD COLUMN IF NOT EXISTS cost_per_stock_unit NUMERIC DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS sku TEXT;
 */

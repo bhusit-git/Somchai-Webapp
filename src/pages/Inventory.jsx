@@ -34,6 +34,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 // Defined outside component to avoid re-creating on every render
 const INITIAL_FORM_STATE = {
+  sku: '',
   name: '',
   purchase_unit: '',
   stock_unit: '',
@@ -155,6 +156,7 @@ export default function Inventory() {
   const openEditModal = (item) => {
     setEditingItem(item);
     setFormData({
+      sku: item.sku || '',
       name: item.name || '',
       purchase_unit: item.purchase_unit || '',
       stock_unit: item.stock_unit || '',
@@ -175,7 +177,7 @@ export default function Inventory() {
   };
 
   const filteredItems = items.filter(item => {
-    const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = item.name?.toLowerCase().includes(searchTerm.toLowerCase()) || item.sku?.toLowerCase().includes(searchTerm.toLowerCase());
     const isLow = Number(item.current_stock) <= Number(item.reorder_point);
 
     if (statusFilter === 'low') return matchesSearch && isLow;
@@ -301,7 +303,7 @@ export default function Inventory() {
 
                   return (
                     <tr key={item.id}>
-                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{item.id?.substring(0, 8) || '-'}</td>
+                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{item.sku || '-'}</td>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</td>
                       <td style={{ fontWeight: 600, color: isOut ? 'var(--accent-danger)' : (isLow ? 'var(--accent-warning)' : 'var(--accent-success)') }}>
                         {currentStock.toLocaleString()}
@@ -347,9 +349,15 @@ export default function Inventory() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">ชื่อสินค้า *</label>
-                  <input type="text" className="form-input" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="เช่น เนื้อวัวสไลด์" />
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label">รหัสสินค้า</label>
+                    <input type="text" className="form-input" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="เช่น SKU001 (เว้นว่างได้)" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 2 }}>
+                    <label className="form-label">ชื่อสินค้า *</label>
+                    <input type="text" className="form-input" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="เช่น เนื้อวัวสไลด์" />
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: '16px' }}>
