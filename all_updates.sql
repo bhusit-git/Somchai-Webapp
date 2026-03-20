@@ -237,3 +237,19 @@ END $$;
 -- Reload Supabase PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
 
+-- 12. สร้างตารางสูตรอาหาร (BOM) สำหรับ M3A และ COGS Engine
+CREATE TABLE IF NOT EXISTS public.menu_item_ingredients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    menu_item_id UUID NOT NULL, -- อ้างอิงตาราง menu_items ที่คุณมีอยู่
+    inventory_item_id UUID REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+    qty_required NUMERIC NOT NULL, -- จำนวนหน่วยสต๊อกที่ใช้ต่อ 1 เสิร์ฟ
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- RLS สำหรับ menu_item_ingredients
+ALTER TABLE public.menu_item_ingredients ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "menu_item_ingredients_all" ON public.menu_item_ingredients;
+CREATE POLICY "menu_item_ingredients_all" ON public.menu_item_ingredients FOR ALL USING (true) WITH CHECK (true);
+
+-- แจ้งเตือน: อย่าลืมทำ Foreign Key ให้ menu_item_id ชี้ไปที่ตาราง menu ของระบบ (เช่น menu_items) ถ้ามี
+-- ALTER TABLE public.menu_item_ingredients ADD CONSTRAINT fk_menu_item FOREIGN KEY (menu_item_id) REFERENCES public.menu_items(id) ON DELETE CASCADE;

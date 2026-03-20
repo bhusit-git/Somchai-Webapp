@@ -46,6 +46,7 @@ export default function StockReceiving() {
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingGrnId, setEditingGrnId] = useState(null);
 
   // Form State
   const [headerForm, setHeaderForm] = useState({
@@ -70,7 +71,7 @@ export default function StockReceiving() {
         .select(`
           *,
           receiver:users!received_by(name, full_name),
-          items:grn_items(id, inventory_item_id, qty_purchase, qty_stock, unit_cost)
+          items:grn_items(id, inventory_item_id, qty_purchase, qty_stock, unit_cost, lot_id, expiry_date)
         `)
         .eq('branch_id', user.branch_id)
         .order('created_at', { ascending: false });
@@ -95,6 +96,7 @@ export default function StockReceiving() {
   }
 
   const openCreateModal = () => {
+    setEditingGrnId(null);
     setHeaderForm({ supplier_name: '', invoice_ref: '', received_by: user?.id || '' });
     setLineItems([]);
     setShowModal(true);
@@ -103,7 +105,7 @@ export default function StockReceiving() {
   const addLineItem = () => {
     setLineItems([
       ...lineItems, 
-      { id: Date.now().toString(), item_id: '', qty_purchase: '' }
+      { id: Date.now().toString(), item_id: '', qty_purchase: '', expiry_date: '' }
     ]);
   };
 
@@ -119,6 +121,75 @@ export default function StockReceiving() {
 
   const removeLineItem = (id) => {
     setLineItems(lineItems.filter(item => item.id !== id));
+  };
+
+  const handleEdit = (grn) => {
+    if (grn.status === 'confirmed') {
+      const confirmEdit = window.confirm('เอกสารนี้ยืนยันและนำเข้าสต๊อกไปแล้ว การแก้ไขจะปรับปรุงตัวเลขสต๊อกใหม่ คุณแน่ใจหรือไม่ที่จะแก้ไข?');
+      if (!confirmEdit) return;
+    }
+
+    setEditingGrnId(grn.id);
+    setHeaderForm({
+      supplier_name: grn.supplier_name || '',
+      invoice_ref: grn.invoice_ref || '',
+      received_by: grn.received_by || user?.id || ''
+    });
+
+    if (grn.items && grn.items.length > 0) {
+      setLineItems(grn.items.map(item => ({
+        id: item.id || Date.now().toString() + Math.random(),
+        item_id: item.inventory_item_id,
+        qty_purchase: item.qty_purchase,
+        expiry_date: item.expiry_date || '',
+        // Keep original stock for reversal logic during save
+        original_qty_stock: item.qty_stock 
+      })));
+    } else {
+      setLineItems([]);
+    }
+
+    setShowDetailModal(null);
+    setShowModal(true);
+  };
+
+  const handleDelete = async (grn) => {
+    const confirmDelete = window.confirm(
+      grn.status === 'confirmed' 
+        ? 'เอกสารนี้ยืนยันแล้ว การลบจะหักปริมาณออกจากสต๊อกคืน คุณแน่ใจที่จะลบอย่างถาวรใช่ไหม?'
+        : 'คุณแน่ใจหรือไม่ที่จะลบเอกสารฉบับร่างนี้?'
+    );
+    if (!confirmDelete) return;
+
+    try {
+      // 1. Reverse stock if confirmed
+      if (grn.status === 'confirmed' && grn.items) {
+        for (const li of grn.items) {
+          const invItem = inventoryItems.find(i => i.id === li.inventory_item_id);
+          if (invItem) {
+            const newStock = Number(invItem.current_stock || 0) - Number(li.qty_stock || 0);
+            await supabase
+              .from('inventory_items')
+              .update({ current_stock: newStock })
+              .eq('id', li.inventory_item_id);
+          }
+        }
+      }
+
+      // 2. Cascade delete will handle grn_items if set up in DB. 
+      // If not safely set to cascade, we delete items first:
+      await supabase.from('grn_items').delete().eq('grn_id', grn.id);
+
+      // 3. Delete header
+      const { error } = await supabase.from('grn_headers').delete().eq('id', grn.id);
+      if (error) throw error;
+
+      setShowDetailModal(null);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting GRN: ' + err.message);
+    }
   };
 
   const getStockQtyPlaceholder = (lineItem) => {
@@ -157,7 +228,7 @@ export default function StockReceiving() {
 
       const headerPayload = {
         branch_id,
-        grn_number,
+        grn_number: editingGrnId ? undefined : grn_number, // Don't update number if editing
         supplier_name: headerForm.supplier_name,
         invoice_ref: headerForm.invoice_ref,
         received_by: headerForm.received_by,
@@ -166,21 +237,42 @@ export default function StockReceiving() {
         received_at: status === 'confirmed' ? new Date().toISOString() : null
       };
 
-      const { data: newGrn, error: headerErr } = await supabase
-        .from('grn_headers')
-        .insert(headerPayload)
-        .select()
-        .single();
-
-      if (headerErr) {
-        if (headerErr.code === '42P01') {
-          console.log('Table missing, using local state simulation');
-          // Update local state for simulation removed
-          setGrns(grns);
-          setShowModal(false);
-          return;
+      let newGrn;
+      
+      if (editingGrnId) {
+        // If editing a confirmed GRN, reverse the old stock first
+        const oldGrn = grns.find(g => g.id === editingGrnId);
+        if (oldGrn && oldGrn.status === 'confirmed' && oldGrn.items) {
+           for (const oldItem of oldGrn.items) {
+             const invItem = inventoryItems.find(i => i.id === oldItem.inventory_item_id);
+             if (invItem) {
+               const reversedStock = Number(invItem.current_stock || 0) - Number(oldItem.qty_stock || 0);
+               await supabase.from('inventory_items').update({ current_stock: reversedStock }).eq('id', oldItem.inventory_item_id);
+               // Also update the local state to reflect the reversed amount before we add the new amount
+               invItem.current_stock = reversedStock; 
+             }
+           }
         }
-        throw headerErr;
+
+        const { data, error: headerErr } = await supabase
+          .from('grn_headers')
+          .update(headerPayload)
+          .eq('id', editingGrnId)
+          .select()
+          .single();
+        if (headerErr) throw headerErr;
+        newGrn = data || { id: editingGrnId };
+
+        // Delete old line items
+        await supabase.from('grn_items').delete().eq('grn_id', editingGrnId);
+      } else {
+        const { data, error: headerErr } = await supabase
+          .from('grn_headers')
+          .insert(headerPayload)
+          .select()
+          .single();
+        if (headerErr) throw headerErr;
+        newGrn = data;
       }
 
       // Insert line items
@@ -193,6 +285,7 @@ export default function StockReceiving() {
           inventory_item_id: li.item_id,
           qty_purchase: Number(li.qty_purchase),
           qty_stock,
+          expiry_date: li.expiry_date || null,
           unit_cost: 0,
           // Fallbacks for older schema to prevent NOT NULL constraint errors
           quantity: Number(li.qty_purchase),
@@ -349,7 +442,7 @@ export default function StockReceiving() {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
             <div className="modal-header">
-              <h3>รับสินค้าเข้า (Goods Received Note)</h3>
+              <h3>{editingGrnId ? 'แก้ไขใบรับสินค้า' : 'รับสินค้าเข้า (Goods Received Note)'}</h3>
               <button className="btn-icon" onClick={() => setShowModal(false)}>✕</button>
             </div>
             
@@ -395,8 +488,9 @@ export default function StockReceiving() {
                       <thead style={{ background: 'var(--bg-tertiary)' }}>
                         <tr>
                           <th>สินค้า</th>
-                          <th style={{ width: '150px' }}>จำนวนรับ (หน่วยซื้อ)</th>
-                          <th style={{ width: '180px' }}>แปลงเป็น (หน่วยสต๊อก)</th>
+                          <th style={{ width: '120px' }}>จำนวนรับ (หน่วยซื้อ)</th>
+                          <th style={{ width: '130px' }}>วันหมดอายุ</th>
+                          <th style={{ width: '160px' }}>แปลงเป็น (หน่วยสต๊อก)</th>
                           <th style={{ width: '50px' }}></th>
                         </tr>
                       </thead>
@@ -413,6 +507,9 @@ export default function StockReceiving() {
                               </td>
                               <td>
                                 <input type="number" className="form-input" min="0.01" step="0.01" value={li.qty_purchase} onChange={(e) => updateLineItem(li.id, 'qty_purchase', e.target.value)} />
+                              </td>
+                              <td>
+                                <input type="date" className="form-input" style={{ fontSize: '13px', padding: '6px 8px' }} value={li.expiry_date} onChange={(e) => updateLineItem(li.id, 'expiry_date', e.target.value)} />
                               </td>
                               <td style={{ color: 'var(--accent-info)', fontSize: '13px', fontWeight: 500 }}>
                                 {getStockQtyPlaceholder(li)}
@@ -477,8 +574,9 @@ export default function StockReceiving() {
                     <thead style={{ background: 'var(--bg-tertiary)' }}>
                       <tr>
                         <th>ชื่อสินค้า</th>
+                        <th>Lot ID / หมดอายุ</th>
                         <th>จำนวนรับ (หน่วยซื้อ)</th>
-                        <th>แปลงเป็น (หน่วยสต๊อก)</th>
+                        <th>แปลงเป็น (สต๊อก)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -487,6 +585,10 @@ export default function StockReceiving() {
                         return (
                           <tr key={item.id || idx}>
                             <td style={{ fontWeight: 600 }}>{invItem?.name || 'สินค้าไม่ทราบ'}</td>
+                            <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              <div style={{ fontFamily: 'monospace' }}>{(item.lot_id || '-').substring(0, 8)}</div>
+                              {item.expiry_date ? <div style={{ color: 'var(--accent-warning)', marginTop: '2px' }}>EXP: {new Date(item.expiry_date).toLocaleDateString('th-TH')}</div> : <div>EXP: -</div>}
+                            </td>
                             <td>{Number(item.qty_purchase || 0).toLocaleString()} {invItem?.purchase_unit || ''}</td>
                             <td style={{ color: 'var(--accent-info)' }}>{Number(item.qty_stock || 0).toLocaleString()} {invItem?.stock_unit || ''}</td>
                           </tr>
@@ -500,6 +602,17 @@ export default function StockReceiving() {
                   ไม่มีรายการสินค้า
                 </div>
               )}
+            </div>
+            <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+               <div>
+                  <button className="btn btn-ghost" style={{ color: 'var(--accent-danger)' }} onClick={() => handleDelete(showDetailModal)}>
+                     <Trash2 size={16} /> ลบใบรับสินค้า
+                  </button>
+               </div>
+               <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-ghost" onClick={() => handleEdit(showDetailModal)}>แก้ไข</button>
+                  <button className="btn btn-primary" onClick={() => setShowDetailModal(null)}>ปิด</button>
+               </div>
             </div>
           </div>
         </div>
