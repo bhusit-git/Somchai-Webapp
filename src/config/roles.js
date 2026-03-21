@@ -37,6 +37,7 @@ export const ROUTE_PERMISSIONS = {
   // --- Inventory ---
   '/inventory':       ['owner', 'manager', 'store_manager', 'cook'],  // Inventory        (N / F / F / F / F)
   '/stock-receiving': mgmt,                                           // Stock Receiving   (N / N / F / R / F)
+  '/bom':             ['owner', 'manager', 'store_manager', 'cook'],  // Recipe Management (BOM) (N / F / F / F / F)
 
   // --- Analytics ---
   '/cogs-engine':     mgmt,                                           // COGS Engine       (N / N / R / F / F)
@@ -71,6 +72,7 @@ export const SIDEBAR_ITEMS = [
   { label: 'Inventory', type: 'section' },
   { to: '/inventory',       label: 'คลังสินค้า (M7A)',      icon: 'Package',         roles: ROUTE_PERMISSIONS['/inventory'] },
   { to: '/stock-receiving', label: 'รับของ GRN (M7B)',       icon: 'PackagePlus',     roles: ROUTE_PERMISSIONS['/stock-receiving'] },
+  { to: '/bom',             label: 'สูตรอาหาร (BOM) (M7C)', icon: 'Receipt',         roles: ROUTE_PERMISSIONS['/bom'] },
 
   { label: 'Analytics & Intelligence', type: 'section' },
   { to: '/cogs-engine',     label: 'COGS Engine (M8)',      icon: 'PieChart',        roles: ROUTE_PERMISSIONS['/cogs-engine'] },

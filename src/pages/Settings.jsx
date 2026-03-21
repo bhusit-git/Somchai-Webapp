@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Users, Building2, Info, Settings as SettingsIcon, Plus, Eye, EyeOff,
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
-  Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase
+  Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const roleLabels = {
   owner: { label: 'เจ้าของ', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
@@ -89,6 +90,7 @@ export default function Settings() {
   const tabs = [
     { id: 'users', label: 'จัดการผู้ใช้งาน', icon: Users },
     { id: 'branches', label: 'จัดการสาขา', icon: Building2 },
+    { id: 'products', label: 'เมนูขาย', icon: UtensilsCrossed },
     { id: 'customers', label: 'ลูกค้ารายบุคคล', icon: Briefcase },
     { id: 'company', label: 'ข้อมูลบริษัท', icon: Info },
     { id: 'expense_categories', label: 'หมวดหมู่รายจ่าย', icon: Tags },
@@ -133,6 +135,7 @@ export default function Settings() {
         {/* Tab Content */}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'branches' && <BranchesTab />}
+        {activeTab === 'products' && <ProductsTab />}
         {activeTab === 'customers' && <CustomersTab />}
         {activeTab === 'company' && <CompanyInfoTab />}
         {activeTab === 'expense_categories' && <ExpenseCategoriesTab />}
@@ -1554,3 +1557,431 @@ function CustomersTab() {
     </div>
   );
 }
+
+// ============================================================
+// TAB 7: Products & Categories (เมนูขาย)
+// ============================================================
+
+function ProductsTab() {
+  const [categories, setCategories]   = useState([]);
+  const [products, setProducts]       = useState([]);
+  const [bomCosts, setBomCosts]       = useState({}); // { product_id: calculatedCost }
+  const [loading, setLoading]         = useState(true);
+
+  // Category state
+  const [showAddCat, setShowAddCat]   = useState(false);
+  const [newCat, setNewCat]           = useState({ name: '' });
+  const [editCat, setEditCat]         = useState(null);
+
+  // Product state
+  const [showAddProd, setShowAddProd] = useState(false);
+  const [newProd, setNewProd]         = useState({ name: '', price: '', category_id: '', is_available: true, sort_order: 0 });
+  const [editProd, setEditProd]       = useState(null);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [imgPreview, setImgPreview]   = useState(null); // for new product
+  const [imgFile, setImgFile]         = useState(null);
+  const [editImgFile, setEditImgFile] = useState(null);
+  const [editImgPreview, setEditImgPreview] = useState(null);
+
+  useEffect(() => { loadData(); }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [catRes, prodRes, bomRes] = await Promise.all([
+        supabase.from('categories').select('*').order('sort_order'),
+        supabase.from('products').select('*, categories(name)').order('sort_order'),
+        supabase.from('menu_item_ingredients')
+          .select('menu_item_id, qty_required, inventory_items(cost_per_stock_unit, yield_pct)'),
+      ]);
+      setCategories(catRes.data || []);
+
+      // Calculate BOM cost per product
+      const costMap = {};
+      (bomRes.data || []).forEach(row => {
+        const inv = row.inventory_items;
+        if (!inv) return;
+        const trueCost = (Number(inv.cost_per_stock_unit) / (Number(inv.yield_pct || 100) / 100));
+        const lineCost = Number(row.qty_required) * trueCost;
+        costMap[row.menu_item_id] = (costMap[row.menu_item_id] || 0) + lineCost;
+      });
+      setBomCosts(costMap);
+
+      // Sync calculated BOM cost → products.cost
+      const prods = prodRes.data || [];
+      const updates = prods.filter(p => costMap[p.id] !== undefined && Math.abs((costMap[p.id] || 0) - Number(p.cost || 0)) > 0.01);
+      for (const p of updates) {
+        await supabase.from('products').update({ cost: parseFloat(costMap[p.id].toFixed(2)) }).eq('id', p.id);
+      }
+
+      setProducts(prods.map(p => costMap[p.id] !== undefined ? { ...p, cost: parseFloat((costMap[p.id]).toFixed(2)) } : p));
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  };
+
+  // --- Image Upload Helper ---
+  const uploadImage = async (file, productId) => {
+    const ext = file.name.split('.').pop();
+    const path = `${productId}.${ext}`;
+    const { error } = await supabase.storage.from('menu-images').upload(path, file, { upsert: true });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage.from('menu-images').getPublicUrl(path);
+    return urlData.publicUrl;
+  };
+
+  // --- Category CRUD ---
+  const handleAddCat = async () => {
+    if (!newCat.name.trim()) return;
+    const { error } = await supabase.from('categories').insert({ name: newCat.name.trim(), is_active: true });
+    if (error) { alert('ไม่สามารถเพิ่มหมวดหมู่ได้'); return; }
+    setNewCat({ name: '' }); setShowAddCat(false); loadData();
+  };
+
+  const handleEditCat = async () => {
+    if (!editCat?.name?.trim()) return;
+    const { error } = await supabase.from('categories').update({ name: editCat.name.trim() }).eq('id', editCat.id);
+    if (error) { alert('ไม่สามารถแก้ไขหมวดหมู่ได้'); return; }
+    setEditCat(null); loadData();
+  };
+
+  const handleDeleteCat = async (id) => {
+    if (!confirm('ลบหมวดหมู่นี้? เมนูในหมวดนี้จะไม่มีหมวดหมู่')) return;
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) { alert('ไม่สามารถลบหมวดหมู่ได้ (อาจมีเมนูอ้างอิงอยู่)'); return; }
+    loadData();
+  };
+
+  // --- Product CRUD ---
+  const handleAddProd = async () => {
+    if (!newProd.name.trim() || !newProd.price) return;
+    setUploadingImg(true);
+    try {
+      const { data: inserted, error } = await supabase.from('products').insert({
+        name: newProd.name.trim(),
+        price: parseFloat(newProd.price),
+        cost: 0,
+        category_id: newProd.category_id || null,
+        is_available: newProd.is_available,
+        sort_order: parseInt(newProd.sort_order) || 0,
+      }).select().single();
+      if (error) { alert('ไม่สามารถเพิ่มเมนูได้: ' + error.message); return; }
+
+      if (imgFile && inserted?.id) {
+        const url = await uploadImage(imgFile, inserted.id);
+        await supabase.from('products').update({ image_url: url }).eq('id', inserted.id);
+      }
+      setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0 });
+      setImgFile(null); setImgPreview(null);
+      setShowAddProd(false); loadData();
+    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
+    finally { setUploadingImg(false); }
+  };
+
+  const handleEditProd = async () => {
+    if (!editProd?.name?.trim() || !editProd?.price) return;
+    setUploadingImg(true);
+    try {
+      let image_url = editProd.image_url;
+      if (editImgFile) {
+        image_url = await uploadImage(editImgFile, editProd.id);
+      }
+      const { error } = await supabase.from('products').update({
+        name: editProd.name.trim(),
+        price: parseFloat(editProd.price),
+        category_id: editProd.category_id || null,
+        is_available: editProd.is_available,
+        sort_order: parseInt(editProd.sort_order) || 0,
+        image_url,
+      }).eq('id', editProd.id);
+      if (error) { alert('ไม่สามารถแก้ไขเมนูได้'); return; }
+      setEditProd(null); setEditImgFile(null); setEditImgPreview(null); loadData();
+    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
+    finally { setUploadingImg(false); }
+  };
+
+  const handleDeleteProd = async (id) => {
+    if (!confirm('ลบเมนูนี้?')) return;
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) { alert('ไม่สามารถลบเมนูได้'); return; }
+    loadData();
+  };
+
+  const toggleAvailable = async (prod) => {
+    await supabase.from('products').update({ is_available: !prod.is_available }).eq('id', prod.id);
+    loadData();
+  };
+
+  const onImgChange = (e, forEdit) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    if (forEdit) { setEditImgFile(file); setEditImgPreview(url); }
+    else { setImgFile(file); setImgPreview(url); }
+  };
+
+  if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดเมนูขาย...</div>;
+
+  const inputCls = 'w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500';
+
+  return (
+    <div className="space-y-6 max-w-5xl">
+      <div className="mb-6">
+        <h2 className="text-white text-xl font-bold">จัดการเมนูขาย</h2>
+      </div>
+
+      {/* ═══ Section: Categories ═══ */}
+      <div className="bg-[#1f2937] border border-slate-700/50 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-[#1f2937]">
+          <h3 className="text-white font-medium text-sm">หมวดหมู่ ({categories.length})</h3>
+          <button onClick={() => setShowAddCat(!showAddCat)}
+            className="flex items-center justify-center bg-[#3b82f6] hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors">
+            เพิ่ม
+          </button>
+        </div>
+
+        <div className="p-4 bg-[#111827]">
+          {showAddCat && (
+            <div className="bg-slate-800/70 border border-blue-500/30 rounded-xl p-3 mb-4 flex gap-2 w-full max-w-sm">
+              <input className={inputCls} placeholder="ชื่อหมวดหมู่..." value={newCat.name}
+                onKeyDown={e => e.key === 'Enter' && handleAddCat()}
+                onChange={e => setNewCat({ name: e.target.value })} autoFocus />
+              <button onClick={handleAddCat} className="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg text-xs font-medium shrink-0">บันทึก</button>
+              <button onClick={() => setShowAddCat(false)} className="text-slate-400 hover:text-white px-3 py-2 rounded-lg text-xs border border-slate-600 shrink-0">ยกเลิก</button>
+            </div>
+          )}
+
+          {categories.length === 0 ? (
+            <p className="text-slate-500 text-xs">ยังไม่มีหมวดหมู่</p>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat) => (
+                <div key={cat.id} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-4 py-3 flex items-center justify-between shadow-sm">
+                  <span className="text-slate-300 text-sm font-medium">{cat.name}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setEditCat({ ...cat })} className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 p-1.5 rounded transition-colors">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => handleDeleteCat(cat.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ═══ Section: Products ═══ */}
+      <div className="bg-[#1f2937] border border-slate-700/50 rounded-xl overflow-hidden mt-6 shadow-md">
+        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-[#1f2937]">
+          <h3 className="text-white font-medium text-base">รายการเมนู ({products.length})</h3>
+          <button onClick={() => setShowAddProd(!showAddProd)}
+            className="flex items-center justify-center bg-[#3b82f6] hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors shadow-sm">
+            เพิ่มเมนูใหม่
+          </button>
+        </div>
+
+        <div className="p-4 bg-[#111827]">
+          {showAddProd && (
+            <div className="bg-slate-800 border border-blue-500/30 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+              <h4 className="text-white font-medium mb-2 border-b border-slate-700 pb-2">เพิ่มเมนูขาย</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="md:col-span-2">
+                  <label className="text-slate-400 text-xs mb-1.5 block">ชื่อเมนู *</label>
+                  <input className={inputCls} placeholder="เช่น หมูปิ้ง 5 ไม้" value={newProd.name}
+                    onChange={e => setNewProd({ ...newProd, name: e.target.value })} />
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
+                  <label className="text-slate-400 text-xs mb-1.5 block">ราคาขาย (บาท) *</label>
+                  <input type="number" min="0" step="0.01" className={inputCls} placeholder="0.00"
+                    value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} />
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
+                  <label className="text-slate-400 text-xs mb-1.5 block">หมวดหมู่</label>
+                  <select className={inputCls} value={newProd.category_id}
+                    onChange={e => setNewProd({ ...newProd, category_id: e.target.value })}>
+                    <option value="">-- ไม่ระบุ --</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
+                  <label className="text-slate-400 text-xs mb-1.5 block">ลำดับ</label>
+                  <input type="number" className={inputCls} placeholder="0"
+                    value={newProd.sort_order} onChange={e => setNewProd({ ...newProd, sort_order: e.target.value })} />
+                </div>
+                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
+                  <label className="text-slate-400 text-xs mb-1.5 block">รูปภาพเมนู</label>
+                  <label className="flex items-center justify-center gap-2 cursor-pointer w-full bg-slate-800 border-2 border-dashed border-slate-600 rounded-lg p-3 text-slate-400 text-sm hover:border-blue-500 hover:text-blue-400 transition-colors">
+                    <Upload className="w-5 h-5 shrink-0" />
+                    <span className="truncate max-w-[150px]">{imgFile ? imgFile.name : 'อัปโหลดรูปภาพ...'}</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, false)} />
+                  </label>
+                  {imgPreview && <div className="mt-3 flex justify-center"><img src={imgPreview} className="w-24 h-24 object-cover rounded-xl border border-blue-500/40 shadow-sm" alt="preview" /></div>}
+                </div>
+                <div className="flex items-center gap-2 md:col-span-2 mt-2 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
+                  <input type="checkbox" id="avail_new" checked={newProd.is_available}
+                    onChange={e => setNewProd({ ...newProd, is_available: e.target.checked })} className="w-4 h-4 rounded" />
+                  <label htmlFor="avail_new" className="text-slate-300 text-sm cursor-pointer select-none">สวิตช์เปิด/ปิดขาย (ให้แสดงใน POS)</label>
+                </div>
+              </div>
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mt-4">
+                💡 <strong>เคล็ดลับ:</strong> ต้นทุนจะคำนวณอัตโนมัติจากตาราง BOM+WAC — หากต้องการตั้งต้นทุนให้ไปตั้งสูตรที่หน้า <strong>สูตรอาหาร (M7C)</strong>
+              </div>
+              <div className="flex gap-3 mt-4 justify-end pt-2 border-t border-slate-700/50">
+                <button onClick={() => { setShowAddProd(false); setImgFile(null); setImgPreview(null); }}
+                  className="text-slate-400 hover:text-white px-5 py-2.5 rounded-lg text-sm border border-slate-600 transition-colors">ยกเลิก</button>
+                <button onClick={handleAddProd} disabled={uploadingImg}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium shadow-md transition-colors">
+                  <Check className="w-4 h-4" /> {uploadingImg ? 'กำลังบันทึก...' : 'บันทึกเมนูใหม่'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {products.length === 0 ? (
+            <p className="text-slate-500 text-xs text-center py-6">ยังไม่มีเมนูขาย</p>
+          ) : (
+            <div className="space-y-3">
+              {products.map((prod) => {
+                const calc = bomCosts[prod.id];
+                let costText = '';
+                if (calc !== undefined) {
+                  const pct = prod.price > 0 ? ((calc / prod.price) * 100).toFixed(0) : 0;
+                  costText = `ต้นทุน ฿${calc.toFixed(2)} \u00A0 ${pct}% (จาก BOM)`;
+                }
+
+                return (
+                  <div key={prod.id} className={`bg-slate-800/60 border border-slate-700/50 rounded-lg p-4 flex items-center justify-between shadow-sm transition-all hover:bg-slate-800/80 ${!prod.is_available ? 'opacity-60 grayscale-[30%]' : ''}`}>
+                    <div className="min-w-0 flex items-center gap-4">
+                      {prod.image_url ? (
+                        <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-slate-600/50 bg-slate-900/50">
+                          <img src={prod.image_url} className="w-full h-full object-cover" alt={prod.name} />
+                        </div>
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg flex items-center justify-center shrink-0 bg-slate-700/50 border border-slate-600/50">
+                           <UtensilsCrossed className="w-6 h-6 text-slate-500" />
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-slate-200 text-base font-semibold truncate">{prod.name}</p>
+                        <p className="text-slate-400 text-xs mt-1.5 flex flex-wrap items-center gap-3">
+                          <span className="text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-md border border-green-500/20">฿{Number(prod.price).toLocaleString()}</span>
+                          {costText && <span className="bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-700">{costText}</span>}
+                          {!prod.is_available && <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20 uppercase tracking-wide text-[10px] font-bold">ปิดขายชั่วคราว</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap justify-end shrink-0 pl-4 border-l border-slate-700/50 ml-4 py-1">
+                      <button onClick={() => toggleAvailable(prod)} title={prod.is_available ? 'ปิดขาย' : 'เปิดขาย'} className={`p-2 rounded-lg transition-colors border ${prod.is_available ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20' : 'text-slate-400 border-slate-700 bg-slate-800 hover:bg-slate-700'}`}>
+                        {prod.is_available ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => { setEditProd(prod); setEditImgPreview(null); setEditImgFile(null); }} className="text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 p-2 rounded-lg transition-colors">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDeleteProd(prod.id)} className="text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 p-2 rounded-lg transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Edit Product Modal */}
+      {editProd && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-white font-semibold text-lg">แก้ไขเมนู</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="text-slate-400 text-xs mb-1 block">ชื่อเมนู *</label>
+                <input className={inputCls} value={editProd.name} onChange={e => setEditProd({ ...editProd, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ราคาขาย (บาท) *</label>
+                <input type="number" min="0" step="0.01" className={inputCls} value={editProd.price}
+                  onChange={e => setEditProd({ ...editProd, price: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">หมวดหมู่</label>
+                <select className={inputCls} value={editProd.category_id || ''}
+                  onChange={e => setEditProd({ ...editProd, category_id: e.target.value })}>
+                  <option value="">-- ไม่ระบุ --</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ลำดับ (sort)</label>
+                <input type="number" className={inputCls} value={editProd.sort_order ?? 0}
+                  onChange={e => setEditProd({ ...editProd, sort_order: e.target.value })} />
+              </div>
+              {/* Cost (read-only) */}
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ต้นทุน (จาก BOM+WAC)</label>
+                <div className={`${inputCls} bg-slate-900/30 text-amber-400 cursor-default`}>
+                  {bomCosts[editProd.id] !== undefined
+                    ? `฿${bomCosts[editProd.id].toFixed(2)} (คำนวณอัตโนมัติ)`
+                    : 'ยังไม่ได้ตั้ง BOM → ไปหน้า สูตรอาหาร (M7C)'
+                  }
+                </div>
+              </div>
+              {/* Image Upload */}
+              <div className="md:col-span-2">
+                <label className="text-slate-400 text-xs mb-2 block">รูปภาพเมนู</label>
+                <div className="flex items-center gap-4">
+                  {(editImgPreview || editProd.image_url) && (
+                    <img src={editImgPreview || editProd.image_url} className="w-16 h-16 rounded-xl object-cover border border-slate-600" alt="preview" />
+                  )}
+                  <label className="flex items-center gap-2 cursor-pointer bg-slate-900/60 border border-slate-600 rounded-lg px-4 py-2.5 text-slate-400 text-sm hover:border-violet-500 transition-colors">
+                    <Upload className="w-4 h-4" />
+                    {editImgFile ? editImgFile.name : 'เปลี่ยนรูป...'}
+                    <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, true)} />
+                  </label>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 md:col-span-2">
+                <input type="checkbox" id="avail_edit" checked={editProd.is_available}
+                  onChange={e => setEditProd({ ...editProd, is_available: e.target.checked })} className="w-4 h-4" />
+                <label htmlFor="avail_edit" className="text-slate-300 text-sm">เปิดขาย (แสดงใน POS)</label>
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <button onClick={() => { setEditProd(null); setEditImgFile(null); setEditImgPreview(null); }}
+                className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm border border-slate-600">ยกเลิก</button>
+              <button onClick={handleEditProd} disabled={uploadingImg}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <Save className="w-4 h-4" /> {uploadingImg ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Category Modal */}
+      {editCat && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+            <h3 className="text-white font-semibold text-lg">แก้ไขหมวดหมู่</h3>
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">ชื่อหมวดหมู่</label>
+              <input className={inputCls} value={editCat.name}
+                onChange={e => setEditCat({ ...editCat, name: e.target.value })} autoFocus
+                onKeyDown={e => e.key === 'Enter' && handleEditCat()} />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setEditCat(null)} className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm border border-slate-600">ยกเลิก</button>
+              <button onClick={handleEditCat} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                <Save className="w-4 h-4" /> บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

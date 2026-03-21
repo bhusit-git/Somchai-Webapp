@@ -20,6 +20,7 @@ import MenuPricing from './pages/MenuPricing';
 import SmartInsights from './pages/SmartInsights';
 import HRPayroll from './pages/HRPayroll';
 import Settings from './pages/Settings';
+import RecipeManagement from './pages/RecipeManagement';
 import Profile from './pages/Profile';
 import { ROUTE_PERMISSIONS } from './config/roles';
 
@@ -41,6 +42,7 @@ export default function App() {
               <Route path="profit-dashboard" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/profit-dashboard']}><ProfitDashboard /></ProtectedRoute>} />
               <Route path="inventory" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/inventory']}><Inventory /></ProtectedRoute>} />
               <Route path="stock-receiving" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/stock-receiving']}><StockReceiving /></ProtectedRoute>} />
+              <Route path="bom" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/bom']}><RecipeManagement /></ProtectedRoute>} />
               <Route path="cogs-engine" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/cogs-engine']}><COGSEngine /></ProtectedRoute>} />
               <Route path="menu-engineering" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/menu-engineering']}><MenuEngineering /></ProtectedRoute>} />
               <Route path="menu-pricing" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/menu-pricing']}><MenuPricing /></ProtectedRoute>} />

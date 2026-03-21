@@ -115,6 +115,53 @@ export default function POS() {
     const { error: itemError } = await supabase.from('transaction_items').insert(items);
     if (itemError) console.error('Items error:', itemError);
 
+    // === Auto-Depletion: ตัดสต๊อกวัตถุดิบตาม BOM ===
+    try {
+      // Collect all product IDs in the cart
+      const productIds = cart.map(c => c.product_id);
+
+      // Fetch BOM (ingredients) for all products in the cart
+      const { data: bomData, error: bomErr } = await supabase
+        .from('menu_item_ingredients')
+        .select('menu_item_id, inventory_item_id, qty_required')
+        .in('menu_item_id', productIds);
+
+      if (!bomErr && bomData && bomData.length > 0) {
+        // Aggregate depletion per inventory item
+        const depletionMap = {}; // { inventory_item_id: total_qty_to_subtract }
+
+        for (const cartItem of cart) {
+          const itemBOM = bomData.filter(b => b.menu_item_id === cartItem.product_id);
+          for (const bom of itemBOM) {
+            const qty = Number(bom.qty_required) * cartItem.quantity;
+            depletionMap[bom.inventory_item_id] = (depletionMap[bom.inventory_item_id] || 0) + qty;
+          }
+        }
+
+        // Apply depletion to each inventory item
+        for (const [invId, depletionQty] of Object.entries(depletionMap)) {
+          // Fetch current stock
+          const { data: invItem } = await supabase
+            .from('inventory_items')
+            .select('current_stock')
+            .eq('id', invId)
+            .single();
+
+          if (invItem) {
+            const newStock = Math.max(0, Number(invItem.current_stock || 0) - depletionQty);
+            await supabase
+              .from('inventory_items')
+              .update({ current_stock: newStock })
+              .eq('id', invId);
+          }
+        }
+        console.log('✅ Auto-depletion applied for', Object.keys(depletionMap).length, 'inventory items');
+      }
+    } catch (depErr) {
+      console.error('Auto-depletion error (non-blocking):', depErr);
+      // Non-blocking: sale is already recorded, depletion failure is logged
+    }
+
     // Clear
     setCart([]);
     setShowPayment(false);

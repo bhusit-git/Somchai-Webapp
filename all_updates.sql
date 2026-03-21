@@ -253,3 +253,24 @@ CREATE POLICY "menu_item_ingredients_all" ON public.menu_item_ingredients FOR AL
 
 -- แจ้งเตือน: อย่าลืมทำ Foreign Key ให้ menu_item_id ชี้ไปที่ตาราง menu ของระบบ (เช่น menu_items) ถ้ามี
 -- ALTER TABLE public.menu_item_ingredients ADD CONSTRAINT fk_menu_item FOREIGN KEY (menu_item_id) REFERENCES public.menu_items(id) ON DELETE CASCADE;
+
+-- 13. สร้าง Storage Bucket สำหรับรูปภาพเมนู (menu-images)
+-- รัน block นี้ใน Supabase Dashboard → SQL Editor
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('menu-images', 'menu-images', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow public read of menu images
+DROP POLICY IF EXISTS "menu_images_select" ON storage.objects;
+CREATE POLICY "menu_images_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'menu-images');
+
+-- Allow authenticated upload
+DROP POLICY IF EXISTS "menu_images_insert" ON storage.objects;
+CREATE POLICY "menu_images_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'menu-images');
+
+-- Allow delete
+DROP POLICY IF EXISTS "menu_images_delete" ON storage.objects;
+CREATE POLICY "menu_images_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'menu-images');

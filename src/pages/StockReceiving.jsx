@@ -50,7 +50,6 @@ export default function StockReceiving() {
 
   // Form State
   const [headerForm, setHeaderForm] = useState({
-    supplier_name: '',
     invoice_ref: '',
     received_by: ''
   });
@@ -131,7 +130,6 @@ export default function StockReceiving() {
 
     setEditingGrnId(grn.id);
     setHeaderForm({
-      supplier_name: grn.supplier_name || '',
       invoice_ref: grn.invoice_ref || '',
       received_by: grn.received_by || user?.id || ''
     });
@@ -201,8 +199,8 @@ export default function StockReceiving() {
   };
 
   const handleSave = async (status) => {
-    if (!headerForm.supplier_name || !headerForm.received_by) {
-      alert('กรุณากรอกข้อมูลผู้จำหน่ายและผู้รับของ');
+    if (!headerForm.received_by) {
+      alert('กรุณาระบุผู้รับของ');
       return;
     }
     if (lineItems.length === 0) {
@@ -229,7 +227,6 @@ export default function StockReceiving() {
       const headerPayload = {
         branch_id,
         grn_number: editingGrnId ? undefined : grn_number, // Don't update number if editing
-        supplier_name: headerForm.supplier_name,
         invoice_ref: headerForm.invoice_ref,
         received_by: headerForm.received_by,
         status,
@@ -385,7 +382,7 @@ export default function StockReceiving() {
             <input 
               type="text" 
               className="form-input" 
-              placeholder="ค้นหาเลขที่เอกสาร, ผู้จำหน่าย..." 
+              placeholder="ค้นหาเลขที่เอกสาร..." 
               style={{ paddingLeft: '36px' }}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -399,7 +396,6 @@ export default function StockReceiving() {
               <tr>
                 <th>เลขที่ GRN</th>
                 <th>วันที่เวลา</th>
-                <th>ผู้จำหน่าย</th>
                 <th>อ้างอิงบิล</th>
                 <th>จำนวนรายการ</th>
                 <th>จำนวน (หน่วยซื้อ)</th>
@@ -417,7 +413,6 @@ export default function StockReceiving() {
                   <tr key={g.id} style={{ cursor: 'pointer' }} onClick={() => setShowDetailModal(g)}>
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{g.grn_number}</td>
                     <td>{new Date(g.created_at).toLocaleString('th-TH')}</td>
-                    <td>{g.supplier_name}</td>
                     <td>{g.invoice_ref || '-'}</td>
                     <td>{g.items?.length || 0}</td>
                     <td style={{ fontWeight: 600 }}>{g.items?.reduce((sum, i) => sum + Number(i.qty_purchase || 0), 0).toLocaleString()}</td>
@@ -448,11 +443,7 @@ export default function StockReceiving() {
             
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Header Info */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">ผู้จำหน่าย (Supplier) *</label>
-                  <input type="text" className="form-input" value={headerForm.supplier_name} onChange={e => setHeaderForm({...headerForm, supplier_name: e.target.value})} placeholder="ชื่อร้าน/บริษัท" />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">อ้างอิงใบส่งของ/ใบกำกับภาษี</label>
                   <input type="text" className="form-input" value={headerForm.invoice_ref} onChange={e => setHeaderForm({...headerForm, invoice_ref: e.target.value})} placeholder="เลขที่บิล" />
@@ -555,7 +546,6 @@ export default function StockReceiving() {
             </div>
             <div className="modal-body">
               <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: 'var(--radius-sm)', marginBottom: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '14px' }}>
-                <div><strong>ผู้จำหน่าย:</strong> {showDetailModal.supplier_name}</div>
                 <div><strong>อ้างอิงบิล:</strong> {showDetailModal.invoice_ref || '-'}</div>
                 <div><strong>สถานะ:</strong> {
                   showDetailModal.status === 'confirmed' ? 
