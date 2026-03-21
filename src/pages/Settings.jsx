@@ -901,6 +901,9 @@ function SystemConfigTab() {
         receiptFooter: 'ขอบคุณที่ใช้บริการ สมชายหมูปิ้ง 🐷',
         lineOAToken: '',
         stockAlertDays: 2,
+        dailySalesTarget: 10000,
+        targetFcPercent: 35,
+        targetGpPercent: 60,
       };
     } catch {
       return {
@@ -910,6 +913,9 @@ function SystemConfigTab() {
         receiptFooter: 'ขอบคุณที่ใช้บริการ สมชายหมูปิ้ง 🐷',
         lineOAToken: '',
         stockAlertDays: 2,
+        dailySalesTarget: 10000,
+        targetFcPercent: 35,
+        targetGpPercent: 60,
       };
     }
   });
@@ -939,6 +945,40 @@ function SystemConfigTab() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-5">
+        {/* KPI Targets */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 md:col-span-2">
+          <h3 className="text-white font-medium flex items-center gap-2">🎯 เป้าหมาย KPI สำหรับสาขา</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">เป้าหมายยอดขายรายวัน (บาท)</label>
+              <input
+                type="number"
+                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                value={config.dailySalesTarget || ''}
+                onChange={e => setConfig({ ...config, dailySalesTarget: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">เป้าหมาย Food Cost (%)</label>
+              <input
+                type="number"
+                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                value={config.targetFcPercent || ''}
+                onChange={e => setConfig({ ...config, targetFcPercent: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">เป้าหมาย Gross Profit (%)</label>
+              <input
+                type="number"
+                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                value={config.targetGpPercent || ''}
+                onChange={e => setConfig({ ...config, targetGpPercent: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Finance */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4">
           <h3 className="text-white font-medium flex items-center gap-2"><Percent className="w-4 h-4 text-violet-400" /> การเงิน</h3>
