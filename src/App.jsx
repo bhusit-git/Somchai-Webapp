@@ -1,6 +1,17 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 2,   // cache data stays fresh 2 minutes
+      gcTime: 1000 * 60 * 10,     // keep in memory 10 minutes
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -13,6 +24,7 @@ import CashLedger from './pages/CashLedger';
 import ARManagement from './pages/ARManagement';
 import ProfitDashboard from './pages/ProfitDashboard';
 import Inventory from './pages/Inventory';
+import PurchaseOrders from './pages/PurchaseOrders';
 import StockReceiving from './pages/StockReceiving';
 import COGSEngine from './pages/COGSEngine';
 import MenuEngineering from './pages/MenuEngineering';
@@ -26,6 +38,7 @@ import { ROUTE_PERMISSIONS } from './config/roles';
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
@@ -41,6 +54,7 @@ export default function App() {
               <Route path="ar-management" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/ar-management']}><ARManagement /></ProtectedRoute>} />
               <Route path="profit-dashboard" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/profit-dashboard']}><ProfitDashboard /></ProtectedRoute>} />
               <Route path="inventory" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/inventory']}><Inventory /></ProtectedRoute>} />
+              <Route path="purchase-orders" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/purchase-orders']}><PurchaseOrders /></ProtectedRoute>} />
               <Route path="stock-receiving" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/stock-receiving']}><StockReceiving /></ProtectedRoute>} />
               <Route path="bom" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/bom']}><RecipeManagement /></ProtectedRoute>} />
               <Route path="cogs-engine" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/cogs-engine']}><COGSEngine /></ProtectedRoute>} />
@@ -55,5 +69,6 @@ export default function App() {
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
+    </QueryClientProvider>
   );
 }

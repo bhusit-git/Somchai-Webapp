@@ -197,9 +197,11 @@ export default function Inventory() {
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>คลังสินค้า (Dual-Unit)</h3>
           <p className="text-sm text-muted">M7A: วัตถุดิบและสต๊อก พร้อมหน่วยคู่ (ซื้อ/ใช้งาน)</p>
         </div>
-        <button className="btn btn-primary" onClick={openAddModal}>
-          <Plus size={18} /> เพิ่มสินค้า
-        </button>
+        {['owner', 'manager'].includes(user?.role) && (
+          <button className="btn btn-primary" onClick={openAddModal}>
+            <Plus size={18} /> เพิ่มสินค้า (Owner)
+          </button>
+        )}
       </div>
 
       {/* Stats */}
@@ -231,15 +233,17 @@ export default function Inventory() {
             <p>สินค้าหมดสต๊อก</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon green">
-            <CircleDollarSign size={22} />
+        {['owner', 'manager'].includes(user?.role) && (
+          <div className="stat-card">
+            <div className="stat-icon green">
+              <CircleDollarSign size={22} />
+            </div>
+            <div className="stat-info">
+              <h3>฿{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+              <p>มูลค่าสต๊อกรวม</p>
+            </div>
           </div>
-          <div className="stat-info">
-            <h3>฿{totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-            <p>มูลค่าสต๊อกรวม</p>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Filters & Table */}
@@ -285,14 +289,15 @@ export default function Inventory() {
                 <th>หน่วย (สต๊อก)</th>
                 <th>ความจุ (แปลงหน่วย)</th>
                 <th>สถานะ</th>
-                <th>จัดการ</th>
+                {['owner', 'manager'].includes(user?.role) && <th>ต้นทุนรวม (฿)</th>}
+                {['owner', 'manager'].includes(user?.role) && <th>จัดการ (Audit)</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
+                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 10 : 8} style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : filteredItems.length === 0 ? (
-                <tr><td colSpan="9"><div className="empty-state"><Package size={48} /><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
+                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 10 : 8}><div className="empty-state"><Package size={48} /><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
               ) : (
                 filteredItems.map((item) => {
                   const currentStock = Number(item.current_stock);
@@ -325,11 +330,18 @@ export default function Inventory() {
                           <span className="badge badge-success">ปกติ</span>
                         )}
                       </td>
-                      <td>
-                        <button className="btn-icon" onClick={() => openEditModal(item)}>
-                          <Edit2 size={14} />
-                        </button>
-                      </td>
+                      {['owner', 'manager'].includes(user?.role) && (
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {(currentStock * Number(item.cost_per_stock_unit || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      )}
+                      {['owner', 'manager'].includes(user?.role) && (
+                        <td>
+                          <button className="btn-icon" onClick={() => openEditModal(item)} title="ปรับสต๊อก (Stock Audit)">
+                            <Edit2 size={14} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })

@@ -561,7 +561,7 @@ function UsersTab() {
 function BranchesTab() {
   const [branches, setBranches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newBranch, setNewBranch] = useState({ name: '', address: '' });
+  const [newBranch, setNewBranch] = useState({ name: '', address: '', code: '' });
   const [loading, setLoading] = useState(true);
   const [editBranch, setEditBranch] = useState(null);
 
@@ -584,8 +584,8 @@ function BranchesTab() {
   const handleAdd = async () => {
     if (!newBranch.name) return;
     try {
-      await createBranch({ name: newBranch.name, address: newBranch.address });
-      setNewBranch({ name: '', address: '' });
+      await createBranch({ name: newBranch.name, address: newBranch.address, code: newBranch.code });
+      setNewBranch({ name: '', address: '', code: '' });
       setShowAdd(false);
       loadBranches();
     } catch (err) {
@@ -596,11 +596,15 @@ function BranchesTab() {
   const handleEditBranch = async () => {
     if (!editBranch.name) return;
     try {
-      await updateBranch(editBranch.id, { name: editBranch.name, address: editBranch.address });
+      await updateBranch(editBranch.id, { 
+        code: editBranch.code, 
+        name: editBranch.name, 
+        address: editBranch.address 
+      });
       setEditBranch(null);
       loadBranches();
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการแก้ไขสาขา');
+      alert('เกิดข้อผิดพลาดในการแก้ไขสาขา: ' + err.message);
     }
   };
 
@@ -622,7 +626,16 @@ function BranchesTab() {
         <div className="bg-slate-800/70 border border-slate-700/50 rounded-xl p-5 space-y-4">
           <h3 className="text-white font-medium">เพิ่มสาขาใหม่</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">รหัสสาขาตั้งเอง (Code)</label>
+              <input
+                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                placeholder="เช่น SC001 (ไม่ต้องใส่ก็ได้)"
+                value={newBranch.code}
+                onChange={e => setNewBranch({ ...newBranch, code: e.target.value })}
+              />
+            </div>
+            <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อสาขา *</label>
               <input
                 className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
@@ -657,6 +670,15 @@ function BranchesTab() {
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลสาขา</h3>
             
             <div className="space-y-4">
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">รหัสสาขาตั้งเอง (Branch Code)</label>
+                <input
+                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  value={editBranch.code || ''}
+                  onChange={e => setEditBranch({ ...editBranch, code: e.target.value })}
+                  placeholder="เช่น SC001"
+                />
+              </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">ชื่อสาขา *</label>
                 <input

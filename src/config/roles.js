@@ -36,18 +36,19 @@ export const ROUTE_PERMISSIONS = {
 
   // --- Inventory ---
   '/inventory':       ['owner', 'manager', 'store_manager', 'cook'],  // Inventory        (N / F / F / F / F)
-  '/stock-receiving': mgmt,                                           // Stock Receiving   (N / N / F / R / F)
+  '/purchase-orders': mgmt,                                           // Purchase Orders  (Owner, Area Manager)
+  '/stock-receiving': everyone,                                       // Stock Receiving   (staff needs for Blind Receiving)
   '/bom':             ['owner', 'manager', 'store_manager', 'cook'],  // Recipe Management (BOM) (N / F / F / F / F)
 
   // --- Analytics ---
   '/cogs-engine':     mgmt,                                           // COGS Engine       (N / N / R / F / F)
   '/menu-engineering':upperMgmt,                                      // Menu Engineering  (N / N / N / R / F)
   '/menu-pricing':    upperMgmt,                                      // Menu Pricing      (N / N / N / R / F)
-  '/smart-insights':  mgmt,                                           // Smart Insights    (N / N / R / F / F)
+  '/smart-insights':  upperMgmt,                                      // Smart Insights    (N / N / R / F / F)
 
   // --- HR & Settings ---
   '/hr-payroll':      everyone,                                       // HR & Payroll (S / S / F / R / F)
-  '/settings':        mgmt,                                           // Settings    (N / N / F / F / F)
+  '/settings':        ['owner'],                                      // Settings    (N / N / F / F / F)
   '/profile':         everyone,                                       // Profile      (all roles)
 };
 
@@ -71,6 +72,7 @@ export const SIDEBAR_ITEMS = [
 
   { label: 'Inventory', type: 'section' },
   { to: '/inventory',       label: 'คลังสินค้า (M7A)',      icon: 'Package',         roles: ROUTE_PERMISSIONS['/inventory'] },
+  { to: '/purchase-orders', label: 'สั่งซื้อวัตถุดิบ (PO)',  icon: 'ShoppingCart',    roles: ROUTE_PERMISSIONS['/purchase-orders'] },
   { to: '/stock-receiving', label: 'รับของ GRN (M7B)',       icon: 'PackagePlus',     roles: ROUTE_PERMISSIONS['/stock-receiving'] },
   { to: '/bom',             label: 'สูตรอาหาร (BOM) (M7C)', icon: 'Receipt',         roles: ROUTE_PERMISSIONS['/bom'] },
 

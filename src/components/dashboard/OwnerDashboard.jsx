@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import './OwnerDashboard.css';
 
 export default function OwnerDashboard() {
+  const { user } = useAuth();
+  const currentBranchId = user?.branch_id;
+  const currentBranchName = user?.branch_name;
+
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalRevenue: 0,
@@ -10,7 +15,7 @@ export default function OwnerDashboard() {
     totalExpenses: 0,
     netProfit: 0,
     healthScore: 0,
-    managerSafe: 1240600, // Concept mock for Owner Safe
+    managerSafe: 0,
   });
   const [branchData, setBranchData] = useState([]);
   const [insights, setInsights] = useState([]);
@@ -18,7 +23,7 @@ export default function OwnerDashboard() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentBranchId]);
 
   async function loadData() {
     setLoading(true);
@@ -34,37 +39,79 @@ export default function OwnerDashboard() {
     twentyOneDaysAgo.setHours(0, 0, 0, 0);
 
     try {
-      const { data: branches } = await supabase.from('branches').select('id, name');
+      let branchesQuery = supabase.from('branches').select('id, name');
+      if (currentBranchId) branchesQuery = branchesQuery.eq('id', currentBranchId);
+      const { data: branches } = await branchesQuery;
       
-      const { data: txData } = await supabase
+      let txQuery = supabase
         .from('transactions')
-        .select('branch_id, total, status, created_at')
+        .select('id, branch_id, total, status, created_at')
         .gte('created_at', startIso)
         .eq('status', 'completed');
+      if (currentBranchId) txQuery = txQuery.eq('branch_id', currentBranchId);
+      const { data: txData } = await txQuery;
 
-      const { data: expData } = await supabase
+      let expQuery = supabase
         .from('expenses')
         .select('branch_id, amount')
         .gte('created_at', startIso);
+      if (currentBranchId) expQuery = expQuery.eq('branch_id', currentBranchId);
+      const { data: expData } = await expQuery;
+
+      // Real Manager Safe
+      let safeQuery = supabase.from('manager_safes').select('balance');
+      if (currentBranchId) safeQuery = safeQuery.eq('branch_id', currentBranchId);
+      const { data: safeData } = await safeQuery;
+      const totalSafe = (safeData || []).reduce((s, row) => s + Number(row.balance), 0);
+
+      // Real Fixed Costs
+      const currentMonthStr = startOfMonth.toISOString().slice(0, 7);
+      let fcQuery = supabase.from('fixed_costs').select('amount').eq('period_month', currentMonthStr);
+      if (currentBranchId) fcQuery = fcQuery.eq('branch_id', currentBranchId);
+      const { data: fcData } = await fcQuery;
+      const totalFixedCosts = (fcData || []).reduce((s, row) => s + Number(row.amount), 0);
+
+      // Calculate COGS
+      let totalCOGS = 0;
+      let branchCogsMap = {}; // branch_id -> cogs
+      if (txData && txData.length > 0) {
+        const txIds = txData.map(t => t.id);
+        const { data: txItems } = await supabase
+          .from('transaction_items')
+          .select('transaction_id, quantity, products(cost)')
+          .in('transaction_id', txIds);
+           
+        if (txItems) {
+           txItems.forEach(item => {
+             const cost = Number(item.products?.cost || 0);
+             const lineCogs = Number(item.quantity) * cost;
+             totalCOGS += lineCogs;
+             
+             // group by branch_id
+             const tx = txData.find(t => t.id === item.transaction_id);
+             if (tx) {
+               branchCogsMap[tx.branch_id] = (branchCogsMap[tx.branch_id] || 0) + lineCogs;
+             }
+           });
+        }
+      }
 
       // 1. Overall stats
       const totalRev = (txData || []).reduce((sum, t) => sum + Number(t.total), 0);
       const totalExp = (expData || []).reduce((sum, e) => sum + Number(e.amount), 0);
-      const mockCOGS = totalRev * 0.347; // Adjusted to match mockup's ~35%
-      const fixedCosts = 620000; // Mock fixed cost like in HTML
-      const net = totalRev - mockCOGS - totalExp - fixedCosts;
+      const net = totalRev - totalCOGS - totalExp - totalFixedCosts;
       
       const margin = totalRev > 0 ? (net / totalRev) * 100 : 0;
-      // Map margin to 0-100 score safely
-      const health = Math.min(100, Math.max(0, (margin / 38) * 100)); // Target 38% margin based on mockup
+      // Map margin to 0-100 score safely (target 38% margin)
+      const health = Math.min(100, Math.max(0, (margin / 38) * 100));
 
       setStats({
         totalRevenue: totalRev,
-        totalCOGS: mockCOGS,
-        totalExpenses: totalExp + fixedCosts,
+        totalCOGS: totalCOGS,
+        totalExpenses: totalExp + totalFixedCosts,
         netProfit: net,
         healthScore: health,
-        managerSafe: 1240600, // Using static mock to match visual design request
+        managerSafe: totalSafe,
       });
 
       // 2. Branch Stats
@@ -79,9 +126,8 @@ export default function OwnerDashboard() {
           
           const revToday = bTxToday.reduce((sum, t) => sum + Number(t.total), 0);
           const revTotal = bTx.reduce((sum, t) => sum + Number(t.total), 0);
-          const cogsTotal = revTotal * 0.35;
+          const cogsTotal = branchCogsMap[b.id] || 0;
           const expTotal = (expData || []).filter(e => e.branch_id === b.id).reduce((sum, e) => sum + Number(e.amount), 0);
-          const profit = revTotal - cogsTotal - expTotal;
           const gpPct = revTotal > 0 ? ((revTotal - cogsTotal) / revTotal) * 100 : 0;
           
           return {
@@ -89,30 +135,43 @@ export default function OwnerDashboard() {
             name: b.name,
             revenueToday: revToday,
             gpPct: gpPct,
-            status: gpPct < 55 ? 'critical' : 'good' // Threshold derived from mockup
+            status: gpPct < 55 ? 'critical' : 'good'
           };
         }).sort((a,b) => b.revenueToday - a.revenueToday);
         setBranchData(bStats);
 
-        // Heatmap mock data generation
-        // Mock palettes based on branch index - Updated for Dark Theme
-        const palettes = [
-          ['#1e293b', '#334155', '#475569', '#6366f1', '#818cf8', '#c7d2fe'], // Indigo scale
-          ['#1e293b', '#334155', '#475569', '#10b981', '#34d399', '#a7f3d0'], // Emerald scale
-          ['#1e293b', '#334155', '#475569', '#f59e0b', '#fbbf24', '#fde68a'], // Amber scale
+        // Heatmap Real data generation
+        const pallets = [
+          ['#1e293b', '#334155', '#475569', '#6366f1', '#818cf8', '#c7d2fe'],
+          ['#1e293b', '#334155', '#475569', '#10b981', '#34d399', '#a7f3d0'],
+          ['#1e293b', '#334155', '#475569', '#f59e0b', '#fbbf24', '#fde68a'],
         ];
 
-        // Generate days in month for each branch
         const today = new Date();
         const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
         
-        const hData = branches.map((b, i) => {
-          const cells = [];
-          for (let d = 0; d < daysInMonth; d++) {
-            // Mock random intensity 0-5
-            const level = Math.floor(Math.random() * 6);
-            cells.push({ day: d+1, level, color: palettes[i % 3][level] });
-          }
+        let maxDailyRev = 1;
+        const branchDailyRevs = branches.map(b => {
+          const daily = Array(daysInMonth).fill(0);
+          const bTx = (txData || []).filter(t => t.branch_id === b.id);
+          bTx.forEach(t => {
+             const d = new Date(t.created_at).getDate() - 1;
+             daily[d] += Number(t.total);
+          });
+          const bMax = Math.max(...daily);
+          if (bMax > maxDailyRev) maxDailyRev = bMax;
+          return { name: b.name, daily };
+        });
+
+        const hData = branchDailyRevs.map((b, i) => {
+          const cells = b.daily.map((rev, d) => {
+             let level = 0;
+             if (rev > 0) {
+               level = Math.ceil((rev / maxDailyRev) * 5);
+               if (level > 5) level = 5;
+             }
+             return { day: d+1, level, color: pallets[i % 3][level] };
+          });
           return { branchName: b.name, cells };
         });
         setHeatmapData(hData);
@@ -120,10 +179,7 @@ export default function OwnerDashboard() {
 
       // 3. Insights (Mocked to match specific HTML text if no real triggers)
       setInsights([
-        { type: 'danger', text: 'รามคำแหง: FC% 38% เกินเกณฑ์ 3 วันติด → ตรวจสอบ waste และราคาวัตถุดิบ', color: '#E24B4A' },
-        { type: 'warning', text: 'ทองหล่อ: น้ำมันหอย จะหมดใน ~2 วัน — สั่งวันนี้ก่อน lead time 1 วัน', color: '#BA7517' },
-        { type: 'info', text: 'ทองหล่อ: GP% ดีสุด 3 เดือนติด → ใช้เป็น benchmark ราคาวัตถุดิบให้สาขาอื่น', color: '#185FA5' },
-        { type: 'success', text: 'AR: บ.ทัวร์ XYZ ค้าง ฿8,400 (7 วัน) — ส่งบิลทวง ↗', color: '#3B6D11' },
+        { type: 'info', text: 'ระบบวิเคราะห์จะแจ้งเตือนเมื่อข้อมูลมีปริมาณเพียงพอ', color: '#185FA5' },
       ]);
 
     } catch (err) {
@@ -135,19 +191,10 @@ export default function OwnerDashboard() {
 
   // Format Helpers
   const formatCurrency = (val) => '฿' + (val || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
-  const formatCompact = (val) => '฿' + ((val || 0) / 1000).toFixed(0) + 'k';
 
   if (loading) {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>กำลังโหลดแบบประเมินหลัก...</div>;
   }
-
-  // Calculate SVG stroke properties
-  const radius = 38;
-  const circumference = 2 * Math.PI * radius; // ~238.76
-  const strokeDashoffset = circumference - (circumference * stats.healthScore) / 100;
-  // Based on HTML mockup logic, it used stroke-dasharray="86 240" for 72 score and dashoffset="-60", 
-  // we will stick to standard SVG ring calculation for dynamic scores.
-  const ringOffset = 251.2; // roughly circumference
 
   return (
     <div className="owner-dashboard">
@@ -155,7 +202,7 @@ export default function OwnerDashboard() {
         
         {/* Top bar */}
         <div className="topbar">
-          <span className="topbar-title">Owner Overview — ภาพรวมทุกสาขา</span>
+          <span className="topbar-title">{currentBranchId ? `Owner Overview — สาขา ${currentBranchName}` : 'Owner Overview — ภาพรวมทุกสาขา'}</span>
           <span className="topbar-date">{new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })}</span>
         </div>
 
@@ -191,17 +238,17 @@ export default function OwnerDashboard() {
             {/* Total revenue + safe */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
               <div className="card">
-                <div className="card-title">รวมทุกสาขา — วันนี้</div>
+                <div className="card-title">{currentBranchId ? 'รวมสาขานี้ — วันนี้ (สะสม)' : 'รวมทุกสาขา — วันนี้ (สะสม)'}</div>
                 <div className="card-val">{formatCurrency(stats.totalRevenue)}</div>
-                <div className="card-sub">เป้าเดือนนี้ ฿3,200,000  |  ผ่านมา {new Date().getDate()} วัน</div>
+                <div className="card-sub">ข้อมูลรายได้ทั้งหมดในระบบ เดือนนี้</div>
                 <div className="bar-track">
-                  <div className="bar-fill green" style={{ width: `${Math.min(100, (stats.totalRevenue / 3200000) * 100)}%` }}></div>
+                  <div className="bar-fill green" style={{ width: `100%` }}></div>
                 </div>
               </div>
               <div className="card">
-                <div className="card-title">Manager Safe สะสม (รอบนี้)</div>
+                <div className="card-title">Manager Safe สะสม</div>
                 <div className="card-val val-blue">{formatCurrency(stats.managerSafe)}</div>
-                <div className="card-sub">ตัดรอบทุก 15 วัน — ถัดไป 9 มี.ค.</div>
+                <div className="card-sub">ยอดรวมเงินสดในตู้เซฟทั้งหมด</div>
               </div>
             </div>
           </div>
@@ -211,43 +258,26 @@ export default function OwnerDashboard() {
             {branchData.length > 0 ? branchData.slice(0, 3).map((branch, i) => (
               <div key={branch.id} className={`card ${branch.status === 'critical' ? 'branch-danger' : ''}`}>
                 <div className="card-title">{branch.name}</div>
-                <div className="card-val">{formatCurrency(branch.revenueToday || (i===0?42500:i===1?38200:29100))}</div>
+                <div className="card-val">{formatCurrency(branch.revenueToday)}</div>
                 <div className={`card-sub ${branch.status === 'critical' ? 'val-red' : 'val-green'}`}>
-                  GP% {branch.gpPct > 0 ? branch.gpPct.toFixed(1) : (i===0?63.7:i===1?61.2:51.3)}% {branch.status === 'critical' && '⚠'}
+                  GP% {branch.gpPct > 0 ? branch.gpPct.toFixed(1) : 0}% {branch.status === 'critical' && '⚠'}
                 </div>
                 <div className="bar-track">
                   <div className={`bar-fill ${branch.status === 'critical' ? 'red' : 'green'}`} style={{ width: `${branch.status === 'critical' ? 52 : 80}%` }}></div>
                 </div>
               </div>
             )) : (
-              // Mock fallback if DB has no branches
-              <>
-                <div className="card">
-                  <div className="card-title">ทองหล่อ</div>
-                  <div className="card-val">฿42,500</div>
-                  <div className="card-sub val-green">GP% 63.7%</div>
-                  <div className="bar-track"><div className="bar-fill green" style={{ width: '84%' }}></div></div>
-                </div>
-                <div className="card">
-                  <div className="card-title">อ่อนนุช</div>
-                  <div className="card-val">฿38,200</div>
-                  <div className="card-sub val-green">GP% 61.2%</div>
-                  <div className="bar-track"><div className="bar-fill green" style={{ width: '74%' }}></div></div>
-                </div>
-                <div className="card branch-danger">
-                  <div className="card-title">รามคำแหง</div>
-                  <div className="card-val">฿29,100</div>
-                  <div className="card-sub val-red">GP% 51.3% ⚠</div>
-                  <div className="bar-track"><div className="bar-fill red" style={{ width: '52%' }}></div></div>
-                </div>
-              </>
+              <div className="card">
+                <div className="card-title">ไม่มีข้อมูลสาขา</div>
+                <div className="card-val">฿0</div>
+              </div>
             )}
           </div>
 
           {/* Heatmap */}
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <span className="section-title">Heatmap — ยอดขาย {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()} วัน (ทุกสาขา)</span>
+              <span className="section-title">Heatmap — ยอดขาย {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()} วัน</span>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>สีเข้ม = รายได้สูง</span>
             </div>
             <div className="heatmap-wrap">
@@ -294,25 +324,25 @@ export default function OwnerDashboard() {
               <tbody>
                 <tr>
                   <td className="pl-label">Revenue รวม</td>
-                  <td>{formatCurrency(stats.totalRevenue > 0 ? stats.totalRevenue : 2306800)}</td>
+                  <td>{formatCurrency(stats.totalRevenue)}</td>
                 </tr>
                 <tr className="divider">
                   <td className="pl-label">COGS รวม</td>
-                  <td className="val-red">–{formatCurrency(stats.totalCOGS > 0 ? stats.totalCOGS : 802400)}</td>
+                  <td className="val-red">–{formatCurrency(stats.totalCOGS)}</td>
                 </tr>
                 <tr>
                   <td className="pl-label">Gross Profit</td>
-                  <td className="val-green">{formatCurrency((stats.totalRevenue - stats.totalCOGS) > 0 ? stats.totalRevenue - stats.totalCOGS : 1504400)}</td>
+                  <td className="val-green">{formatCurrency(stats.totalRevenue - stats.totalCOGS)}</td>
                 </tr>
                 <tr>
                   <td className="pl-label">Fixed Cost (ค่าเช่า + เงินเดือน)</td>
-                  <td className="pl-label">–฿620,000</td>
+                  <td className="pl-label">–{formatCurrency(stats.totalExpenses - stats.totalCOGS)}</td>
                 </tr>
                 <tr className="divider pl-total">
                   <td style={{ fontWeight: 500, color: '#2c2c2a' }}>Net Profit (ประมาณ)</td>
                   <td className="val-green">
-                    {formatCurrency(stats.netProfit > 0 ? stats.netProfit : 884400)} &nbsp;
-                    <span style={{ fontSize: '11px' }}>({(stats.netProfit / (stats.totalRevenue||1) * 100).toFixed(1)}%)</span>
+                    {formatCurrency(stats.netProfit)} &nbsp;
+                    <span style={{ fontSize: '11px' }}>({stats.totalRevenue > 0 ? (stats.netProfit / stats.totalRevenue * 100).toFixed(1) : 0}%)</span>
                   </td>
                 </tr>
               </tbody>

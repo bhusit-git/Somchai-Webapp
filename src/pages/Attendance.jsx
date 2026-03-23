@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Webcam from 'react-webcam';
 import { Clock, LogIn, LogOut, Camera, UserCheck, Plus, Calendar, X, RefreshCw, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, RotateCcw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -84,7 +85,6 @@ function KioskTab() {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { success, message }
-  const [branchSettings, setBranchSettings] = useState({});
   const webcamRef = useRef(null);
 
   // Live clock
@@ -93,57 +93,43 @@ function KioskTab() {
     return () => clearInterval(t);
   }, []);
 
-  // Auto-select logged-in user on mount
+  // Cache branch settings via React Query (shared across tabs)
+  const { data: branchSettings = {} } = useQuery({
+    queryKey: ['branchSettings', authUser?.branch_id],
+    queryFn: async () => {
+      const { data } = await supabase.from('branches').select('settings').eq('id', authUser.branch_id).maybeSingle();
+      return data?.settings || {};
+    },
+    enabled: !!authUser?.branch_id,
+  });
+
+  // Auto-select logged-in user on mount — parallel fetch
   useEffect(() => {
     if (authUser?.id) {
-      loadUserAndSelect(authUser.id);
-    }
-    if (authUser?.branch_id) {
-      loadBranchSettings(authUser.branch_id);
+      loadUserParallel(authUser.id);
     }
   }, [authUser]);
 
-  async function loadBranchSettings(branchId) {
-    const { data } = await supabase.from('branches').select('settings').eq('id', branchId).maybeSingle();
-    if (data?.settings) setBranchSettings(data.settings);
-  }
+  async function loadUserParallel(userId) {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-  async function loadUserAndSelect(userId) {
-    const { data: userData } = await supabase
-      .from('users')
-      .select('id, name, full_name, employment_type, daily_rate')
-      .eq('id', userId)
-      .maybeSingle();
-    if (userData) {
-      await selectUser(userData);
-    }
-  }
+    // Fetch user profile, today schedule, and last attendance record IN PARALLEL
+    const [userRes, schedRes, lastRes] = await Promise.all([
+      supabase.from('users').select('id, name, full_name, employment_type, daily_rate').eq('id', userId).maybeSingle(),
+      supabase.from('employee_schedules').select('*').eq('user_id', userId).eq('schedule_date', today),
+      supabase.from('attendance').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(1).maybeSingle(),
+    ]);
 
-  async function selectUser(user) {
-    setSelectedUser(user);
-    const today = new Date().toISOString().split('T')[0];
+    const userData = userRes.data;
+    if (!userData) return;
 
-    const { data: schedRes } = await supabase
-      .from('employee_schedules')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('schedule_date', today);
-    // If multiple, pick the first one for now
-    const sched = schedRes && schedRes.length > 0 ? schedRes[0] : null;
+    setSelectedUser(userData);
+    const sched = schedRes.data && schedRes.data.length > 0 ? schedRes.data[0] : null;
     setTodaySchedule(sched);
-
-    // Fetch last attendance record to determine clock type
-    const { data: last } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    setLastRecord(last);
-
-    // Smart: if last was clock_in → suggest clock_out
-    setClockType(last?.type === 'clock_in' ? 'clock_out' : 'clock_in');
+    setLastRecord(lastRes.data);
+    setClockType(lastRes.data?.type === 'clock_in' ? 'clock_out' : 'clock_in');
     setStep('confirm');
   }
 
@@ -235,7 +221,7 @@ function KioskTab() {
     setResult(null);
     // Re-load logged-in user data fresh and go back to confirm
     if (authUser?.id) {
-      await loadUserAndSelect(authUser.id);
+      await loadUserParallel(authUser.id);
     } else {
       setStep('confirm');
     }
@@ -244,6 +230,16 @@ function KioskTab() {
   const timeStr = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const dateStr = now.toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const shiftInfo = todaySchedule ? getShiftLabel(todaySchedule.shift_type) : null;
+  const shiftConfig = todaySchedule ? branchSettings?.shift_times?.[todaySchedule.shift_type] : null;
+
+  let isCurrentTimeLate = false;
+  if (clockType === 'clock_in' && todaySchedule && shiftConfig?.start) {
+    const limitMin = branchSettings?.late_tolerance_minutes || 0;
+    const [sH, sM] = shiftConfig.start.split(':').map(Number);
+    const limitTime = new Date();
+    limitTime.setHours(sH, sM + Number(limitMin), 0, 0);
+    if (new Date() > limitTime) isCurrentTimeLate = true;
+  }
 
   return (
     <div style={{ maxWidth: 680, margin: '0 auto' }}>
@@ -300,10 +296,22 @@ function KioskTab() {
                 gap: 12,
               }}>
                 <span style={{ fontSize: 28 }}>{shiftInfo.icon}</span>
-                <div>
-                  <div style={{ fontWeight: 700, color: shiftInfo.color, fontSize: 15 }}>{shiftInfo.label}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, color: shiftInfo.color, fontSize: 15, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {shiftInfo.label}
+                    {shiftConfig?.start && shiftConfig?.end && (
+                      <span style={{ fontSize: 12, fontWeight: 500, background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4 }}>
+                        {shiftConfig.start} - {shiftConfig.end} น.
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>กะของคุณวันนี้</div>
                 </div>
+                {isCurrentTimeLate && clockType === 'clock_in' && (
+                  <div style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '4px 8px', borderRadius: 6, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AlertCircle size={14} /> สาย
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{
@@ -510,40 +518,45 @@ function KioskTab() {
 function HistoryTab() {
   const { user } = useAuth();
   const isManager = ['owner', 'manager', 'store_manager'].includes(user?.role);
-  const [records, setRecords] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '' });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, recordId: null, reason: '' });
 
-  useEffect(() => { loadData(); }, []);
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['attendanceHistory', user?.branch_id, selectedMonth, isManager, user?.id],
+    queryFn: async () => {
+      const [yearStr, monthStr] = selectedMonth.split('-');
+      const localStart = new Date(Number(yearStr), Number(monthStr) - 1, 1, 0, 0, 0);
+      const localEnd = new Date(Number(yearStr), Number(monthStr), 1, 0, 0, 0);
 
-  async function loadData() {
-    setLoading(true);
-    try {
       let query = supabase.from('attendance')
           .select('*, users(name, full_name, employment_type, daily_rate)')
-          .eq('branch_id', user?.branch_id);
+          .eq('branch_id', user?.branch_id)
+          .gte('timestamp', localStart.toISOString())
+          .lt('timestamp', localEnd.toISOString());
 
       if (!isManager) {
         query = query.eq('user_id', user?.id).eq('is_deleted', false);
       }
 
-      query = query.order('timestamp', { ascending: false }).limit(100);
+      query = query.order('timestamp', { ascending: false });
 
       const [attRes, userRes] = await Promise.all([
         query,
         isManager ? supabase.from('users').select('id, name, full_name').eq('is_active', true).eq('branch_id', user?.branch_id) : Promise.resolve({ data: [] })
       ]);
-      setRecords(attRes.data || []);
-      setUsers(userRes.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
+      return { records: attRes.data || [], users: userRes.data || [] };
+    },
+    enabled: !!user?.branch_id,
+  });
+
+  const records = data?.records || [];
+  const users = data?.users || [];
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -555,7 +568,11 @@ function HistoryTab() {
       timestamp: new Date().toISOString(),
     });
     if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
-    else { setShowModal(false); setForm({ user_id: '', type: 'clock_in', note: '' }); loadData(); }
+    else { 
+      setShowModal(false); 
+      setForm({ user_id: '', type: 'clock_in', note: '' }); 
+      await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] }); 
+    }
   }
 
   function handleDeleteClick(id) {
@@ -571,7 +588,7 @@ function HistoryTab() {
         .eq('id', deleteModal.recordId);
       if (error) throw error;
       setDeleteModal({ isOpen: false, recordId: null, reason: '' });
-      loadData();
+      await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] });
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     }
@@ -584,7 +601,7 @@ function HistoryTab() {
         .update({ is_deleted: false, delete_reason: null, deleted_at: null })
         .eq('id', id);
       if (error) throw error;
-      loadData();
+      await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] });
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     }
@@ -592,37 +609,45 @@ function HistoryTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>ประวัติการลงเวลา</h3>
           <p className="text-sm text-muted">M1: Time Attendance — บันทึกย้อนหลัง</p>
         </div>
-        {isManager && (
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={18} /> ลงเวลาด้วยตนเอง
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <input 
+            type="month" 
+            className="form-input bg-slate-800 border-slate-700 text-sm py-2 px-3 rounded-lg text-slate-200"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+          />
+          {isManager && (
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              <Plus size={18} /> ลงเวลาด้วยตนเอง
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon green"><LogIn size={22} /></div>
           <div className="stat-info">
-            <h3>{records.filter(r => r.type === 'clock_in').length}</h3>
+            <h3>{records.filter(r => r.type === 'clock_in' && !r.is_deleted).length}</h3>
             <p>เข้างาน (50 ล่าสุด)</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon orange"><LogOut size={22} /></div>
           <div className="stat-info">
-            <h3>{records.filter(r => r.type === 'clock_out').length}</h3>
+            <h3>{records.filter(r => r.type === 'clock_out' && !r.is_deleted).length}</h3>
             <p>ออกงาน (50 ล่าสุด)</p>
           </div>
         </div>
         <div className="stat-card">
           <div className="stat-icon blue"><Camera size={22} /></div>
           <div className="stat-info">
-            <h3>{records.filter(r => r.selfie_url).length}</h3>
+            <h3>{records.filter(r => r.selfie_url && !r.is_deleted).length}</h3>
             <p>มีรูปถ่าย</p>
           </div>
         </div>
@@ -807,9 +832,10 @@ function getMonday(d) {
   return dt;
 }
 
-// Helper: format date to YYYY-MM-DD
+// Helper: format date to YYYY-MM-DD (Local Time)
 function toDateStr(d) {
-  return d.toISOString().split('T')[0];
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 const SHIFT_CONFIG = {
@@ -825,17 +851,13 @@ const DAY_NAMES_SHORT = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', '
 function EmployeeSchedulesTab() {
   const { user } = useAuth();
   const isManager = ['owner', 'manager', 'store_manager'].includes(user?.role);
+  const queryClient = useQueryClient();
 
   // View state
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
   const [currentDate, setCurrentDate] = useState(() => getMonday(new Date()));
   
-  const [schedules, setSchedules] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-
   // Branch Settings State
-  const [branchSettings, setBranchSettings] = useState({ shift_times: {}, late_tolerance_minutes: 15 });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [settingsForm, setSettingsForm] = useState({ shift_times: {}, late_tolerance_minutes: 15 });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -869,11 +891,9 @@ function EmployeeSchedulesTab() {
   const startDate = gridDays[0];
   const endDate = gridDays[gridDays.length - 1];
 
-  useEffect(() => { loadData(); }, [currentDate, viewMode]);
-
-  async function loadData() {
-    setLoading(true);
-    try {
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['employeeSchedules', user?.branch_id, toDateStr(startDate), toDateStr(endDate)],
+    queryFn: async () => {
       const startStr = toDateStr(startDate);
       const endStr = toDateStr(endDate);
       const [schedRes, userRes, branchRes] = await Promise.all([
@@ -893,15 +913,26 @@ function EmployeeSchedulesTab() {
           .eq('id', user?.branch_id)
           .maybeSingle()
       ]);
-      if (schedRes.error) console.error('Schedule fetch error:', schedRes.error);
-      if (userRes.error) console.error('User fetch error:', userRes.error);
-      setSchedules(schedRes.data || []);
-      setUsers(userRes.data || []);
-      const loadedSettings = branchRes.data?.settings || { shift_times: {}, late_tolerance_minutes: 15 };
-      setBranchSettings(loadedSettings);
-      setSettingsForm(loadedSettings);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  }
+      
+      return {
+        schedules: schedRes.data || [],
+        users: userRes.data || [],
+        branchSettings: branchRes.data?.settings || { shift_times: {}, late_tolerance_minutes: 15 }
+      };
+    },
+    enabled: !!user?.branch_id,
+  });
+
+  const schedules = data?.schedules || [];
+  const users = data?.users || [];
+  const branchSettings = data?.branchSettings || { shift_times: {}, late_tolerance_minutes: 15 };
+
+  // Sync loaded settings to form state when settings modal opens
+  useEffect(() => {
+    if (showSettingsModal) {
+      setSettingsForm(branchSettings);
+    }
+  }, [showSettingsModal, branchSettings]);
 
   // Build schedule lookup: { `${user_id}_${date}`: [scheduleObj1, scheduleObj2] }
   const scheduleLookup = {};
@@ -960,7 +991,8 @@ function EmployeeSchedulesTab() {
         .eq('id', user?.branch_id);
         
       if (error) throw error;
-      setBranchSettings(newSettings);
+      await queryClient.invalidateQueries({ queryKey: ['employeeSchedules'] });
+      await queryClient.invalidateQueries({ queryKey: ['branchSettings'] });
       setShowSettingsModal(false);
       alert('บันทึกการตั้งค่ากะเรียบร้อยแล้ว');
     } catch (err) {
@@ -1008,7 +1040,7 @@ function EmployeeSchedulesTab() {
         }
       }
       setShowModal(false);
-      loadData();
+      await queryClient.invalidateQueries({ queryKey: ['employeeSchedules'] });
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
@@ -1023,7 +1055,7 @@ function EmployeeSchedulesTab() {
     try {
       await supabase.from('employee_schedules').delete().eq('id', editingSchedule.id);
       setShowModal(false);
-      loadData();
+      await queryClient.invalidateQueries({ queryKey: ['employeeSchedules'] });
     } catch (err) {
       alert('เกิดข้อผิดพลาด: ' + err.message);
     } finally {

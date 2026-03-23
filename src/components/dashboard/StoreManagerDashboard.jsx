@@ -125,19 +125,48 @@ export default function StoreManagerDashboard() {
       const tExpenses = (todayExp || []).reduce((sum, e) => sum + Number(e.amount), 0);
       const startingCash = activeShift?.[0]?.starting_cash || 500;
       const cashDrawer = startingCash + tSales - tExpenses; // simplified
+
+      // Real COGS calculation
+      let todayCOGS = 0;
+      let topList = [];
+      if (todayTx && todayTx.length > 0) {
+        const txIds = todayTx.map(t => t.id);
+        const { data: txItems } = await supabase
+          .from('transaction_items')
+          .select('product_name, quantity, total_price, products(cost)')
+          .in('transaction_id', txIds);
+           
+        if (txItems) {
+           const itemMap = {};
+           txItems.forEach(item => {
+             const cost = Number(item.products?.cost || 0);
+             todayCOGS += (Number(item.quantity) * cost);
+
+             const name = item.product_name;
+             if (!itemMap[name]) itemMap[name] = { qty: 0, price: 0 };
+             itemMap[name].qty += Number(item.quantity);
+             itemMap[name].price += Number(item.total_price);
+           });
+           
+           topList = Object.entries(itemMap)
+             .map(([k, v]) => ({ name: k, qty: v.qty, price: v.price }))
+             .sort((a,b) => b.qty - a.qty)
+             .slice(0, 5);
+        }
+      }
       
-      const mockCOGS = tSales * 0.362; // Mock 36.2% as in HTML
-      const mockFC = tSales > 0 ? (mockCOGS / tSales) * 100 : 0;
-      const mockGP = tSales > 0 ? ((tSales - mockCOGS) / tSales) * 100 : 0;
+      const realFC = tSales > 0 ? (todayCOGS / tSales) * 100 : 0;
+      const realGP = tSales > 0 ? ((tSales - todayCOGS) / tSales) * 100 : 0;
 
       setStats({
         todaySales: tSales,
         totalOrders: tOrders,
         todayExpenses: tExpenses,
-        foodCost: mockFC,
-        grossProfit: mockGP,
+        foodCost: realFC,
+        grossProfit: realGP,
         cashDrawer: cashDrawer,
       });
+      setTopItems(topList);
 
       // Alerts
       const lowItems = (inventory || []).filter(item => 
@@ -151,21 +180,28 @@ export default function StoreManagerDashboard() {
 
       // Chart Data
       const dayLabels = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา'];
-      // Mock data like the HTML file since we might not have 14 days of real DB data
+      const dayIndexMap = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+      
+      const prevWeekData = [0, 0, 0, 0, 0, 0, 0];
+      const thisWeekData = [0, 0, 0, 0, 0, 0, 0];
+      
+      if (twoWeeksTx) {
+        twoWeeksTx.forEach(tx => {
+           const date = new Date(tx.created_at);
+           const dayIdx = dayIndexMap[date.getDay()];
+           if (date >= sevenDaysAgo) {
+             thisWeekData[dayIdx] += Number(tx.total);
+           } else {
+             prevWeekData[dayIdx] += Number(tx.total);
+           }
+        });
+      }
+
       setChartData({
         labels: dayLabels,
-        prevWeek: [32000, 48000, 36000, 55000, 44000, 58000, 52000],
-        thisWeek: [29000, 52000, 42000, 61000, 50000, 60000, tSales || 42500],
+        prevWeek: prevWeekData,
+        thisWeek: thisWeekData,
       });
-
-      // Top Items (mock like HTML)
-      setTopItems([
-        { name: 'ข้าวผัดกุ้ง', qty: 58, price: 17400 },
-        { name: 'ต้มยำกุ้ง', qty: 42, price: 16800 },
-        { name: 'ผัดไทยกุ้งสด', qty: 39, price: 7800 },
-        { name: 'แกงเขียวหวาน', qty: 31, price: 6200 },
-        { name: 'ยำวุ้นเส้น', qty: 28, price: 4200 },
-      ]);
 
     } catch (err) {
       console.error('Error loading manager dashboard:', err);
@@ -236,7 +272,6 @@ export default function StoreManagerDashboard() {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>กำลังโหลดหน้า Dashboard...</div>;
   }
 
-  // To display user avatar initials
   const initials = user?.name ? user.name.substring(0, 2) : 'ผจก';
 
   return (
@@ -368,18 +403,21 @@ export default function StoreManagerDashboard() {
           <div className="card">
             <div className="section-header">
               <span className="section-title">เมนูขายดีวันนี้ (Top 5)</span>
-              <span className="see-all">ดูทั้งหมด &rarr;</span>
             </div>
             <table className="items-table">
               <tbody>
-                {topItems.map((item, idx) => (
+                {topItems.length > 0 ? topItems.map((item, idx) => (
                   <tr key={idx}>
                     <td>#{idx + 1}</td>
                     <td>{item.name}</td>
                     <td>{item.qty} จาน</td>
                     <td>฿{item.price.toLocaleString()}</td>
                   </tr>
-                ))}
+                )) : (
+                  <tr>
+                    <td colSpan="4" style={{ textAlign: 'center', color: '#888' }}>ยังไม่มีการขายวันนี้</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

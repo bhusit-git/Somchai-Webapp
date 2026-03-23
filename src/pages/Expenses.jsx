@@ -203,8 +203,17 @@ export default function Expenses() {
           <p className="text-sm text-muted">M3B: Expense Entry — บันทึกรายจ่ายทั้งแบบวางแผนและฉุกเฉิน</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={18} /> เพิ่มค่าใช้จ่าย
+          <Plus size={18} /> เพิ่มค่าใช้จ่าย (OPEX)
         </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', gap: '8px', padding: '16px', background: 'var(--accent-info-bg)', color: 'var(--accent-info)', borderRadius: 'var(--radius-sm)' }}>
+          <AlertCircle size={20} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>ประกาศสำคัญ:</strong> ห้ามคีย์ค่า "วัตถุดิบ" และ "แพ็กเกจจิ้ง" ในหน้านี้โดยเด็ดขาด! ค่าวัตถุดิบจะถูกบันทึกอัตโนมัติมาจากหน้า <b>สั่งซื้อวัตถุดิบ (Purchase Orders)</b> หน้านี้ใช้สำหรับค่าใช้จ่ายปฏิบัติการ (OPEX) เช่น ค่าเช่า, ค่าน้ำไฟ, เงินเดือน ฯลฯ เท่านั้น
+          </div>
+        </div>
       </div>
 
       {/* Stats */}
@@ -367,6 +376,7 @@ export default function Expenses() {
                     <option value="">-- เลือก --</option>
                     {categories
                       .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('แพ็กเกจจิ้ง') && !c.name.includes('Raw Material'))
                       .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
@@ -478,6 +488,7 @@ export default function Expenses() {
                     <option value="">-- เลือก --</option>
                     {categories
                       .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('แพ็กเกจจิ้ง') && !c.name.includes('Raw Material'))
                       .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>

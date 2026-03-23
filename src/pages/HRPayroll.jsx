@@ -88,7 +88,25 @@ function PayslipPrintView({ payslip, employee }) {
   };
 
   return (
-    <div id="payslip-print-area" style={printStyle}>
+    <>
+      <style>{`
+        @media print {
+          @page { size: A5 landscape; margin: 10mm; }
+          body * { visibility: hidden; }
+          #payslip-print-area, #payslip-print-area * { visibility: visible; }
+          #payslip-print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            border: none !important;
+          }
+          .app-container, .sidebar { display: none !important; }
+        }
+      `}</style>
+      <div id="payslip-print-area" style={printStyle}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -130,18 +148,22 @@ function PayslipPrintView({ payslip, employee }) {
       </div>
 
       {/* Employee Info */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ fontSize: '12px', color: '#777' }}>ชื่อ-นามสกุล</div>
-        <div style={{ fontSize: '16px', fontWeight: '700' }}>{employee.name} ({employee.id})</div>
-        <div style={{ display: 'flex', gap: '32px', marginTop: '4px' }}>
-          <div>
-            <span style={{ fontSize: '12px', color: '#777' }}>ตำแหน่ง&nbsp;&nbsp;</span>
-            <span style={{ fontSize: '14px', fontWeight: '600' }}>{employee.position}</span>
-          </div>
-          <div>
-            <span style={{ fontSize: '12px', color: '#777' }}>สาขา&nbsp;&nbsp;</span>
-            <span style={{ fontSize: '14px', fontWeight: '600' }}>{employee.branch}</span>
-          </div>
+      <div style={{ marginBottom: '20px', display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: '12px', color: '#777' }}>ชื่อ-นามสกุล</div>
+          <div style={{ fontSize: '16px', fontWeight: '700' }}>{employee.name}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '12px', color: '#777' }}>รหัสพนักงาน</div>
+          <div style={{ fontSize: '16px', fontWeight: '700' }}>{employee.id}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '12px', color: '#777' }}>ตำแหน่ง</div>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>{employee.position}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: '12px', color: '#777' }}>สาขา</div>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>{employee.branch}</div>
         </div>
       </div>
 
@@ -209,6 +231,7 @@ function PayslipPrintView({ payslip, employee }) {
         ))}
       </div>
     </div>
+    </>
   );
 }
 
@@ -308,7 +331,7 @@ function EPayslipTab({ role }) {
           payCycleLabel: payCycleInfo.label,
           payCycleColor: payCycleInfo.color,
           employee: {
-            id: u.id,
+            id: u.employee_id || u.id,
             name: u.name,
             position: roleLabels[u.role] || u.role,
             branch: u.branches?.name || 'ไม่ระบุสาขา',
