@@ -27,6 +27,7 @@ export const ROUTE_PERMISSIONS = {
   '/attendance':      ['owner', 'manager', 'store_manager', 'staff'], // Attendance (S / N / F / F / F)
   '/shifts':          mgmt,                                           // Shifts     (N / N / F / R / F)
   '/pos':             ['owner', 'manager', 'store_manager', 'staff'], // POS        (F / N / F / R / F)
+  '/sales-history':   ['owner', 'manager', 'store_manager', 'staff'], // Sales History (view sales, void bills)
   '/expenses':        ['owner', 'manager', 'store_manager', 'staff'], // Expenses   (S / N / F / R / F)
 
   // --- Cash & Finance ---
@@ -38,10 +39,10 @@ export const ROUTE_PERMISSIONS = {
   '/inventory':       ['owner', 'manager', 'store_manager', 'cook'],  // Inventory        (N / F / F / F / F)
   '/purchase-orders': mgmt,                                           // Purchase Orders  (Owner, Area Manager)
   '/stock-receiving': everyone,                                       // Stock Receiving   (staff needs for Blind Receiving)
-  '/bom':             ['owner', 'manager', 'store_manager', 'cook'],  // Recipe Management (BOM) (N / F / F / F / F)
+  '/bom':             ['owner', 'manager', 'cook'],  // Recipe Management (BOM) (N / F / F / F / F)
 
   // --- Analytics ---
-  '/cogs-engine':     mgmt,                                           // COGS Engine       (N / N / R / F / F)
+  '/cogs-engine':     upperMgmt,                                      // COGS Engine       (N / N / R / F / F)
   '/menu-engineering':upperMgmt,                                      // Menu Engineering  (N / N / N / R / F)
   '/menu-pricing':    upperMgmt,                                      // Menu Pricing      (N / N / N / R / F)
   '/smart-insights':  upperMgmt,                                      // Smart Insights    (N / N / R / F / F)
@@ -63,6 +64,7 @@ export const SIDEBAR_ITEMS = [
   { to: '/attendance',      label: 'ลงเวลา (M1)',           icon: 'Clock',           roles: ROUTE_PERMISSIONS['/attendance'] },
   { to: '/shifts',          label: 'เปิด-ปิดกะ (M2)',       icon: 'ArrowLeftRight',  roles: ROUTE_PERMISSIONS['/shifts'] },
   { to: '/pos',             label: 'ขายหน้าร้าน (M3A)',     icon: 'ShoppingCart',    roles: ROUTE_PERMISSIONS['/pos'] },
+  { to: '/sales-history',   label: 'รายการขาย',              icon: 'ClipboardList',   roles: ROUTE_PERMISSIONS['/sales-history'] },
   { to: '/expenses',        label: 'ค่าใช้จ่าย (M3B)',      icon: 'Receipt',         roles: ROUTE_PERMISSIONS['/expenses'] },
 
   { label: 'Cash Management', type: 'section' },

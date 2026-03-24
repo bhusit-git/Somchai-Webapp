@@ -193,7 +193,7 @@ export default function Expenses() {
   const filtered = filter === 'all' ? expenses : expenses.filter(e => e.status === filter);
   const totalPending = expenses.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
   const totalApproved = expenses.filter(e => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
-  const totalAll = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const totalAll = expenses.filter(e => e.status !== 'cancelled').reduce((s, e) => s + Number(e.amount), 0);
 
   return (
     <div>

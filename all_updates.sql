@@ -274,3 +274,18 @@ CREATE POLICY "menu_images_insert" ON storage.objects
 DROP POLICY IF EXISTS "menu_images_delete" ON storage.objects;
 CREATE POLICY "menu_images_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'menu-images');
+
+-- 14. เพิ่มคอลัมน์สำหรับเก็บข้อมูล GP ในตาราง transactions
+-- gp_percent: เปอร์เซ็นต์ GP ตามช่องทางการชำระ (เช่น Grab 32.1%)
+-- gp_amount: จำนวนเงิน GP ที่ถูกหัก (คำนวณจาก total * gp_percent / 100)
+ALTER TABLE transactions
+ADD COLUMN IF NOT EXISTS gp_percent DECIMAL(5,2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS gp_amount DECIMAL(10,2) DEFAULT 0;
+
+-- 15.-- เพิ่มฟิลด์เบอร์โทรศัพท์และเลขบัตรประชาชนสำหรับหน้า Profile ของพนักงาน
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS id_card_number TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS daily_cash_advance NUMERIC DEFAULT 0;
+
+-- Adding is_admin_only to expense_categories
+ALTER TABLE public.expense_categories ADD COLUMN is_admin_only BOOLEAN DEFAULT FALSE;

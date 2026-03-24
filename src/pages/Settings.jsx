@@ -1,8 +1,10 @@
+import './Settings.tailwind.css';
 import { useState, useEffect, useRef, Fragment } from 'react';
 import {
   Users, Building2, Info, Settings as SettingsIcon, Plus, Eye, EyeOff,
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
-  Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed
+  Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed,
+  Banknote, QrCode, CreditCard, Truck, Wallet, Smartphone, CircleDollarSign, HandCoins
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
@@ -14,6 +16,7 @@ const roleLabels = {
   store_manager: { label: 'ผู้จัดการสาขา', color: 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' },
   cook: { label: 'พ่อครัว', color: 'bg-orange-500/20 text-orange-300 border border-orange-500/30' },
   staff: { label: 'พนักงาน', color: 'bg-gray-500/20 text-gray-300 border border-gray-500/30' },
+  trainee: { label: 'พนักงานฝึกหัด', color: 'bg-teal-500/20 text-teal-300 border border-teal-500/30' },
 };
 
 const defaultCompanyInfo = {
@@ -29,6 +32,39 @@ const STORAGE_KEY = 'companyInfo';
 
 // Helper to generate a random 6-digit PIN
 const genPIN = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+// ── Payment Method Icon Map ──
+const PM_ICON_MAP = {
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
+};
+const PM_ICON_OPTIONS = [
+  { key: 'Banknote', label: 'เงินสด' },
+  { key: 'QrCode', label: 'QR Code' },
+  { key: 'CreditCard', label: 'บัตร/โอน' },
+  { key: 'Truck', label: 'Delivery' },
+  { key: 'Users', label: 'เงินเชื่อ' },
+  { key: 'Wallet', label: 'กระเป๋าเงิน' },
+  { key: 'Smartphone', label: 'Mobile' },
+  { key: 'CircleDollarSign', label: 'อื่นๆ' },
+];
+
+const DEFAULT_PAYMENT_METHODS = [
+  { value: 'cash',      label: 'เงินสด',        icon: 'Banknote',    isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
+  { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',      isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
+  { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard',  isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
+  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 30 },
+  { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',       isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
+];
+
+function getPaymentMethods() {
+  try {
+    const raw = localStorage.getItem('paymentMethods');
+    if (raw) return JSON.parse(raw);
+  } catch (err) {
+    console.error('Error loading payment methods:', err);
+  }
+  return DEFAULT_PAYMENT_METHODS;
+}
 
 /* ── Per-Day Rate Configuration Component ── */
 const DAY_LABELS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
@@ -71,8 +107,8 @@ function DayRatesEditor({ baseRate, value, onChange }) {
                 value={currentRate !== undefined ? currentRate : ''}
                 onChange={e => handleChange(i, e.target.value)}
                 title={DAY_FULL_LABELS[i]}
-                className={`w-full bg-slate-900/60 border rounded-lg p-1.5 text-white text-xs text-center focus:outline-none focus:border-violet-500 ${
-                  isWeekend ? 'border-amber-500/40' : 'border-slate-600'
+                className={`w-full bg-slate-900/50 border rounded-lg text-sm text-center py-2 px-1 text-white placeholder:text-slate-600 focus:outline-none focus:ring-1 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                  isWeekend ? 'border-amber-500/40 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-600 focus:border-violet-500 focus:ring-violet-500'
                 }`}
               />
             </div>
@@ -124,6 +160,10 @@ export default function Settings() {
                     ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/50'
                     : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                 }`}
+                style={{
+                  background: activeTab === tab.id ? undefined : 'transparent',
+                  border: 'none'
+                }}
               >
                 <Icon className="w-4 h-4" />
                 {tab.label}
@@ -154,7 +194,7 @@ function UsersTab() {
   const [branches, setBranches] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [generatedPIN, setGeneratedPIN] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', employee_id: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', base_salary: 0, daily_rate: 0, custom_rates: null });
+  const [newUser, setNewUser] = useState({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, custom_rates: null });
   const [resetTarget, setResetTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState(null);
@@ -192,11 +232,15 @@ function UsersTab() {
         name: newUser.name,
         full_name: newUser.name,
         employee_id: newUser.employee_id || null,
+        phone: newUser.phone || null,
+        id_card_number: newUser.id_card_number || null,
         role: newUser.role,
         branch_id: newUser.branch_id,
         employment_type: newUser.employment_type,
+        pay_cycle: newUser.pay_cycle || 'bimonthly',
         base_salary: parseFloat(newUser.base_salary) || 0,
         daily_rate: parseFloat(newUser.daily_rate) || 0,
+        daily_cash_advance: parseFloat(newUser.daily_cash_advance) || 0,
         custom_rates: newUser.employment_type === 'daily' && newUser.custom_rates && Object.keys(newUser.custom_rates).length > 0
           ? newUser.custom_rates
           : null,
@@ -204,7 +248,7 @@ function UsersTab() {
       });
       
       setShowAddForm(false);
-      setNewUser({ name: '', employee_id: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', base_salary: 0, daily_rate: 0, custom_rates: null });
+      setNewUser({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, custom_rates: null });
       loadData();
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการสร้างผู้ใช้งาน');
@@ -235,11 +279,15 @@ function UsersTab() {
         name: editUser.name,
         full_name: editUser.name,
         employee_id: editUser.employee_id || null,
+        phone: editUser.phone || null,
+        id_card_number: editUser.id_card_number || null,
         role: editUser.role,
         branch_id: editUser.branch_id,
         employment_type: editUser.employment_type,
+        pay_cycle: editUser.pay_cycle || 'bimonthly',
         base_salary: parseFloat(editUser.base_salary) || 0,
         daily_rate: parseFloat(editUser.daily_rate) || 0,
+        daily_cash_advance: parseFloat(editUser.daily_cash_advance) || 0,
         custom_rates: editUser.employment_type === 'daily' && editUser.custom_rates && Object.keys(editUser.custom_rates).length > 0
           ? editUser.custom_rates
           : null,
@@ -247,7 +295,8 @@ function UsersTab() {
       setEditUser(null);
       loadData();
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการแก้ไขข้อมูลผู้ใช้งาน');
+      console.error('Update User Error:', err);
+      alert('เกิดข้อผิดพลาดในการแก้ไขข้อมูลผู้ใช้งาน: ' + (err.message || err));
     }
   };
 
@@ -301,7 +350,7 @@ function UsersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อ-นามสกุล *</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="กรอกชื่อ..."
                 value={newUser.name}
                 onChange={e => setNewUser({ ...newUser, name: e.target.value })}
@@ -310,16 +359,33 @@ function UsersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">รหัสพนักงาน (ถ้ามี)</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="เช่น EMP01"
                 value={newUser.employee_id}
                 onChange={e => setNewUser({ ...newUser, employee_id: e.target.value })}
               />
             </div>
             <div>
+              <label className="text-slate-400 text-xs mb-1 block">เบอร์โทรศัพท์</label>
+              <input
+                className="form-input"
+                placeholder="เช่น 0812345678"
+                value={newUser.phone || ''}
+                onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">เลขบัตรประชาชน / Passport</label>
+              <input
+                className="form-input"
+                placeholder="เลขบัตรฯ 13 หลัก"
+                value={newUser.id_card_number || ''}
+                onChange={e => setNewUser({ ...newUser, id_card_number: e.target.value })}
+              />
+            </div>
+            <div>
               <label className="text-slate-400 text-xs mb-1 block">สิทธิ์</label>
-              <select
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+              <select className="form-select"
                 value={newUser.role}
                 onChange={e => setNewUser({ ...newUser, role: e.target.value })}
               >
@@ -330,8 +396,7 @@ function UsersTab() {
             </div>
             <div>
               <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-              <select
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+              <select className="form-select"
                 value={newUser.branch_id}
                 onChange={e => setNewUser({ ...newUser, branch_id: e.target.value })}
               >
@@ -341,48 +406,81 @@ function UsersTab() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ประเภทการจ้าง</label>
-              <select
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+              <select className="form-select"
                 value={newUser.employment_type}
-                onChange={e => setNewUser({ ...newUser, employment_type: e.target.value })}
+                onChange={e => {
+                  const val = e.target.value;
+                  setNewUser({ 
+                    ...newUser, 
+                    employment_type: val,
+                    pay_cycle: (val === 'monthly' && newUser.pay_cycle === 'daily') ? 'bimonthly' : (newUser.pay_cycle || 'bimonthly')
+                  });
+                }}
               >
                 <option value="monthly">รายเดือน</option>
                 <option value="daily">รายวัน</option>
               </select>
             </div>
-            {newUser.employment_type === 'monthly' ? (
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
-                <input
-                  type="number"
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                  placeholder="เช่น 15000"
-                  value={newUser.base_salary}
-                  onChange={e => setNewUser({ ...newUser, base_salary: e.target.value })}
-                />
-              </div>
-            ) : (
-              <div className="md:col-span-2">
-                <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
-                <input
-                  type="number"
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                  placeholder="เช่น 380"
-                  value={newUser.daily_rate}
-                  onChange={e => setNewUser({ ...newUser, daily_rate: e.target.value })}
-                />
-                <DayRatesEditor
-                  baseRate={newUser.daily_rate}
-                  value={newUser.custom_rates}
-                  onChange={rates => setNewUser({ ...newUser, custom_rates: rates })}
-                />
-              </div>
-            )}
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">รอบจ่ายเงิน</label>
+              <select className="form-select"
+                value={newUser.pay_cycle || 'bimonthly'}
+                onChange={e => setNewUser({ ...newUser, pay_cycle: e.target.value })}
+              >
+                <option value="bimonthly">แบ่งจ่าย 2 รอบ/เดือน (วันที่ 15, สิ้นเดือน)</option>
+                <option value="monthly">จ่ายสิ้นเดือนรอบเดียว</option>
+                {newUser.employment_type === 'daily' && <option value="daily">จ่ายทุกวัน</option>}
+              </select>
+            </div>
           </div>
-          <div className="flex gap-3 mt-2">
+
+          {newUser.employment_type === 'monthly' ? (
+            <div>
+              <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
+              <input
+                type="number"
+                className="form-input"
+                placeholder="เช่น 15000"
+                value={newUser.base_salary}
+                onChange={e => setNewUser({ ...newUser, base_salary: e.target.value })}
+              />
+            </div>
+          ) : (
+            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
+                  <input
+                    type="number"
+                    className="form-input bg-slate-800"
+                    placeholder="เช่น 380"
+                    value={newUser.daily_rate}
+                    onChange={e => setNewUser({ ...newUser, daily_rate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">เบิกจ่ายสดต่อวัน (บาท) <span className="text-slate-500 font-normal">ส่วนที่เหลือโอนตามรอบ</span></label>
+                  <input
+                    type="number"
+                    className="form-input bg-slate-800"
+                    placeholder="0 = ไม่เบิกสด"
+                    value={newUser.daily_cash_advance || ''}
+                    onChange={e => setNewUser({ ...newUser, daily_cash_advance: e.target.value })}
+                  />
+                </div>
+              </div>
+              <DayRatesEditor
+                baseRate={newUser.daily_rate}
+                value={newUser.custom_rates}
+                onChange={rates => setNewUser({ ...newUser, custom_rates: rates })}
+              />
+            </div>
+          )}
+
+          <div className="flex gap-3 mt-4">
             <button onClick={handleAddUser} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               <Check className="w-4 h-4" /> สร้างผู้ใช้ + สร้าง PIN
             </button>
@@ -401,10 +499,10 @@ function UsersTab() {
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="col-span-2">
                   <label className="text-slate-400 text-xs mb-1 block">ชื่อ-นามสกุล *</label>
                   <input
-                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                    className="form-input"
                     value={editUser.name}
                     onChange={e => setEditUser({ ...editUser, name: e.target.value })}
                   />
@@ -412,17 +510,34 @@ function UsersTab() {
                 <div>
                   <label className="text-slate-400 text-xs mb-1 block">รหัสพนักงาน (ถ้ามี)</label>
                   <input
-                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                    className="form-input"
                     placeholder="เช่น EMP01"
                     value={editUser.employee_id || ''}
                     onChange={e => setEditUser({ ...editUser, employee_id: e.target.value })}
                   />
                 </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">เบอร์โทรศัพท์</label>
+                  <input
+                    className="form-input"
+                    placeholder="เช่น 0812345678"
+                    value={editUser.phone || ''}
+                    onChange={e => setEditUser({ ...editUser, phone: e.target.value })}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-slate-400 text-xs mb-1 block">เลขบัตรประชาชน / Passport</label>
+                  <input
+                    className="form-input"
+                    placeholder="เลขบัตรฯ 13 หลัก"
+                    value={editUser.id_card_number || ''}
+                    onChange={e => setEditUser({ ...editUser, id_card_number: e.target.value })}
+                  />
+                </div>
               </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">สิทธิ์</label>
-                <select
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                <select className="form-select"
                   value={editUser.role}
                   onChange={e => setEditUser({ ...editUser, role: e.target.value })}
                 >
@@ -433,8 +548,7 @@ function UsersTab() {
               </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-                <select
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                <select className="form-select"
                   value={editUser.branch_id || ''}
                   onChange={e => setEditUser({ ...editUser, branch_id: e.target.value })}
                 >
@@ -443,38 +557,72 @@ function UsersTab() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ประเภทการจ้าง</label>
-                <select
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                  value={editUser.employment_type || 'monthly'}
-                  onChange={e => setEditUser({ ...editUser, employment_type: e.target.value })}
-                >
-                  <option value="monthly">รายเดือน</option>
-                  <option value="daily">รายวัน</option>
-                </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">ประเภทการจ้าง</label>
+                  <select className="form-select"
+                    value={editUser.employment_type || 'monthly'}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setEditUser({ 
+                        ...editUser, 
+                        employment_type: val,
+                        pay_cycle: (val === 'monthly' && editUser.pay_cycle === 'daily') ? 'bimonthly' : (editUser.pay_cycle || 'bimonthly')
+                      });
+                    }}
+                  >
+                    <option value="monthly">รายเดือน</option>
+                    <option value="daily">รายวัน</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">รอบจ่ายเงิน</label>
+                  <select className="form-select"
+                    value={editUser.pay_cycle || 'bimonthly'}
+                    onChange={e => setEditUser({ ...editUser, pay_cycle: e.target.value })}
+                  >
+                    <option value="bimonthly">แบ่งจ่าย 2 รอบ/เดือน (วันที่ 15, สิ้นเดือน)</option>
+                    <option value="monthly">จ่ายสิ้นเดือนรอบเดียว</option>
+                    {editUser.employment_type === 'daily' && <option value="daily">จ่ายทุกวัน</option>}
+                  </select>
+                </div>
               </div>
+
               {(!editUser.employment_type || editUser.employment_type === 'monthly') ? (
                 <div>
                   <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
                   <input
                     type="number"
-                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                    className="form-input"
                     placeholder="เช่น 15000"
                     value={editUser.base_salary || 0}
                     onChange={e => setEditUser({ ...editUser, base_salary: e.target.value })}
                   />
                 </div>
               ) : (
-                <div>
-                  <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
-                  <input
-                    type="number"
-                    className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                    placeholder="เช่น 380"
-                    value={editUser.daily_rate || 0}
-                    onChange={e => setEditUser({ ...editUser, daily_rate: e.target.value })}
-                  />
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="text-slate-400 text-xs mb-1 block">ค่าจ้างต่อกะ Default (บาท)</label>
+                      <input
+                        type="number"
+                        className="form-input bg-slate-800"
+                        placeholder="เช่น 380"
+                        value={editUser.daily_rate || 0}
+                        onChange={e => setEditUser({ ...editUser, daily_rate: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-xs mb-1 block">เบิกจ่ายสดต่อวัน (บาท) <span className="text-slate-500 font-normal">ส่วนที่เหลือโอนตามรอบ</span></label>
+                      <input
+                        type="number"
+                        className="form-input bg-slate-800"
+                        placeholder="0 = ไม่เบิกสด"
+                        value={editUser.daily_cash_advance || ''}
+                        onChange={e => setEditUser({ ...editUser, daily_cash_advance: e.target.value })}
+                      />
+                    </div>
+                  </div>
                   <DayRatesEditor
                     baseRate={editUser.daily_rate}
                     value={editUser.custom_rates}
@@ -484,7 +632,7 @@ function UsersTab() {
               )}
             </div>
 
-            <div className="flex gap-3 justify-end mt-6">
+            <div className="flex gap-3 justify-end mt-8">
               <button 
                 onClick={() => setEditUser(null)} 
                 className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors border border-slate-600"
@@ -525,7 +673,13 @@ function UsersTab() {
                 </span>
               </div>
               <div className="flex items-center gap-4 mt-1">
-                <p className="text-slate-400 text-sm">{user.branches?.name || 'ไม่ระบุสาขา'}</p>
+                <p className="text-slate-400 text-sm hidden sm:block">{user.branches?.name || 'ไม่ระบุสาขา'}</p>
+                {user.phone && (
+                  <p className="text-slate-400 text-sm flex items-center gap-1">
+                    <Phone className="w-3.5 h-3.5" />
+                    {user.phone}
+                  </p>
+                )}
                 <span className="text-emerald-400 text-sm font-medium">
                   {user.employment_type === 'daily' 
                     ? `กะละ ฿${Number(user.daily_rate || 0).toLocaleString()}`
@@ -629,7 +783,7 @@ function BranchesTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">รหัสสาขาตั้งเอง (Code)</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="เช่น SC001 (ไม่ต้องใส่ก็ได้)"
                 value={newBranch.code}
                 onChange={e => setNewBranch({ ...newBranch, code: e.target.value })}
@@ -638,7 +792,7 @@ function BranchesTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อสาขา *</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="เช่น สาขา Siam"
                 value={newBranch.name}
                 onChange={e => setNewBranch({ ...newBranch, name: e.target.value })}
@@ -647,7 +801,7 @@ function BranchesTab() {
             <div className="md:col-span-2">
               <label className="text-slate-400 text-xs mb-1 block">ที่อยู่สาขา</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="ที่อยู่..."
                 value={newBranch.address}
                 onChange={e => setNewBranch({ ...newBranch, address: e.target.value })}
@@ -673,7 +827,7 @@ function BranchesTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">รหัสสาขาตั้งเอง (Branch Code)</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editBranch.code || ''}
                   onChange={e => setEditBranch({ ...editBranch, code: e.target.value })}
                   placeholder="เช่น SC001"
@@ -682,7 +836,7 @@ function BranchesTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">ชื่อสาขา *</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editBranch.name}
                   onChange={e => setEditBranch({ ...editBranch, name: e.target.value })}
                 />
@@ -690,7 +844,7 @@ function BranchesTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">ที่อยู่สาขา</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editBranch.address || ''}
                   onChange={e => setEditBranch({ ...editBranch, address: e.target.value })}
                 />
@@ -943,10 +1097,60 @@ function SystemConfigTab() {
   });
   const [saved, setSaved] = useState(false);
 
+  // Payment methods state
+  const [payMethods, setPayMethods] = useState(() => {
+    try {
+      const raw = localStorage.getItem('paymentMethods');
+      return raw ? JSON.parse(raw) : DEFAULT_PAYMENT_METHODS;
+    } catch {
+      return DEFAULT_PAYMENT_METHODS;
+    }
+  });
+  const [newMethodName, setNewMethodName] = useState('');
+  const [newMethodIcon, setNewMethodIcon] = useState('CircleDollarSign');
+  const [newMethodGP, setNewMethodGP] = useState('');
+  const [newMethodDeliveryFee, setNewMethodDeliveryFee] = useState('');
+
   const handleSave = () => {
     localStorage.setItem('systemConfig', JSON.stringify(config));
+    localStorage.setItem('paymentMethods', JSON.stringify(payMethods));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const toggleMethod = (value) => {
+    setPayMethods(prev => prev.map(m => m.value === value ? { ...m, enabled: !m.enabled } : m));
+  };
+
+  const addCustomMethod = () => {
+    const trimmed = newMethodName.trim();
+    if (!trimmed) return;
+    const newM = {
+      value: `custom_${Date.now()}`,
+      label: trimmed,
+      icon: newMethodIcon,
+      isDefault: false,
+      enabled: true,
+      gpPercent: parseFloat(newMethodGP) || 0,
+      deliveryFee: parseFloat(newMethodDeliveryFee) || 0,
+    };
+    setPayMethods(prev => [...prev, newM]);
+    setNewMethodName('');
+    setNewMethodIcon('CircleDollarSign');
+    setNewMethodGP('');
+    setNewMethodDeliveryFee('');
+  };
+
+  const updateMethodGP = (value, gp) => {
+    setPayMethods(prev => prev.map(m => m.value === value ? { ...m, gpPercent: parseFloat(gp) || 0 } : m));
+  };
+
+  const updateMethodDeliveryFee = (value, fee) => {
+    setPayMethods(prev => prev.map(m => m.value === value ? { ...m, deliveryFee: parseFloat(fee) || 0 } : m));
+  };
+
+  const removeCustomMethod = (value) => {
+    setPayMethods(prev => prev.filter(m => m.value !== value));
   };
 
   return (
@@ -975,7 +1179,7 @@ function SystemConfigTab() {
               <label className="text-slate-400 text-xs mb-1 block">เป้าหมายยอดขายรายวัน (บาท)</label>
               <input
                 type="number"
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 value={config.dailySalesTarget || ''}
                 onChange={e => setConfig({ ...config, dailySalesTarget: e.target.value })}
               />
@@ -984,7 +1188,7 @@ function SystemConfigTab() {
               <label className="text-slate-400 text-xs mb-1 block">เป้าหมาย Food Cost (%)</label>
               <input
                 type="number"
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 value={config.targetFcPercent || ''}
                 onChange={e => setConfig({ ...config, targetFcPercent: e.target.value })}
               />
@@ -993,7 +1197,7 @@ function SystemConfigTab() {
               <label className="text-slate-400 text-xs mb-1 block">เป้าหมาย Gross Profit (%)</label>
               <input
                 type="number"
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 value={config.targetGpPercent || ''}
                 onChange={e => setConfig({ ...config, targetGpPercent: e.target.value })}
               />
@@ -1001,63 +1205,6 @@ function SystemConfigTab() {
           </div>
         </div>
 
-        {/* Finance */}
-        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4">
-          <h3 className="text-white font-medium flex items-center gap-2"><Percent className="w-4 h-4 text-violet-400" /> การเงิน</h3>
-          <div>
-            <label className="text-slate-400 text-xs mb-1 block">
-              VAT% (ค่าเริ่มต้น)
-              <span className="text-slate-500 text-[10px] ml-2 block">
-                *หากร้านไม่ได้จด VAT ให้ใส่ 0
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                className="w-24 bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                value={config.vatPercent}
-                onChange={e => setConfig({ ...config, vatPercent: Number(e.target.value) })}
-              />
-              <span className="text-slate-400 text-sm">%</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-slate-400 text-xs mb-1 block">
-              GP% (Grab)
-              <span className="text-slate-500 text-[10px] ml-2 block">
-                *เช่น 32.1 (รวม VAT แล้ว)
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="0.1"
-                className="w-24 bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                value={config.gpGrabPercent}
-                onChange={e => setConfig({ ...config, gpGrabPercent: Number(e.target.value) })}
-              />
-              <span className="text-slate-400 text-sm">%</span>
-            </div>
-          </div>
-          <div>
-            <label className="text-slate-400 text-xs mb-1 block">
-              GP% (LineMan)
-              <span className="text-slate-500 text-[10px] ml-2 block">
-                *เช่น 32.1 (รวม VAT แล้ว)
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="0.1"
-                className="w-24 bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
-                value={config.gpLinemanPercent}
-                onChange={e => setConfig({ ...config, gpLinemanPercent: Number(e.target.value) })}
-              />
-              <span className="text-slate-400 text-sm">%</span>
-            </div>
-          </div>
-        </div>
 
         {/* Alerts */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4">
@@ -1067,7 +1214,7 @@ function SystemConfigTab() {
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                className="w-24 bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input" style={{width: "6rem"}}
                 value={config.stockAlertDays}
                 onChange={e => setConfig({ ...config, stockAlertDays: Number(e.target.value) })}
               />
@@ -1076,13 +1223,31 @@ function SystemConfigTab() {
           </div>
         </div>
 
-        {/* Receipt Footer */}
+        {/* Receipt & Taxes */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 md:col-span-2">
-          <h3 className="text-white font-medium flex items-center gap-2"><FileText className="w-4 h-4 text-blue-400" /> ใบเสร็จรับเงิน</h3>
+          <h3 className="text-white font-medium flex items-center gap-2"><FileText className="w-4 h-4 text-blue-400" /> ใบเสร็จรับเงิน & ภาษี</h3>
+          
+          <div>
+            <label className="text-slate-400 text-xs mb-1 block">
+              VAT% (ภาษีมูลค่าเพิ่ม)
+              <span className="text-slate-500 text-[10px] ml-2 inline">
+                *หากร้านไม่ได้จด VAT ให้ใส่ 0
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                className="form-input" style={{width: "6rem"}}
+                value={config.vatPercent}
+                onChange={e => setConfig({ ...config, vatPercent: Number(e.target.value) })}
+              />
+              <span className="text-slate-400 text-sm">%</span>
+            </div>
+          </div>
           <div>
             <label className="text-slate-400 text-xs mb-1 block">ข้อความท้ายใบเสร็จ</label>
             <textarea
-              className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500 resize-none"
+              className="form-textarea"
               rows={2}
               value={config.receiptFooter}
               onChange={e => setConfig({ ...config, receiptFooter: e.target.value })}
@@ -1092,7 +1257,7 @@ function SystemConfigTab() {
             <label className="text-slate-400 text-xs mb-1 block">Line OA Channel Access Token</label>
             <input
               type="password"
-              className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500 font-mono"
+              className="form-input" style={{fontFamily: "monospace"}}
               value={config.lineOAToken}
               onChange={e => setConfig({ ...config, lineOAToken: e.target.value })}
               placeholder="eyJ..."
@@ -1100,6 +1265,161 @@ function SystemConfigTab() {
             <p className="text-slate-500 text-xs mt-1">ใช้สำหรับส่งแจ้งเตือนผ่าน Line Official Account</p>
           </div>
         </div>
+
+        {/* ── Payment Methods ── */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 md:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-white font-medium flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-emerald-400" /> ช่องทางชำระเงิน (POS)
+            </h3>
+            <span className="text-slate-500 text-xs">เปิด/ปิดแต่ละช่องทางได้ • บันทึกเพื่อให้มีผล</span>
+          </div>
+
+          {/* Method List */}
+          <div className="space-y-2">
+            {payMethods.map((m) => {
+              const IconComp = PM_ICON_MAP[m.icon] || CircleDollarSign;
+              return (
+                  <div
+                  key={m.value}
+                  className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
+                    m.enabled
+                      ? 'bg-slate-700/40 border-slate-600/60'
+                      : 'bg-slate-900/30 border-slate-700/30 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {/* Icon */}
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                      m.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'
+                    }`}>
+                      <IconComp className="w-5 h-5" />
+                    </div>
+
+                    {/* Label */}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-medium ${m.enabled ? 'text-white' : 'text-slate-400'}`}>{m.label}</span>
+                        {m.isDefault && (
+                          <span className="text-[10px] text-slate-400 bg-slate-800/60 border border-slate-700 px-1.5 py-0.5 rounded-full">Default</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">{m.value}</div>
+                    </div>
+                  </div>
+
+                  {/* Controls (Right Side) */}
+                  <div className="flex items-center gap-4">
+                    {/* Delivery Fee: Only for 'delivery' */}
+                    {m.value === 'delivery' && (
+                      <div className="flex items-center gap-1.5 bg-slate-900/50 rounded-lg p-1.5 border border-slate-700/50" title="ค่าส่งนอกรอบ (฿)">
+                        <span className="text-slate-400 text-[10px] font-semibold tracking-wider ml-1">🛵฿</span>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          disabled={!m.enabled}
+                          className="form-input" style={{width: "3.5rem", background: "transparent", border: "none", padding: 0, textAlign: "center"}}
+                          value={m.deliveryFee > 0 ? m.deliveryFee : ''}
+                          placeholder="0"
+                          onChange={e => updateMethodDeliveryFee(m.value, e.target.value)}
+                        />
+                      </div>
+                    )}
+                    {/* GP% */}
+                    <div className="flex items-center gap-1.5 bg-slate-900/50 rounded-lg p-1.5 border border-slate-700/50">
+                      <span className="text-slate-400 text-[10px] font-semibold tracking-wider ml-1">GP</span>
+                      <div className="flex items-center">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          max="100"
+                          disabled={!m.enabled}
+                          className="form-input" style={{width: "3.5rem", background: "transparent", border: "none", padding: 0, textAlign: "center"}}
+                          value={m.gpPercent || ''}
+                          placeholder="0"
+                          onChange={e => updateMethodGP(m.value, e.target.value)}
+                        />
+                        <span className="text-slate-500 text-xs mr-1">%</span>
+                      </div>
+                    </div>
+
+                    {/* Toggle */}
+                    <div className="flex items-center border-l border-slate-700/50 pl-4">
+                      <button
+                        onClick={() => toggleMethod(m.value)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${
+                          m.enabled ? 'bg-emerald-500' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                          m.enabled ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    </div>
+
+                    {/* Delete (custom only) */}
+                    {!m.isDefault && (
+                      <button
+                        onClick={() => removeCustomMethod(m.value)}
+                        className="text-red-400/70 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-1"
+                        title="ลบช่องทางชำระเงิน"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Add Custom Method */}
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <p className="text-slate-400 text-xs font-semibold mb-3 uppercase tracking-wide">➕ เพิ่มช่องทางชำระเงินใหม่</p>
+            <div className="flex gap-2 flex-wrap">
+              <select
+                className="form-select" style={{width: "140px", flexShrink: 0}}
+                value={newMethodIcon}
+                onChange={e => setNewMethodIcon(e.target.value)}
+              >
+                {PM_ICON_OPTIONS.map(opt => (
+                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                ))}
+              </select>
+              <input
+                className="form-input" style={{flex: 1, minWidth: "140px"}}
+                placeholder="ชื่อช่องทาง เช่น Grab, บัตรเครดิต"
+                value={newMethodName}
+                onChange={e => setNewMethodName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCustomMethod()}
+              />
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-slate-400 text-xs">GP</span>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="form-input" style={{width: "4rem", textAlign: "center"}}
+                  value={newMethodGP}
+                  placeholder="0"
+                  onChange={e => setNewMethodGP(e.target.value)}
+                />
+                <span className="text-slate-400 text-xs">%</span>
+              </div>
+              <button
+                onClick={addCustomMethod}
+                disabled={!newMethodName.trim()}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+              >
+                <Plus className="w-4 h-4" /> เพิ่ม
+              </button>
+            </div>
+            <p className="text-slate-500 text-xs mt-2">💡 เมื่อเพิ่มแล้วกด <strong className="text-slate-300">บันทึก</strong> ที่มุมบนขวา เพื่อให้ POS รับรู้การเปลี่ยนแปลง</p>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -1196,7 +1516,7 @@ function ExpenseCategoriesTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อหมวดหมู่ *</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="เช่น ค่าแรง, ค่าไฟ..."
                 value={newCat.name}
                 onChange={e => setNewCat({ ...newCat, name: e.target.value })}
@@ -1204,8 +1524,7 @@ function ExpenseCategoriesTab() {
             </div>
             <div>
               <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-              <select
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+              <select className="form-select"
                 value={newCat.branch_id}
                 onChange={e => setNewCat({ ...newCat, branch_id: e.target.value })}
               >
@@ -1218,7 +1537,7 @@ function ExpenseCategoriesTab() {
               <input 
                 type="checkbox" 
                 id="is_admin_only_new" 
-                className="w-4 h-4 rounded border-slate-600 bg-slate-900/60"
+                style={{width: "1rem", height: "1rem"}}
                 checked={newCat.is_admin_only || false} 
                 onChange={e => setNewCat({ ...newCat, is_admin_only: e.target.checked })} 
               />
@@ -1244,15 +1563,14 @@ function ExpenseCategoriesTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">ชื่อหมวดหมู่ *</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCat.name}
                   onChange={e => setEditCat({ ...editCat, name: e.target.value })}
                 />
               </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-                <select
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                <select className="form-select"
                   value={editCat.branch_id || ''}
                   onChange={e => setEditCat({ ...editCat, branch_id: e.target.value })}
                 >
@@ -1265,7 +1583,7 @@ function ExpenseCategoriesTab() {
                 <input 
                   type="checkbox" 
                   id="is_admin_only_edit" 
-                  className="w-4 h-4 rounded border-slate-600 bg-slate-900/60"
+                  style={{width: "1rem", height: "1rem"}}
                   checked={editCat.is_admin_only || false} 
                   onChange={e => setEditCat({ ...editCat, is_admin_only: e.target.checked })} 
                 />
@@ -1435,7 +1753,7 @@ function CustomersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อลูกค้า *</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="ชื่อ..."
                 value={newCustomer.name}
                 onChange={e => setNewCustomer({ ...newCustomer, name: e.target.value })}
@@ -1444,7 +1762,7 @@ function CustomersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">ชื่อบริษัท (ถ้ามี)</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="บริษัท..."
                 value={newCustomer.company}
                 onChange={e => setNewCustomer({ ...newCustomer, company: e.target.value })}
@@ -1453,7 +1771,7 @@ function CustomersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">เบอร์โทร</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="เบอร์โทร..."
                 value={newCustomer.phone}
                 onChange={e => setNewCustomer({ ...newCustomer, phone: e.target.value })}
@@ -1462,7 +1780,7 @@ function CustomersTab() {
             <div>
               <label className="text-slate-400 text-xs mb-1 block">รหัสผู้เสียภาษี</label>
               <input
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 placeholder="13 หลัก..."
                 value={newCustomer.tax_id}
                 onChange={e => setNewCustomer({ ...newCustomer, tax_id: e.target.value })}
@@ -1472,15 +1790,14 @@ function CustomersTab() {
               <label className="text-slate-400 text-xs mb-1 block text-amber-400">แจ้งเตือน AR ค้างชำระ (วัน)</label>
               <input
                 type="number"
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                className="form-input"
                 value={newCustomer.ar_reminder_days}
                 onChange={e => setNewCustomer({ ...newCustomer, ar_reminder_days: e.target.value })}
               />
             </div>
             <div>
               <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-              <select
-                className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+              <select className="form-select"
                 value={newCustomer.branch_id}
                 onChange={e => setNewCustomer({ ...newCustomer, branch_id: e.target.value })}
               >
@@ -1509,7 +1826,7 @@ function CustomersTab() {
               <div className="md:col-span-2">
                 <label className="text-slate-400 text-xs mb-1 block">ชื่อลูกค้า *</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCustomer.name}
                   onChange={e => setEditCustomer({ ...editCustomer, name: e.target.value })}
                 />
@@ -1517,7 +1834,7 @@ function CustomersTab() {
               <div className="md:col-span-2">
                 <label className="text-slate-400 text-xs mb-1 block">ชื่อบริษัท (ถ้ามี)</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCustomer.company || ''}
                   onChange={e => setEditCustomer({ ...editCustomer, company: e.target.value })}
                 />
@@ -1525,7 +1842,7 @@ function CustomersTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">เบอร์โทร</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCustomer.phone || ''}
                   onChange={e => setEditCustomer({ ...editCustomer, phone: e.target.value })}
                 />
@@ -1533,7 +1850,7 @@ function CustomersTab() {
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">รหัสผู้เสียภาษี</label>
                 <input
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCustomer.tax_id || ''}
                   onChange={e => setEditCustomer({ ...editCustomer, tax_id: e.target.value })}
                 />
@@ -1542,15 +1859,14 @@ function CustomersTab() {
                 <label className="text-slate-400 text-xs mb-1 block text-amber-400">แจ้งเตือน AR ค้างชำระ (วัน)</label>
                 <input
                   type="number"
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                  className="form-input"
                   value={editCustomer.ar_reminder_days}
                   onChange={e => setEditCustomer({ ...editCustomer, ar_reminder_days: e.target.value })}
                 />
               </div>
               <div>
                 <label className="text-slate-400 text-xs mb-1 block">สาขา *</label>
-                <select
-                  className="w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500"
+                <select className="form-select"
                   value={editCustomer.branch_id || ''}
                   onChange={e => setEditCustomer({ ...editCustomer, branch_id: e.target.value })}
                 >
@@ -1783,7 +2099,7 @@ function ProductsTab() {
 
   if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดเมนูขาย...</div>;
 
-  const inputCls = 'w-full bg-slate-900/60 border border-slate-600 rounded-lg p-2.5 text-white text-sm focus:outline-none focus:border-violet-500';
+  const inputCls = 'form-input';
 
   return (
     <div className="space-y-6 max-w-5xl">

@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 /*
   Supabase Schema Integration
@@ -65,9 +67,63 @@ function useCompanyInfo() {
 
 const PAY_CYCLE_LABELS = {
   daily: { label: 'จ่ายทุกวัน', color: '#8b5cf6' },
-  bimonthly: { label: 'ครึ่งเดือน', color: '#f59e0b' },
-  monthly: { label: 'สิ้นเดือน', color: '#3b82f6' },
+  bimonthly: { label: 'จ่าย 2 รอบ/เดือน', color: '#f59e0b' },
+  monthly: { label: 'จ่ายสิ้นเดือน', color: '#3b82f6' },
 };
+
+const THAI_MONTHS = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+
+function generatePayPeriods(count = 12) {
+  const periods = [];
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth(); // 0-indexed
+  let isEnd = now.getDate() > 15;
+
+  for (let i = 0; i < count; i++) {
+    const y = year;
+    const m = month;
+    const monthStr = String(m + 1).padStart(2, '0');
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    const thaiLabel = `${THAI_MONTHS[m]} ${y}`;
+
+    if (isEnd) {
+      // End-of-month: 16th to last day
+      periods.push({
+        value: `${y}-${monthStr}-end`,
+        label: `รอบสิ้นเดือน ${thaiLabel} (16-${daysInMonth})`,
+        startISO: `${y}-${monthStr}-16T00:00:00.000Z`,
+        endISO: `${y}-${String(m + 2).padStart(2, '0')}-01T00:00:00.000Z`.replace(/-(13)-/, (_, n) => `-01-`).replace(`${y}-13-01T`, `${y+1}-01-01T`),
+        isMid: false,
+        payDate: `${y}-${String(m + 2).padStart(2, '0')}-05`.replace(/-(13)-/, (_) => `-01-`).replace(`${y}-13-05`, `${y+1}-01-05`),
+        monthKey: `${y}-${monthStr}`,
+      });
+    } else {
+      // Mid-month: 1st to 15th
+      periods.push({
+        value: `${y}-${monthStr}-mid`,
+        label: `รอบกลางเดือน ${thaiLabel} (1-15)`,
+        startISO: `${y}-${monthStr}-01T00:00:00.000Z`,
+        endISO: `${y}-${monthStr}-16T00:00:00.000Z`,
+        isMid: true,
+        payDate: `${y}-${monthStr}-15`,
+        monthKey: `${y}-${monthStr}`,
+      });
+    }
+
+    // Go back one half-period
+    if (isEnd) {
+      isEnd = false; // next iteration = mid of same month
+    } else {
+      isEnd = true;  // next iteration = end of previous month
+      month--;
+      if (month < 0) { month = 11; year--; }
+    }
+  }
+  return periods;
+}
+
+const PAY_PERIODS = generatePayPeriods(24);
 
 /* ── PAYSLIP PRINT VIEW ── */
 function PayslipPrintView({ payslip, employee }) {
@@ -75,6 +131,9 @@ function PayslipPrintView({ payslip, employee }) {
   const totalIncome = payslip.income.reduce((s, r) => s + r.amount, 0);
   const totalDeductions = payslip.deductions.reduce((s, r) => s + r.amount, 0);
   const netPay = totalIncome - totalDeductions;
+  const cashPaid = payslip.cashPaid || 0;
+  const clockInCount = payslip.clockInCount || 0;
+  const bankTransfer = Math.max(0, netPay - cashPaid);
 
   const printStyle = {
     background: '#ffffff',
@@ -184,8 +243,9 @@ function PayslipPrintView({ payslip, employee }) {
           </tr>
         </thead>
         <tbody>
-          {payslip.income.map((inc, i) => {
-            const ded = payslip.deductions[i];
+          {Array.from({ length: Math.max(5, payslip.income.length, payslip.deductions.length) }).map((_, i) => {
+            const inc = payslip.income[i] || { label: '', amount: 0 };
+            const ded = payslip.deductions[i] || { label: '', amount: 0 };
             let remarkLabel = '';
             let remarkValue = '';
             if (i === 2) { remarkLabel = 'รายได้สะสม'; remarkValue = payslip.cumulativeIncome.toLocaleString(); }
@@ -198,9 +258,9 @@ function PayslipPrintView({ payslip, employee }) {
                 <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right' }}>
                   {inc.amount > 0 ? inc.amount.toLocaleString() : ''}
                 </td>
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px' }}>{ded?.label || ''}</td>
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px' }}>{ded.label}</td>
                 <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right' }}>
-                  {ded?.amount > 0 ? ded.amount.toLocaleString() : ''}
+                  {ded.amount > 0 ? ded.amount.toLocaleString() : ''}
                 </td>
                 {i === 2
                   ? <td style={{ border: '1px solid #ccc', padding: '7px 12px', fontWeight: '700', textAlign: 'center', background: '#f9f9f9' }}>สรุป</td>
@@ -216,9 +276,26 @@ function PayslipPrintView({ payslip, employee }) {
       </table>
 
       {/* Net Pay Highlight */}
-      <div style={{ background: '#f0f7ff', border: '2px solid #1B3A6B', borderRadius: '8px', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
-        <div style={{ fontSize: '16px', fontWeight: '700', color: '#1B3A6B' }}>เงินได้สุทธิ (Net Pay)</div>
-        <div style={{ fontSize: '28px', fontWeight: '900', color: '#16a34a' }}>฿{netPay.toLocaleString()}</div>
+      <div style={{ background: '#f0f7ff', border: '2px solid #1B3A6B', borderRadius: '8px', padding: '14px 20px', marginBottom: cashPaid > 0 ? 0 : '32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '16px', fontWeight: '700', color: '#1B3A6B' }}>เงินได้สุทธิ (Net Pay)</div>
+          <div style={{ fontSize: '28px', fontWeight: '900', color: '#16a34a' }}>฿{netPay.toLocaleString()}</div>
+        </div>
+        {cashPaid > 0 && (
+          <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #93c5fd', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, background: '#fff3e0', border: '1px solid #fb923c', borderRadius: '6px', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#92400e', fontWeight: '700' }}>💵 จ่ายเงินสดแล้ว</div>
+                <div style={{ fontSize: '11px', color: '#78350f' }}>({(payslip.dailyCashAdvanceRate || 0).toLocaleString()} บาท/วัน)</div>
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>฿{cashPaid.toLocaleString()}</div>
+            </div>
+            <div style={{ flex: 1, background: '#f0fdf4', border: '1px solid #4ade80', borderRadius: '6px', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: '11px', color: '#166534', fontWeight: '700' }}>🏦 ยอดโอนเข้าบัญชี</div>
+              <div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>฿{bankTransfer.toLocaleString()}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Signature Area */}
@@ -238,16 +315,17 @@ function PayslipPrintView({ payslip, employee }) {
 /* ── TAB 1: E-PAYSLIP ── */
 function EPayslipTab({ role }) {
   const { user } = useAuth();
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0,7));
+  const [selectedPeriod, setSelectedPeriod] = useState(PAY_PERIODS[0]);
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [selectedPayslip, setSelectedPayslip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generatedPayslips, setGeneratedPayslips] = useState([]);
   const [users, setUsers] = useState([]);
 
-  useEffect(() => { loadPayslips(); }, [selectedMonth]);
+  useEffect(() => { loadPayslips(); }, [selectedPeriod?.value]);
 
   async function loadPayslips() {
+    if (!selectedPeriod) return;
     setLoading(true);
     try {
       let query = supabase.from('users').select('*, branches(name)').eq('is_active', true);
@@ -257,98 +335,125 @@ function EPayslipTab({ role }) {
       const { data: usersData } = await query;
       const userList = usersData || [];
       setUsers(userList);
-      
-      const startOfMonth = `${selectedMonth}-01T00:00:00.000Z`;
-      const dateEnd = new Date(`${selectedMonth}-01`);
-      dateEnd.setMonth(dateEnd.getMonth() + 1);
-      const endOfMonth = dateEnd.toISOString();
-      const actionDateEnd = dateEnd.toISOString().substring(0,10);
+
+      const { startISO, endISO, isMid, payDate, monthKey } = selectedPeriod;
+      // action_date range for salary adjustments (use the half-month window)
+      const adjStart = startISO.substring(0, 10);
+      const adjEnd = endISO.substring(0, 10);
 
       const [attRes, adjRes] = await Promise.all([
         supabase.from('attendance')
           .select('user_id, type, timestamp')
           .eq('type', 'clock_in')
           .eq('is_deleted', false)
-          .gte('timestamp', startOfMonth)
-          .lt('timestamp', endOfMonth),
+          .gte('timestamp', startISO)
+          .lt('timestamp', endISO),
         supabase.from('hr_salary_adjustments')
           .select('*')
-          .gte('action_date', `${selectedMonth}-01`)
-          .lt('action_date', actionDateEnd)
+          .gte('action_date', adjStart)
+          .lt('action_date', adjEnd)
       ]);
 
       const attData = attRes.data || [];
       const adjData = adjRes.data || [];
 
-      const newPayslips = userList.map(u => {
-        const uAtt = attData.filter(a => a.user_id === u.id);
-        const clockInCount = uAtt.length;
-        const customRates = u.custom_rates || {};
-        const hasCustomRates = Object.keys(customRates).length > 0;
-        
-        let basicIncome = 0;
-        let incomeLabel = '';
-        if (u.employment_type === 'daily') {
-          if (hasCustomRates) {
-            // Sum per-day wages using custom_rates; fall back to daily_rate for unset days
-            basicIncome = uAtt.reduce((sum, att) => {
-              const dayOfWeek = new Date(att.timestamp).getDay(); // 0=Sun..6=Sat
-              const rate = customRates[dayOfWeek] !== undefined
-                ? Number(customRates[dayOfWeek])
-                : (u.daily_rate || 0);
-              return sum + rate;
-            }, 0);
-            incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน, อัตราแยกตามวัน)`;
+      const newPayslips = userList
+        .filter(u => {
+          // Monthly-pay employees only show in end-of-month cycle
+          const payCycle = u.pay_cycle || 'monthly';
+          if (payCycle === 'monthly' && isMid) return false;
+          return true;
+        })
+        .map(u => {
+          const payCycle = u.pay_cycle || 'monthly';
+          const uAtt = attData.filter(a => a.user_id === u.id);
+          const clockInCount = uAtt.length;
+          const customRates = u.custom_rates || {};
+          const hasCustomRates = Object.keys(customRates).length > 0;
+
+          let basicIncome = 0;
+          let incomeLabel = '';
+          if (u.employment_type === 'daily') {
+            if (hasCustomRates) {
+              basicIncome = uAtt.reduce((sum, att) => {
+                const dayOfWeek = new Date(att.timestamp).getDay();
+                const rate = customRates[dayOfWeek] !== undefined
+                  ? Number(customRates[dayOfWeek])
+                  : (u.daily_rate || 0);
+                return sum + rate;
+              }, 0);
+              incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน, อัตราแยกตามวัน)`;
+            } else {
+              basicIncome = clockInCount * (u.daily_rate || 0);
+              incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน)`;
+            }
           } else {
-            basicIncome = clockInCount * (u.daily_rate || 0);
-            incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน)`;
+            // Salary employee:
+            //   bimonthly → half per period; monthly → full salary end-of-month only
+            const fullSalary = u.base_salary || 0;
+            if (payCycle === 'bimonthly') {
+              basicIncome = fullSalary / 2;
+              incomeLabel = `เงินเดือน${isMid ? 'รอบกลางเดือน' : 'รอบสิ้นเดือน'} (${fullSalary.toLocaleString()} / 2)`;
+            } else {
+              basicIncome = fullSalary;
+              incomeLabel = 'เงินเดือน (Base Salary)';
+            }
           }
-        } else {
-          basicIncome = u.base_salary || 0;
-          incomeLabel = 'เงินเดือน (Base Salary)';
-        }
-        
-        const uAdj = adjData.filter(a => a.user_id === u.id);
-        const incomes = uAdj.filter(a => a.adjust_type === 'income');
-        const deductions = uAdj.filter(a => a.adjust_type === 'deduction');
 
-        // Automatic Deduction for daily cash advance
-        if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && clockInCount > 0) {
-          const advanceTotal = clockInCount * u.daily_cash_advance;
-          deductions.push({
-            label: `เบิกเงินสดรายวัน (${clockInCount} วัน)`,
-            amount: advanceTotal
+          const uAdj = adjData.filter(a => a.user_id === u.id);
+          const incomes = uAdj.filter(a => a.adjust_type === 'income');
+          const deductions = uAdj.filter(a => a.adjust_type === 'deduction');
+
+          let totalCashPaidForPeriod = 0;
+
+          if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && clockInCount > 0) {
+            const advanceTotal = clockInCount * u.daily_cash_advance;
+            deductions.push({ label: `เบิกเงินสดรายวัน (${clockInCount} วัน × ${u.daily_cash_advance.toLocaleString()} บาท)`, amount: advanceTotal });
+            totalCashPaidForPeriod += advanceTotal;
+          }
+
+          // Also count manual cash advances towards cashPaid (but NOT penalties like 'หักเงินสดหน้างาน')
+          deductions.forEach(d => {
+            if (d.label === 'เบิกล่วงหน้า') {
+              totalCashPaidForPeriod += Number(d.amount);
+            }
+            if (d.label === 'หักเงินสดหน้างาน') {
+              totalCashPaidForPeriod -= Number(d.amount); // Penalty directly reduces the cash handed out
+            }
           });
-        }
 
-        const payCycle = u.pay_cycle || 'monthly';
-        const payCycleInfo = PAY_CYCLE_LABELS[payCycle] || PAY_CYCLE_LABELS.monthly;
-        
-        return {
-          id: `PS-${selectedMonth}-${u.id.substring(0,8)}`,
-          empId: u.id,
-          payCycle,
-          payCycleLabel: payCycleInfo.label,
-          payCycleColor: payCycleInfo.color,
-          employee: {
-            id: u.employee_id || u.id,
-            name: u.name,
-            position: roleLabels[u.role] || u.role,
-            branch: u.branches?.name || 'ไม่ระบุสาขา',
-            bankAccount: u.bank_account || '-',
-            bankName: u.bank_name || '-'
-          },
-          period: selectedMonth,
-          issueDate: new Date().toLocaleDateString('th-TH'),
-          income: [
-            { label: incomeLabel, amount: basicIncome },
-            ...incomes.map(i => ({ label: i.label, amount: i.amount }))
-          ],
-          deductions: deductions.map(d => ({ label: d.label, amount: d.amount })),
-          cumulativeIncome: basicIncome
-        };
-      });
-      
+          totalCashPaidForPeriod = Math.max(0, totalCashPaidForPeriod);
+
+          const payCycleInfo = PAY_CYCLE_LABELS[payCycle] || PAY_CYCLE_LABELS.monthly;
+
+          return {
+            id: `PS-${selectedPeriod.value}-${u.id.substring(0,8)}`,
+            empId: u.id,
+            payCycle,
+            payCycleLabel: payCycleInfo.label,
+            payCycleColor: payCycleInfo.color,
+            employee: {
+              id: u.employee_id || u.id,
+              name: u.name,
+              position: roleLabels[u.role] || u.role,
+              branch: u.branches?.name || 'ไม่ระบุสาขา',
+              bankAccount: u.bank_account || '-',
+              bankName: u.bank_name || '-'
+            },
+            period: selectedPeriod.label.replace('รอบกลางเดือน ', '').replace('รอบสิ้นเดือน ', ''),
+            issueDate: payDate ? new Date(payDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('th-TH'),
+            income: [
+              { label: incomeLabel, amount: basicIncome },
+              ...incomes.map(i => ({ label: i.label, amount: i.amount }))
+            ],
+            deductions: deductions.map(d => ({ label: d.label, amount: d.amount })),
+            cashPaid: totalCashPaidForPeriod,
+            dailyCashAdvanceRate: u.daily_cash_advance || 0,
+            clockInCount,
+            cumulativeIncome: basicIncome
+          };
+        });
+
       setGeneratedPayslips(newPayslips);
       if (!selectedEmp && userList.length > 0) setSelectedEmp(userList[0]);
     } catch (err) {
@@ -363,18 +468,57 @@ function EPayslipTab({ role }) {
   const empPayslips = generatedPayslips.filter(p => p.empId === selectedEmp?.id);
   const handlePrint = () => window.print();
 
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    const element = document.getElementById('payslip-print-area');
+    if (!element) return;
+    
+    setDownloading(true);
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a5');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      
+      const fileName = `Payslip_${selectedEmp?.name?.replace(/\s+/g, '_')}_${selectedPeriod.monthKey}.pdf`;
+      pdf.save(fileName);
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div>
       {/* Action Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <label style={{ fontWeight: '600', fontSize: '14px', whiteSpace: 'nowrap' }}>รอบเงินเดือน :</label>
-          <input 
-            type="month" 
-            value={selectedMonth} 
-            onChange={(e) => { setSelectedMonth(e.target.value); setSelectedPayslip(null); }}
-            style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: '14px' }}
-          />
+          <select
+            value={selectedPeriod?.value || ''}
+            onChange={e => {
+              const p = PAY_PERIODS.find(x => x.value === e.target.value);
+              setSelectedPeriod(p || PAY_PERIODS[0]);
+              setSelectedPayslip(null);
+            }}
+            style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: '14px', minWidth: '280px', cursor: 'pointer' }}
+          >
+            {PAY_PERIODS.map(p => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
         </div>
 
         {role === 'owner' && !selectedPayslip && (
@@ -446,8 +590,12 @@ function EPayslipTab({ role }) {
             <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>
               <Printer size={15} /> พิมพ์
             </button>
-            <button style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>
-              <Download size={15} /> ดาวน์โหลด PDF
+            <button 
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px', opacity: downloading ? 0.7 : 1 }}
+            >
+              <Download size={15} /> {downloading ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
             </button>
           </div>
           <PayslipPrintView payslip={selectedPayslip} employee={selectedPayslip.employee} />
@@ -670,7 +818,7 @@ function LeaveManagementTab({ role }) {
 }
 
 /* ── TAB 3: SALARY ADJUSTMENT ── */
-function SalaryAdjTab() {
+function SalaryAdjTab({ user: currentUser }) {
   const [adjustments, setAdjustments] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -700,7 +848,7 @@ function SalaryAdjTab() {
 
   const adjLabels = {
     income: ['โบนัส', 'OT', 'ค่าเดินทาง', 'เบี้ยขยัน', 'รายได้พิเศษ'],
-    deduction: ['ค่าเสียหาย', 'ลาไม่รับค่าจ้าง', 'เบิกล่วงหน้า', 'ขาด/สาย', 'รายการหักอื่นๆ'],
+    deduction: ['หักเงินสดหน้างาน', 'ค่าเสียหาย', 'ลาไม่รับค่าจ้าง', 'เบิกล่วงหน้า', 'ขาด/สาย', 'รายการหักอื่นๆ'],
   };
 
   const handleAdd = async (e) => {
@@ -720,6 +868,24 @@ function SalaryAdjTab() {
     if (error) {
       alert('เกิดข้อผิดพลาด: ' + error.message);
     } else {
+      // Auto-create expense record ONLY for cash advance (cash given OUT to employee)
+      if (form.adjType === 'deduction' && form.label === 'เบิกล่วงหน้า') {
+        const targetUser = users.find(u => u.id === form.user_id);
+        const expenseDesc = `${form.label} - ${targetUser?.name || 'พนักงาน'}${form.note ? ': ' + form.note : ''}`;
+        await supabase.from('expenses').insert({
+          branch_id: currentUser?.branch_id || null,
+          created_by: currentUser?.id || null,
+          category: 'ค่าแรง/เงินเดือน',
+          description: expenseDesc,
+          amount: amt,
+          payment_method: 'cash',
+          expense_type: 'planned',
+          status: 'approved',
+          approved_by: currentUser?.id || null,
+          approved_at: new Date().toISOString(),
+          notes: `ลงรายการอัตโนมัติจากระบบ Payroll - ${actionDate}`
+        });
+      }
       setShowForm(false);
       setForm(f => ({ ...f, amount: '', note: '' }));
       loadData();
@@ -847,9 +1013,9 @@ export default function HRPayroll() {
         {activeTab === 'payslip' && <EPayslipTab role={role} />}
         {activeTab === 'leave' && <LeaveManagementTab role={role} />}
         {activeTab === 'adjust' && (
-          role !== 'owner'
-            ? <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}><AlertCircle size={36} style={{ opacity: 0.3, marginBottom: '8px' }} /><div>เฉพาะเจ้าของร้านเท่านั้น</div></div>
-            : <SalaryAdjTab />
+          !['owner', 'store_manager', 'manager'].includes(role)
+            ? <div style={{ textAlign: 'center', padding: '60px', color: 'var(--text-muted)' }}><AlertCircle size={36} style={{ opacity: 0.3, marginBottom: '8px' }} /><div>เฉพาะผู้จัดการขึ้นไปเท่านั้น</div></div>
+            : <SalaryAdjTab user={user} />
         )}
       </div>
     </div>

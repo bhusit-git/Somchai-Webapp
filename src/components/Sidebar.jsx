@@ -20,6 +20,7 @@ import {
   Lightbulb,
   UserCheck,
   UserCircle,
+  ClipboardList,
 } from 'lucide-react';
 
 /** Map icon name strings → actual Lucide components */
@@ -41,6 +42,7 @@ const ICON_MAP = {
   Lightbulb,
   UserCheck,
   UserCircle,
+  ClipboardList,
 };
 
 export default function Sidebar() {

@@ -58,31 +58,44 @@ export default function Inventory() {
   const { user } = useAuth();
 
   useEffect(() => {
-    if (user?.branch_id) {
+    if (user) {
+      if (!user.branch_id) {
+        console.warn('[Inventory] user.branch_id is null/undefined — loading all items without branch filter');
+      }
       loadData();
     }
-  }, [user?.branch_id]);
+  }, [user?.id]);
 
   async function loadData() {
     setLoading(true);
     try {
-      if (!user?.branch_id) return;
-      
-      const { data, error } = await supabase
+      console.log('[Inventory] loadData called, user:', user?.id, 'branch_id:', user?.branch_id);
+
+      let query = supabase
         .from('inventory_items')
         .select('*')
         .eq('is_active', true)
-        .eq('branch_id', user.branch_id)
         .order('name');
 
-      if (error && error.code !== '42P01') {
-        console.error('Error fetching inventory:', error);
+      // Only filter by branch if branch_id exists
+      if (user?.branch_id) {
+        query = query.eq('branch_id', user.branch_id);
       }
 
-      // If table doesnt exist yet (code 42P01), we just show empty array
+      const { data, error } = await query;
+
+      if (error) {
+        if (error.code !== '42P01') {
+          console.error('[Inventory] Error fetching inventory:', error);
+        }
+        setItems([]);
+        return;
+      }
+
+      console.log('[Inventory] Loaded items:', data?.length ?? 0);
       setItems(data || []);
     } catch (err) {
-      console.error(err);
+      console.error('[Inventory] Unexpected error:', err);
     } finally {
       setLoading(false);
     }
@@ -403,7 +416,8 @@ export default function Inventory() {
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">ต้นทุนต่อหน่วยสต๊อก (฿)</label>
-                    <input type="number" className="form-input" min="0" step="0.01" value={formData.cost_per_stock_unit} onChange={(e) => setFormData({ ...formData, cost_per_stock_unit: e.target.value })} />
+                    <input type="number" className="form-input" value={formData.cost_per_stock_unit} disabled style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-muted)' }} title="ระบบคำนวณต้นทุนให้อัตโนมัติเมื่อมีการรับสินค้าจากหน้า PO (แบบ WAC)" />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ระบุอัตโนมัติจาก PO (WAC)</span>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">สต๊อกปัจจุบัน</label>

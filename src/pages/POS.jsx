@@ -1,7 +1,33 @@
 import { useState, useEffect } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+
+// Icon map for dynamic payment method icons
+const PM_ICON_MAP = {
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
+};
+
+const DEFAULT_PAYMENT_METHODS = [
+  { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
+];
+
+function loadPaymentMethods() {
+  try {
+    const raw = localStorage.getItem('paymentMethods');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed.filter(m => m.enabled);
+    }
+  } catch (err) {
+    console.error('Error loading payment methods:', err);
+  }
+  return DEFAULT_PAYMENT_METHODS.filter(m => m.enabled);
+}
 
 const EMOJIS = ['🍜', '🍛', '🍲', '🍗', '🍚', '🥤', '🧊', '☕', '🍺', '🥗', '🍰', '🍣'];
 
@@ -20,6 +46,8 @@ export default function POS() {
   const [sysConfig, setSysConfig] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
+  const [paymentMethods, setPaymentMethods] = useState(() => loadPaymentMethods());
+  const [deliveryType, setDeliveryType] = useState('round'); // 'round' | 'express'
   const { user } = useAuth();
 
   useEffect(() => { 
@@ -34,6 +62,9 @@ export default function POS() {
       const sConf = localStorage.getItem('systemConfig');
       if (sConf) setSysConfig(JSON.parse(sConf));
       else setSysConfig({ vatPercent: 7, receiptFooter: 'ขอบคุณที่ใช้บริการ 🐷' });
+
+      // Reload payment methods (in case updated in Settings)
+      setPaymentMethods(loadPaymentMethods());
     } catch {
       // ignore
     }
@@ -94,7 +125,10 @@ export default function POS() {
   }
 
   const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0);
-  const total = subtotal;
+  const selectedMethodObj = paymentMethods.find(m => m.value === paymentMethod);
+  const configuredDeliveryFee = Number(selectedMethodObj?.deliveryFee) || 0;
+  const deliveryFee = (paymentMethod === 'delivery' && deliveryType === 'express') ? configuredDeliveryFee : 0;
+  const total = subtotal + deliveryFee;
   const changeAmount = paymentMethod === 'cash' ? Math.max(0, (parseFloat(cashReceived) || 0) - total) : 0;
 
   async function handleCheckout() {
@@ -115,6 +149,11 @@ export default function POS() {
     const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
 
     // Create transaction
+    // Get GP for selected method
+    const selectedMethod = paymentMethods.find(m => m.value === paymentMethod);
+    const gpPercent = selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0;
+    const gpAmount = (total * gpPercent) / 100;
+
     const { data: txData, error: txError } = await supabase.from('transactions').insert({
       branch_id: shift.branch_id,
       shift_id: shift.id,
@@ -124,6 +163,9 @@ export default function POS() {
       discount: 0,
       total,
       payment_method: paymentMethod,
+      gp_percent: gpPercent,
+      gp_amount: gpAmount,
+      delivery_fee: deliveryFee,
       cash_received: paymentMethod === 'cash' ? parseFloat(cashReceived) || total : null,
       change_amount: paymentMethod === 'cash' ? changeAmount : null,
       status: 'completed',
@@ -212,12 +254,16 @@ export default function POS() {
     }
 
     // Save receipt data
+    // Fetch gp again (already calculated above)
     const currentOrder = {
       orderNumber,
       items: [...cart],
       subtotal,
+      deliveryFee,
       total,
       paymentMethod,
+      gpPercent: (selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0),
+      gpAmount: (total * (selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0)) / 100,
       cashReceived: paymentMethod === 'cash' ? parseFloat(cashReceived) : null,
       changeAmount: paymentMethod === 'cash' ? changeAmount : null,
       customerName: paymentMethod === 'credit' && selectedCustomer ? customers.find(c => c.id === selectedCustomer)?.name : null,
@@ -239,6 +285,7 @@ export default function POS() {
     setCashReceived('');
     setSelectedCustomer('');
     setPaymentMethod('cash');
+    setDeliveryType('round');
   }
 
   return (
@@ -368,23 +415,48 @@ export default function POS() {
               </div>
 
               <div className="grid-2" style={{ marginBottom: '16px' }}>
-                {[
-                  { value: 'cash', icon: Banknote, label: 'เงินสด' },
-                  { value: 'promptpay', icon: QrCode, label: 'PromptPay' },
-                  { value: 'transfer', icon: CreditCard, label: 'โอนเงิน' },
-                  { value: 'delivery', icon: Truck, label: 'Delivery' },
-                  { value: 'credit', icon: Users, label: 'เงินเชื่อ (AR)' },
-                ].map(m => (
-                  <button
-                    key={m.value}
-                    className={`btn ${paymentMethod === m.value ? 'btn-primary' : 'btn-ghost'}`}
-                    onClick={() => setPaymentMethod(m.value)}
-                    style={{ justifyContent: 'center' }}
-                  >
-                    <m.icon size={18} /> {m.label}
-                  </button>
-                ))}
+                {paymentMethods.map(m => {
+                  const IconComp = PM_ICON_MAP[m.icon] || CircleDollarSign;
+                  return (
+                    <button
+                      key={m.value}
+                      className={`btn ${paymentMethod === m.value ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => { setPaymentMethod(m.value); setDeliveryType('round'); }}
+                      style={{ justifyContent: 'center' }}
+                    >
+                      <IconComp size={18} /> {m.label}
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* Delivery: round vs express */}
+              {paymentMethod === 'delivery' && configuredDeliveryFee > 0 && (
+                <div className="form-group">
+                  <label className="form-label">ประเภทการส่ง</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className={`btn ${deliveryType === 'round' ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setDeliveryType('round')}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      🔄 ตามรอบ (ฟรี)
+                    </button>
+                    <button
+                      className={`btn ${deliveryType === 'express' ? 'btn-success' : 'btn-ghost'}`}
+                      onClick={() => setDeliveryType('express')}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      ⚡ นอกรอบ (+฿{configuredDeliveryFee})
+                    </button>
+                  </div>
+                  {deliveryType === 'express' && (
+                    <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '14px', color: 'var(--accent-warning)' }}>
+                      ยอดรวมค่าส่ง: ฿{total.toLocaleString()} (สินค้า ฿{subtotal.toLocaleString()} + ค่าส่ง ฿{deliveryFee})
+                    </div>
+                  )}
+                </div>
+              )}
 
               {paymentMethod === 'cash' && (
                 <div className="form-group">
@@ -516,6 +588,12 @@ export default function POS() {
                   <span>ยอดสุทธิ</span>
                   <span>฿{receiptData.total.toLocaleString()}</span>
                 </div>
+                {receiptData.deliveryFee > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: '#f59e0b' }}>
+                    <span>⚡ ค่าส่งนอกรอบ</span>
+                    <span>฿{receiptData.deliveryFee.toLocaleString()}</span>
+                  </div>
+                )}
               </div>
 
               <div style={{ borderBottom: '1px dashed #ccc', margin: '12px 0' }} />
@@ -524,11 +602,21 @@ export default function POS() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                   <span>วิธีชำระเงิน</span>
                   <span>
-                    {receiptData.paymentMethod === 'cash' ? 'เงินสด' : 
-                     receiptData.paymentMethod === 'promptpay' ? 'PromptPay' :
-                     receiptData.paymentMethod === 'transfer' ? 'โอนเงิน' :
-                     receiptData.paymentMethod === 'delivery' ? 'Delivery' :
-                     receiptData.paymentMethod === 'credit' ? `เงินเชื่อ (${receiptData.customerName})` : 'อื่นๆ'}
+                    {(() => {
+                      const allMethods = (() => {
+                        try {
+                          const raw = localStorage.getItem('paymentMethods');
+                          return raw ? JSON.parse(raw) : DEFAULT_PAYMENT_METHODS;
+                        } catch { return DEFAULT_PAYMENT_METHODS; }
+                      })();
+                      const found = allMethods.find(m => m.value === receiptData.paymentMethod);
+                      if (found) {
+                        return found.value === 'credit'
+                          ? `เงินเชื่อ (${receiptData.customerName || ''})`
+                          : found.label;
+                      }
+                      return receiptData.paymentMethod;
+                    })()}
                   </span>
                 </div>
                 {receiptData.paymentMethod === 'cash' && (

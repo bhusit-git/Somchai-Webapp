@@ -67,7 +67,9 @@ CREATE TABLE public.users (
     sso_id TEXT,
     bank_account TEXT,
     bank_name TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    phone TEXT,
+    id_card_number TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- =========================================================
@@ -191,6 +193,7 @@ CREATE TABLE public.expense_categories (
     name TEXT NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,
+    is_admin_only BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

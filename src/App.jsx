@@ -34,6 +34,7 @@ import HRPayroll from './pages/HRPayroll';
 import Settings from './pages/Settings';
 import RecipeManagement from './pages/RecipeManagement';
 import Profile from './pages/Profile';
+import SalesHistory from './pages/SalesHistory';
 import { ROUTE_PERMISSIONS } from './config/roles';
 
 export default function App() {
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="attendance" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/attendance']}><Attendance /></ProtectedRoute>} />
               <Route path="shifts" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/shifts']}><Shifts /></ProtectedRoute>} />
               <Route path="pos" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/pos']}><POS /></ProtectedRoute>} />
+              <Route path="sales-history" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/sales-history']}><SalesHistory /></ProtectedRoute>} />
               <Route path="expenses" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/expenses']}><Expenses /></ProtectedRoute>} />
               <Route path="cash-ledger" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/cash-ledger']}><CashLedger /></ProtectedRoute>} />
               <Route path="ar-management" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/ar-management']}><ARManagement /></ProtectedRoute>} />

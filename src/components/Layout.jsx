@@ -9,6 +9,7 @@ const pageTitles = {
   '/attendance': 'ลงเวลา (M1)',
   '/shifts': 'เปิด-ปิดกะ (M2)',
   '/pos': 'ขายหน้าร้าน (M3A)',
+  '/sales-history': 'รายการขาย',
   '/expenses': 'ค่าใช้จ่าย (M3B)',
   '/cash-ledger': 'เงินค้างกะ (M4)',
   '/ar-management': 'ลูกหนี้-AR (M5)',

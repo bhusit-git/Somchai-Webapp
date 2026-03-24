@@ -518,6 +518,7 @@ function KioskTab() {
 function HistoryTab() {
   const { user } = useAuth();
   const isManager = ['owner', 'manager', 'store_manager'].includes(user?.role);
+  const canDelete = ['owner', 'manager'].includes(user?.role);
   const queryClient = useQueryClient();
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -666,7 +667,7 @@ function HistoryTab() {
                 <th>เวลา</th>
                 <th>รูปถ่าย</th>
                 <th>หมายเหตุ</th>
-                {isManager && <th style={{ textAlign: 'right' }}>จัดการ</th>}
+                {canDelete && <th style={{ textAlign: 'right' }}>จัดการ</th>}
               </tr>
             </thead>
             <tbody>
@@ -712,7 +713,7 @@ function HistoryTab() {
                       )}
                     </td>
                     <td>{rec.note || '—'}</td>
-                    {isManager && (
+                    {canDelete && (
                       <td style={{ textAlign: 'right' }}>
                         {rec.is_deleted ? (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
