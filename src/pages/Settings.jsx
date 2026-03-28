@@ -66,6 +66,21 @@ function getPaymentMethods() {
   return DEFAULT_PAYMENT_METHODS;
 }
 
+// ── Sales Channels ──
+const DEFAULT_SALES_CHANNELS = [
+  { id: 'dine_in', label: 'หน้าร้าน', emoji: '🏪', isDefault: true },
+  { id: 'grab',    label: 'Grab',     emoji: '🟢', isDefault: true },
+  { id: 'lineman', label: 'LineMan',  emoji: '🟡', isDefault: true },
+];
+
+function getSalesChannels() {
+  try {
+    const raw = localStorage.getItem('salesChannels');
+    if (raw) return JSON.parse(raw);
+  } catch { }
+  return DEFAULT_SALES_CHANNELS;
+}
+
 /* ── Per-Day Rate Configuration Component ── */
 const DAY_LABELS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 const DAY_FULL_LABELS = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
@@ -122,6 +137,11 @@ function DayRatesEditor({ baseRate, value, onChange }) {
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('users');
+  const [visitedTabs, setVisitedTabs] = useState({ users: true });
+
+  useEffect(() => {
+    setVisitedTabs(prev => ({ ...prev, [activeTab]: true }));
+  }, [activeTab]);
 
   const tabs = [
     { id: 'users', label: 'จัดการผู้ใช้งาน', icon: Users },
@@ -173,13 +193,27 @@ export default function Settings() {
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'users' && <UsersTab />}
-        {activeTab === 'branches' && <BranchesTab />}
-        {activeTab === 'products' && <ProductsTab />}
-        {activeTab === 'customers' && <CustomersTab />}
-        {activeTab === 'company' && <CompanyInfoTab />}
-        {activeTab === 'expense_categories' && <ExpenseCategoriesTab />}
-        {activeTab === 'system' && <SystemConfigTab />}
+        <div style={{ display: activeTab === 'users' ? 'block' : 'none' }}>
+          {visitedTabs['users'] && <UsersTab />}
+        </div>
+        <div style={{ display: activeTab === 'branches' ? 'block' : 'none' }}>
+          {visitedTabs['branches'] && <BranchesTab />}
+        </div>
+        <div style={{ display: activeTab === 'products' ? 'block' : 'none' }}>
+          {visitedTabs['products'] && <ProductsTab />}
+        </div>
+        <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
+          {visitedTabs['customers'] && <CustomersTab />}
+        </div>
+        <div style={{ display: activeTab === 'company' ? 'block' : 'none' }}>
+          {visitedTabs['company'] && <CompanyInfoTab />}
+        </div>
+        <div style={{ display: activeTab === 'expense_categories' ? 'block' : 'none' }}>
+          {visitedTabs['expense_categories'] && <ExpenseCategoriesTab />}
+        </div>
+        <div style={{ display: activeTab === 'system' ? 'block' : 'none' }}>
+          {visitedTabs['system'] && <SystemConfigTab />}
+        </div>
       </div>
     </div>
   );
@@ -1111,9 +1145,15 @@ function SystemConfigTab() {
   const [newMethodGP, setNewMethodGP] = useState('');
   const [newMethodDeliveryFee, setNewMethodDeliveryFee] = useState('');
 
+  // Sales Channels state
+  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
+  const [newChannelLabel, setNewChannelLabel] = useState('');
+  const [newChannelEmoji, setNewChannelEmoji] = useState('📦');
+
   const handleSave = () => {
     localStorage.setItem('systemConfig', JSON.stringify(config));
     localStorage.setItem('paymentMethods', JSON.stringify(payMethods));
+    localStorage.setItem('salesChannels', JSON.stringify(salesChannels));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -1263,6 +1303,74 @@ function SystemConfigTab() {
               placeholder="eyJ..."
             />
             <p className="text-slate-500 text-xs mt-1">ใช้สำหรับส่งแจ้งเตือนผ่าน Line Official Account</p>
+          </div>
+        </div>
+
+        {/* ── Sales Channels ── */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 md:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-white font-medium flex items-center gap-2">
+              🚦 ช่องทางการขาย (Sales Channels)
+            </h3>
+            <span className="text-slate-500 text-xs">เพิ่ม/ลบช่องทางได้ • บันทึกเพื่อให้มีผล</span>
+          </div>
+          <div className="space-y-2">
+            {salesChannels.map(ch => (
+              <div key={ch.id} className="flex items-center justify-between bg-slate-700/40 border border-slate-600/60 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{ch.emoji}</span>
+                  <div>
+                    <p className="text-white text-sm font-medium">{ch.label}</p>
+                    <p className="text-slate-500 text-[10px]">{ch.id}{ch.isDefault ? ' • Default' : ''}</p>
+                  </div>
+                </div>
+                {!ch.isDefault && (
+                  <button
+                    onClick={() => setSalesChannels(prev => prev.filter(c => c.id !== ch.id))}
+                    className="text-red-400/70 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <p className="text-slate-400 text-xs font-semibold mb-3 uppercase tracking-wide">➕ เพิ่มช่องทางการขายใหม่</p>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                className="form-input" style={{ width: '3rem', textAlign: 'center', padding: '8px 4px' }}
+                placeholder="📦"
+                value={newChannelEmoji}
+                onChange={e => setNewChannelEmoji(e.target.value)}
+              />
+              <input
+                className="form-input" style={{ flex: 1, minWidth: '140px' }}
+                placeholder="ชื่อช่องทาง เช่น Grab Food, Shopee Food"
+                value={newChannelLabel}
+                onChange={e => setNewChannelLabel(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newChannelLabel.trim()) {
+                    const id = newChannelLabel.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                    setSalesChannels(prev => [...prev, { id: `custom_${id}_${Date.now()}`, label: newChannelLabel.trim(), emoji: newChannelEmoji || '📦', isDefault: false }]);
+                    setNewChannelLabel(''); setNewChannelEmoji('📦');
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (!newChannelLabel.trim()) return;
+                  const id = newChannelLabel.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                  setSalesChannels(prev => [...prev, { id: `custom_${id}_${Date.now()}`, label: newChannelLabel.trim(), emoji: newChannelEmoji || '📦', isDefault: false }]);
+                  setNewChannelLabel(''); setNewChannelEmoji('📦');
+                }}
+                disabled={!newChannelLabel.trim()}
+                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+              >
+                <Plus className="w-4 h-4" /> เพิ่ม
+              </button>
+            </div>
+            <p className="text-slate-500 text-xs mt-2">💡 เมื่อเพิ่มแล้วกด <strong className="text-slate-300">บันทึก</strong> เพื่อให้ POS และ เมนูขาย รับรู้การเปลี่ยนแปลง</p>
           </div>
         </div>
 
@@ -1945,15 +2053,16 @@ function ProductsTab() {
   const [products, setProducts]       = useState([]);
   const [bomCosts, setBomCosts]       = useState({}); // { product_id: calculatedCost }
   const [loading, setLoading]         = useState(true);
+  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
 
   // Category state
   const [showAddCat, setShowAddCat]   = useState(false);
   const [newCat, setNewCat]           = useState({ name: '' });
   const [editCat, setEditCat]         = useState(null);
 
-  // Product state
+  // Product state — menu_prices: { grab: { price: '13', is_available: true } }
   const [showAddProd, setShowAddProd] = useState(false);
-  const [newProd, setNewProd]         = useState({ name: '', price: '', category_id: '', is_available: true, sort_order: 0 });
+  const [newProd, setNewProd]         = useState({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {} });
   const [editProd, setEditProd]       = useState(null);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgPreview, setImgPreview]   = useState(null); // for new product
@@ -1961,18 +2070,32 @@ function ProductsTab() {
   const [editImgFile, setEditImgFile] = useState(null);
   const [editImgPreview, setEditImgPreview] = useState(null);
 
+  // Reload channels if Settings page is visited
+  useEffect(() => { setSalesChannels(getSalesChannels()); }, []);
+
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [catRes, prodRes, bomRes] = await Promise.all([
+      const [catRes, prodRes, bomRes, mpRes] = await Promise.all([
         supabase.from('categories').select('*').order('sort_order'),
         supabase.from('products').select('*, categories(name)').order('sort_order'),
         supabase.from('menu_item_ingredients')
           .select('menu_item_id, qty_required, inventory_items(cost_per_stock_unit, yield_pct)'),
+        supabase.from('menu_prices').select('*')
       ]);
       setCategories(catRes.data || []);
+
+      const mpData = mpRes?.data || [];
+      const mpMap = {};
+      mpData.forEach(row => {
+        if (!mpMap[row.menu_id]) mpMap[row.menu_id] = {};
+        mpMap[row.menu_id][row.channel] = {
+           price: row.price,
+           is_available: row.is_available
+        };
+      });
 
       // Calculate BOM cost per product
       const costMap = {};
@@ -1992,7 +2115,10 @@ function ProductsTab() {
         await supabase.from('products').update({ cost: parseFloat(costMap[p.id].toFixed(2)) }).eq('id', p.id);
       }
 
-      setProducts(prods.map(p => costMap[p.id] !== undefined ? { ...p, cost: parseFloat((costMap[p.id]).toFixed(2)) } : p));
+      setProducts(prods.map(p => {
+        const cost = costMap[p.id] !== undefined ? parseFloat((costMap[p.id]).toFixed(2)) : p.cost;
+        return { ...p, cost, menu_prices: mpMap[p.id] || {} };
+      }));
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -2048,7 +2174,26 @@ function ProductsTab() {
         const url = await uploadImage(imgFile, inserted.id);
         await supabase.from('products').update({ image_url: url }).eq('id', inserted.id);
       }
-      setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0 });
+
+      const mpInserts = [];
+      salesChannels.filter(ch => ch.id !== 'dine_in').forEach(ch => {
+        const mp = newProd.menu_prices?.[ch.id];
+        if (mp) {
+           if ((mp.price !== '' && mp.price !== null && mp.price !== undefined) || mp.is_available === false) {
+               mpInserts.push({
+                   menu_id: inserted.id,
+                   channel: ch.id,
+                   price: mp.price && mp.price !== '' ? parseFloat(mp.price) : null,
+                   is_available: mp.is_available !== false
+               });
+           }
+        }
+      });
+      if (mpInserts.length > 0) {
+        await supabase.from('menu_prices').insert(mpInserts);
+      }
+
+      setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {} });
       setImgFile(null); setImgPreview(null);
       setShowAddProd(false); loadData();
     } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
@@ -2071,6 +2216,23 @@ function ProductsTab() {
         sort_order: parseInt(editProd.sort_order) || 0,
         image_url,
       }).eq('id', editProd.id);
+      if (error) { alert('ไม่สามารถแก้ไขเมนูได้'); return; }
+
+      const mpUpserts = [];
+      salesChannels.filter(ch => ch.id !== 'dine_in').forEach(ch => {
+        const mp = editProd.menu_prices?.[ch.id];
+        if (mp) {
+           mpUpserts.push({
+               menu_id: editProd.id,
+               channel: ch.id,
+               price: mp.price && mp.price !== '' ? parseFloat(mp.price) : null,
+               is_available: mp.is_available !== false
+           });
+        }
+      });
+      if (mpUpserts.length > 0) {
+        await supabase.from('menu_prices').upsert(mpUpserts, { onConflict: 'menu_id,channel' });
+      }
       if (error) { alert('ไม่สามารถแก้ไขเมนูได้'); return; }
       setEditProd(null); setEditImgFile(null); setEditImgPreview(null); loadData();
     } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
@@ -2202,6 +2364,50 @@ function ProductsTab() {
                     onChange={e => setNewProd({ ...newProd, is_available: e.target.checked })} className="w-4 h-4 rounded" />
                   <label htmlFor="avail_new" className="text-slate-300 text-sm cursor-pointer select-none">สวิตช์เปิด/ปิดขาย (ให้แสดงใน POS)</label>
                 </div>
+                {/* Channel Pricing */}
+                {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
+                  <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4">
+                    <p className="text-emerald-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                      💰 ตั้งราคาตามช่องทางการขาย (Channel Pricing)
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
+                        const mp = newProd.menu_prices?.[ch.id] || { is_available: true, price: '' };
+                        return (
+                          <div key={ch.id} className="bg-slate-900/50 p-2 rounded border border-slate-700/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-slate-300 text-xs font-medium">{ch.emoji} {ch.label}</label>
+                              <label className="flex items-center gap-1 cursor-pointer">
+                                <input 
+                                  type="checkbox" 
+                                  className="w-3 h-3 rounded" 
+                                  checked={mp.is_available !== false} 
+                                  onChange={e => setNewProd({
+                                    ...newProd,
+                                    menu_prices: { ...newProd.menu_prices, [ch.id]: { ...mp, is_available: e.target.checked } }
+                                  })} 
+                                />
+                                <span className="text-[10px] text-slate-400">เปิดขาย</span>
+                              </label>
+                            </div>
+                            <input
+                              type="number" min="0" step="0.01"
+                              className={inputCls}
+                              disabled={mp.is_available === false}
+                              placeholder={newProd.price || 'เท่ากับราคาปกติ'}
+                              value={mp.price ?? ''}
+                              onChange={e => setNewProd({
+                                ...newProd,
+                                menu_prices: { ...newProd.menu_prices, [ch.id]: { ...mp, price: e.target.value } }
+                              })}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-slate-500 text-[10px] mt-2">• ว่างไว้ = ใช้ราคาปกติ • ปิดสวิตช์ = ไม่แสดงในแท็บนี้</p>
+                  </div>
+                )}
               </div>
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mt-4">
                 💡 <strong>เคล็ดลับ:</strong> ต้นทุนจะคำนวณอัตโนมัติจากตาราง BOM+WAC — หากต้องการตั้งต้นทุนให้ไปตั้งสูตรที่หน้า <strong>สูตรอาหาร (M7C)</strong>
@@ -2326,6 +2532,50 @@ function ProductsTab() {
                   onChange={e => setEditProd({ ...editProd, is_available: e.target.checked })} className="w-4 h-4" />
                 <label htmlFor="avail_edit" className="text-slate-300 text-sm">เปิดขาย (แสดงใน POS)</label>
               </div>
+              {/* Channel Pricing Edit */}
+              {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
+                <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4">
+                  <p className="text-emerald-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                    💰 ราคาตามช่องทางการขาย (Channel Pricing)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
+                      const mp = editProd.menu_prices?.[ch.id] || { is_available: true, price: '' };
+                      return (
+                        <div key={ch.id} className="bg-slate-900/50 p-2 rounded border border-slate-700/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="text-slate-300 text-xs font-medium">{ch.emoji} {ch.label}</label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <input 
+                                type="checkbox" 
+                                className="w-3 h-3 rounded" 
+                                checked={mp.is_available !== false} 
+                                onChange={e => setEditProd({
+                                  ...editProd,
+                                  menu_prices: { ...editProd.menu_prices, [ch.id]: { ...mp, is_available: e.target.checked } }
+                                })} 
+                              />
+                              <span className="text-[10px] text-slate-400">เปิดขาย</span>
+                            </label>
+                          </div>
+                          <input
+                            type="number" min="0" step="0.01"
+                            className={inputCls}
+                            disabled={mp.is_available === false}
+                            placeholder={editProd.price || 'เท่ากับราคาปกติ'}
+                            value={mp.price ?? ''}
+                            onChange={e => setEditProd({
+                              ...editProd,
+                              menu_prices: { ...editProd.menu_prices, [ch.id]: { ...mp, price: e.target.value } }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-slate-500 text-[10px] mt-2">• ว่างไว้ = ใช้ราคาปกติ • ปิดสวิตช์ = ไม่แสดงในแท็บนี้</p>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 justify-end pt-2">
               <button onClick={() => { setEditProd(null); setEditImgFile(null); setEditImgPreview(null); }}

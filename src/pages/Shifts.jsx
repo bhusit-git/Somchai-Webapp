@@ -31,12 +31,63 @@ export default function Shifts() {
           .limit(30),
         supabase.from('users').select('id, name, full_name, role').eq('is_active', true).eq('branch_id', user.branch_id),
       ]);
-      setShifts(shiftRes.data || []);
+      
+      let loadedShifts = shiftRes.data || [];
+      
+      // Calculate live cash for open shifts
+      const openShifts = loadedShifts.filter(s => s.status === 'open');
+      if (openShifts.length > 0) {
+        const shiftIds = openShifts.map(s => s.id);
+        
+        const [salesRes, expRes] = await Promise.all([
+           supabase.from('transactions')
+             .select('shift_id, cash_received, change_amount')
+             .in('shift_id', shiftIds)
+             .eq('payment_method', 'cash')
+             .eq('status', 'completed'),
+           supabase.from('expenses')
+             .select('shift_id, amount')
+             .in('shift_id', shiftIds)
+             .eq('payment_method', 'cash')
+             .neq('status', 'cancelled')
+             .neq('status', 'rejected')
+        ]);
+        
+        const salesData = salesRes.data || [];
+        const expData = expRes.data || [];
+        
+        loadedShifts = loadedShifts.map(shift => {
+          if (shift.status !== 'open') return shift;
+          
+          const shiftSales = salesData.filter(s => s.shift_id === shift.id);
+          const shiftExp = expData.filter(e => e.shift_id === shift.id);
+          
+          // Net cash from sales = (cash_received - change_amount) for each transaction
+          const totalCashSales = shiftSales.reduce((sum, tx) => sum + (Number(tx.cash_received || 0) - Number(tx.change_amount || 0)), 0);
+          const totalCashExp = shiftExp.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
+          
+          // We calculate the current live cash difference (excluding opening cash to match how closing works)
+          // Live Difference = Cash Sales - Cash Expenses
+          const liveDifference = totalCashSales - totalCashExp;
+          
+          // Calculate expected cash in drawer right now
+          const liveExpectedCash = Number(shift.opening_cash || 0) + liveDifference;
+          
+          return {
+            ...shift,
+            live_cash_sales: totalCashSales,
+            live_cash_expenses: totalCashExp,
+            live_difference: liveDifference,
+            live_expected_cash: liveExpectedCash
+          };
+        });
+      }
+
+      setShifts(loadedShifts);
       setUsers(userRes.data || []);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }
-
   async function handleOpenShift(e) {
     e.preventDefault();
     if (!openForm.opened_by || !openForm.opening_cash) return alert('กรุณากรอกข้อมูลให้ครบ');
@@ -48,6 +99,7 @@ export default function Shifts() {
       branch_id,
       opened_by: openForm.opened_by,
       opening_cash: parseFloat(openForm.opening_cash),
+      shift_date: new Date().toISOString().split('T')[0],
       status: 'open',
     });
 
@@ -64,7 +116,8 @@ export default function Shifts() {
     if (!closeForm.closed_by || !closeForm.closing_cash) return alert('กรุณากรอกข้อมูลให้ครบ');
 
     const closingCash = parseFloat(closeForm.closing_cash);
-    const expectedCash = parseFloat(showClose.opening_cash) || 0;
+    // Use the dynamically calculated expected cash if available, otherwise just use opening cash (fallback)
+    const expectedCash = showClose.live_expected_cash !== undefined ? showClose.live_expected_cash : parseFloat(showClose.opening_cash) || 0;
     const difference = closingCash - expectedCash;
 
     const { error } = await supabase.from('shifts').update({
@@ -159,17 +212,28 @@ export default function Shifts() {
               ) : (
                 shifts.map((sh) => (
                   <tr key={sh.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{sh.shift_date}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{sh.shift_date || new Date(sh.opened_at).toLocaleDateString('th-TH')}</td>
                     <td>{sh.opener?.full_name || sh.opener?.name || '—'}</td>
                     <td>{new Date(sh.opened_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                     <td>฿{Number(sh.opening_cash).toLocaleString()}</td>
-                    <td>{sh.closing_cash ? `฿${Number(sh.closing_cash).toLocaleString()}` : '—'}</td>
+                    <td>{sh.closing_cash ? `฿${Number(sh.closing_cash).toLocaleString()}` : (sh.status === 'open' ? `(คาดหวัง) ฿${Number(sh.live_expected_cash || sh.opening_cash).toLocaleString()}` : '—')}</td>
                     <td>
-                      {sh.cash_difference != null ? (
-                        <span style={{ color: sh.cash_difference >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 600 }}>
-                          {sh.cash_difference >= 0 ? '+' : ''}฿{Number(sh.cash_difference).toLocaleString()}
-                        </span>
-                      ) : '—'}
+                      {sh.status === 'closed' ? (
+                        sh.cash_difference != null ? (
+                          <span style={{ color: sh.cash_difference >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 600 }}>
+                            {sh.cash_difference >= 0 ? '+' : ''}฿{Number(sh.cash_difference).toLocaleString()}
+                          </span>
+                        ) : '—'
+                      ) : (
+                        sh.live_difference != null ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                <span style={{ color: sh.live_difference >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 600, fontSize: '13px' }}>
+                                  {sh.live_difference >= 0 ? '+' : ''}฿{Number(sh.live_difference).toLocaleString()}
+                                </span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}> (Live)</span>
+                            </div>
+                        ) : '—'
+                      )}
                     </td>
                     <td>
                       <span className={`badge ${sh.status === 'open' ? 'badge-success' : 'badge-ghost'}`}>
@@ -205,7 +269,7 @@ export default function Shifts() {
                   <label className="form-label">ผู้เปิดกะ *</label>
                   <select className="form-select" value={openForm.opened_by} onChange={(e) => setOpenForm({ ...openForm, opened_by: e.target.value })} required>
                     <option value="">-- เลือกพนักงาน --</option>
-                    {users.filter(u => ['store_manager', 'owner'].includes(u.role)).map(u => (
+                    {users.filter(u => ['owner', 'manager', 'store_manager', 'staff'].includes(u.role)).map(u => (
                       <option key={u.id} value={u.id}>{u.full_name || u.name}</option>
                     ))}
                   </select>
@@ -235,13 +299,29 @@ export default function Shifts() {
             <form onSubmit={handleCloseShift}>
               <div className="modal-body">
                 <div style={{ background: 'var(--bg-tertiary)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', marginBottom: '16px', fontSize: '14px' }}>
-                  <strong>เงินเปิดลิ้นชัก:</strong> ฿{Number(showClose.opening_cash).toLocaleString()}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                     <span>เงินเปิดลิ้นชัก:</span>
+                     <strong>฿{Number(showClose.opening_cash).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--accent-success)' }}>
+                     <span>ยอดขายเงินสด (Live):</span>
+                     <strong>+฿{Number(showClose.live_cash_sales || 0).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', color: 'var(--accent-danger)' }}>
+                     <span>รายจ่ายเงินสด (Live):</span>
+                     <strong>-฿{Number(showClose.live_cash_expenses || 0).toLocaleString()}</strong>
+                  </div>
+                  <div style={{ borderTop: '1px dashed var(--border-primary)', margin: '8px 0' }}></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px' }}>
+                     <span>ยอดเงินสดที่ควรมีตามระบบ:</span>
+                     <strong style={{ color: 'var(--accent-warning)' }}>฿{Number(showClose.live_expected_cash || showClose.opening_cash).toLocaleString()}</strong>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">ผู้ปิดกะ *</label>
                   <select className="form-select" value={closeForm.closed_by} onChange={(e) => setCloseForm({ ...closeForm, closed_by: e.target.value })} required>
                     <option value="">-- เลือกพนักงาน --</option>
-                    {users.filter(u => ['store_manager', 'owner'].includes(u.role)).map(u => (
+                    {users.filter(u => ['owner', 'manager', 'store_manager', 'staff'].includes(u.role)).map(u => (
                       <option key={u.id} value={u.id}>{u.full_name || u.name}</option>
                     ))}
                   </select>

@@ -25,19 +25,19 @@ export const ROUTE_PERMISSIONS = {
   // --- Core Operations ---
   '/':                everyone,                                       // Dashboard  (S / S / F / F / F)
   '/attendance':      ['owner', 'manager', 'store_manager', 'staff'], // Attendance (S / N / F / F / F)
-  '/shifts':          mgmt,                                           // Shifts     (N / N / F / R / F)
+  '/shifts':          ['owner', 'manager', 'store_manager', 'staff'], // Shifts     (N / N / F / R / F)
   '/pos':             ['owner', 'manager', 'store_manager', 'staff'], // POS        (F / N / F / R / F)
   '/sales-history':   ['owner', 'manager', 'store_manager', 'staff'], // Sales History (view sales, void bills)
   '/expenses':        ['owner', 'manager', 'store_manager', 'staff'], // Expenses   (S / N / F / R / F)
 
   // --- Cash & Finance ---
   '/cash-ledger':     mgmt,                                           // Cash Ledger      (N / N / F / F / F)
-  '/ar-management':   mgmt,                                           // AR Management    (N / N / F / F / F)
+  '/ar-management':   upperMgmt,                                      // AR Management    (N / N / F / F / F)
   '/profit-dashboard':mgmt,                                           // Profit Dashboard (N / N / R / F / F)
 
   // --- Inventory ---
-  '/inventory':       ['owner', 'manager', 'store_manager', 'cook'],  // Inventory        (N / F / F / F / F)
-  '/purchase-orders': mgmt,                                           // Purchase Orders  (Owner, Area Manager)
+  '/inventory':       upperMgmt,                                      // Inventory        (N / F / F / N / N)
+  '/purchase-orders': upperMgmt,                                      // Purchase Orders  (Owner, Area Manager)
   '/stock-receiving': everyone,                                       // Stock Receiving   (staff needs for Blind Receiving)
   '/bom':             ['owner', 'manager', 'cook'],  // Recipe Management (BOM) (N / F / F / F / F)
 
@@ -78,11 +78,9 @@ export const SIDEBAR_ITEMS = [
   { to: '/stock-receiving', label: 'รับของ GRN (M7B)',       icon: 'PackagePlus',     roles: ROUTE_PERMISSIONS['/stock-receiving'] },
   { to: '/bom',             label: 'สูตรอาหาร (BOM) (M7C)', icon: 'Receipt',         roles: ROUTE_PERMISSIONS['/bom'] },
 
-  { label: 'Analytics & Intelligence', type: 'section' },
+  { label: 'Report', type: 'section' },
   { to: '/cogs-engine',     label: 'COGS Engine (M8)',      icon: 'PieChart',        roles: ROUTE_PERMISSIONS['/cogs-engine'] },
   { to: '/menu-engineering',label: 'Menu Engineering (M9)',  icon: 'BarChart',        roles: ROUTE_PERMISSIONS['/menu-engineering'] },
-
-  { label: 'Pricing & Smart Insights', type: 'section' },
   { to: '/menu-pricing',    label: 'Menu Pricing (M11)',    icon: 'Tags',            roles: ROUTE_PERMISSIONS['/menu-pricing'] },
   { to: '/smart-insights',  label: 'Smart Insights (M12)',  icon: 'Lightbulb',       roles: ROUTE_PERMISSIONS['/smart-insights'] },
 

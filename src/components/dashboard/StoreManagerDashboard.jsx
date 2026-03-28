@@ -34,6 +34,7 @@ export default function StoreManagerDashboard() {
     foodCost: 0,
     grossProfit: 0,
     cashDrawer: 0,
+    startingCash: 0,
   });
   const [alerts, setAlerts] = useState({
     lowStockItems: [],
@@ -165,6 +166,7 @@ export default function StoreManagerDashboard() {
         foodCost: realFC,
         grossProfit: realGP,
         cashDrawer: cashDrawer,
+        startingCash: startingCash,
       });
       setTopItems(topList);
 
@@ -272,7 +274,8 @@ export default function StoreManagerDashboard() {
     return <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>กำลังโหลดหน้า Dashboard...</div>;
   }
 
-  const initials = user?.name ? user.name.substring(0, 2) : 'ผจก';
+  const initials = user?.name ? user.name.substring(0, 2) : 'พย';
+  const isManager = ['store_manager', 'manager', 'owner', 'admin'].includes(user?.role);
 
   return (
     <div className="store-manager-dashboard">
@@ -292,7 +295,7 @@ export default function StoreManagerDashboard() {
         <div className="body">
           
           {/* Zone 1: Alert */}
-          {hasAlerts && (
+          {hasAlerts && isManager && (
             <div className="alert-banner">
               <div className="alert-dot"></div>
               <div>
@@ -319,6 +322,7 @@ export default function StoreManagerDashboard() {
             </div>
 
             {/* Food Cost */}
+            {isManager && (
             <div className="card">
               <div className="card-title">Food Cost %</div>
               <div className={`card-val ${stats.foodCost > kpiTargets.targetFcPercent ? 'val-red' : 'val-green'}`}>
@@ -331,8 +335,10 @@ export default function StoreManagerDashboard() {
                 <div className={`bar-fill ${stats.foodCost > kpiTargets.targetFcPercent ? 'red' : 'green'}`} style={{ width: '100%' }}></div>
               </div>
             </div>
+            )}
 
             {/* Gross Profit */}
+            {isManager && (
             <div className="card">
               <div className="card-title">Gross Profit</div>
               <div className="card-val val-green">฿{(stats.todaySales - (stats.todaySales * (stats.foodCost/100))).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
@@ -344,6 +350,7 @@ export default function StoreManagerDashboard() {
                 {gpPct.toFixed(0)}%
               </div>
             </div>
+            )}
           </div>
 
           {/* Zone 2b: Checklist + Cash Drawer */}
@@ -351,76 +358,77 @@ export default function StoreManagerDashboard() {
             {/* Checklist */}
             <div className="card">
               <div className="card-title">Ops Checklist วันนี้</div>
-              <div className="bar-track" style={{ marginTop: 0, marginBottom: '8px' }}>
-                <div className="bar-fill green" style={{ width: '80%' }}></div>
-              </div>
-              <div style={{ fontSize: '11px', color: '#2c2c2a', marginBottom: '4px' }}>เปิดร้าน 8/10&nbsp;&nbsp;|&nbsp;&nbsp;ปิดร้าน ยังไม่ถึงเวลา</div>
-              <div style={{ fontSize: '11px', color: '#E24B4A' }}>ค้าง: เช็คแก๊ส, ถ่ายรูป fridge</div>
+              <div style={{ fontSize: '11px', color: '#888', marginTop: '12px' }}>ไม่มีข้อมูล Checklist สำหรับกะนี้</div>
             </div>
 
             {/* Cash Drawer */}
             <div className="card">
               <div className="card-title">เงินสดในลิ้นชัก (กะนี้)</div>
               <div className="card-val">฿{stats.cashDrawer.toLocaleString()}</div>
-              <div className="card-sub">เงินทอนตั้งต้น ฿500  |  รับสด ฿{stats.todaySales.toLocaleString()}</div>
+              <div className="card-sub">เงินทอนตั้งต้น ฿{(stats.startingCash || 0).toLocaleString()}  |  รับสด ฿{stats.todaySales.toLocaleString()}</div>
               <div className="card-sub">จ่ายค่าใช้จ่าย ฿{stats.todayExpenses.toLocaleString()}</div>
             </div>
           </div>
 
-          {/* Zone 3: Quick Actions */}
-          <div>
-            <div style={{ fontSize: '11px', color: '#888780', marginBottom: '8px' }}>ทำต่อไป</div>
-            <div className="actions-row">
-              <Link to="/expenses" className="action-btn">+ บันทึกค่าใช้จ่าย</Link>
-              <Link to="/inventory" className="action-btn">สต๊อกคงเหลือ</Link>
-              <Link to="/pos" className="action-btn">จุดชำระเงิน POS</Link>
-              <Link to="/shifts" className="action-btn">ปิดกะ</Link>
-            </div>
-          </div>
-
-          {/* Zone 4: 7-day Chart */}
-          <div className="card">
-            <div className="section-header">
-              <span className="section-title">ยอดขาย 7 วันย้อนหลัง</span>
-              <span style={{ fontSize: '11px', color: '#888780' }}>vs สัปดาห์ก่อน</span>
-            </div>
-            <div className="chart-wrap">
-              <Bar data={chartDataset} options={chartOptions} />
-            </div>
-            <div className="legend">
-              <div className="legend-item">
-                <div className="legend-dot" style={{ background: 'var(--border-primary)' }}></div>
-                สัปดาห์ก่อน
+          {/* Manager views below this point */}
+          {isManager && (
+            <>
+              {/* Zone 3: Quick Actions */}
+              <div>
+                <div style={{ fontSize: '11px', color: '#888780', marginBottom: '8px' }}>ทำต่อไป</div>
+                <div className="actions-row">
+                  <Link to="/expenses" className="action-btn">+ บันทึกค่าใช้จ่าย</Link>
+                  <Link to="/inventory" className="action-btn">สต๊อกคงเหลือ</Link>
+                  <Link to="/pos" className="action-btn">จุดชำระเงิน POS</Link>
+                  <Link to="/shifts" className="action-btn">ปิดกะ</Link>
+                </div>
               </div>
-              <div className="legend-item">
-                <div className="legend-dot" style={{ background: 'var(--accent-primary)' }}></div>
-                สัปดาห์นี้
-              </div>
-            </div>
-          </div>
 
-          {/* Zone 5: Top Items */}
-          <div className="card">
-            <div className="section-header">
-              <span className="section-title">เมนูขายดีวันนี้ (Top 5)</span>
-            </div>
-            <table className="items-table">
-              <tbody>
-                {topItems.length > 0 ? topItems.map((item, idx) => (
-                  <tr key={idx}>
-                    <td>#{idx + 1}</td>
-                    <td>{item.name}</td>
-                    <td>{item.qty} จาน</td>
-                    <td>฿{item.price.toLocaleString()}</td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan="4" style={{ textAlign: 'center', color: '#888' }}>ยังไม่มีการขายวันนี้</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              {/* Zone 4: 7-day Chart */}
+              <div className="card">
+                <div className="section-header">
+                  <span className="section-title">ยอดขาย 7 วันย้อนหลัง</span>
+                  <span style={{ fontSize: '11px', color: '#888780' }}>vs สัปดาห์ก่อน</span>
+                </div>
+                <div className="chart-wrap">
+                  <Bar data={chartDataset} options={chartOptions} />
+                </div>
+                <div className="legend">
+                  <div className="legend-item">
+                    <div className="legend-dot" style={{ background: 'var(--border-primary)' }}></div>
+                    สัปดาห์ก่อน
+                  </div>
+                  <div className="legend-item">
+                    <div className="legend-dot" style={{ background: 'var(--accent-primary)' }}></div>
+                    สัปดาห์นี้
+                  </div>
+                </div>
+              </div>
+
+              {/* Zone 5: Top Items */}
+              <div className="card">
+                <div className="section-header">
+                  <span className="section-title">เมนูขายดีวันนี้ (Top 5)</span>
+                </div>
+                <table className="items-table">
+                  <tbody>
+                    {topItems.length > 0 ? topItems.map((item, idx) => (
+                      <tr key={idx}>
+                        <td>#{idx + 1}</td>
+                        <td>{item.name}</td>
+                        <td>{item.qty} จาน</td>
+                        <td>฿{item.price.toLocaleString()}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan="4" style={{ textAlign: 'center', color: '#888' }}>ยังไม่มีการขายวันนี้</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
 
         </div>
       </div>

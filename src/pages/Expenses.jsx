@@ -10,6 +10,11 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [filterType, setFilterType] = useState('recent');
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({
     created_by: '',
     category: '',
@@ -21,6 +26,7 @@ export default function Expenses() {
     receipt_url: null,
   });
   const fileRef = useRef(null);
+  const editFileRef = useRef(null);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
@@ -33,7 +39,7 @@ export default function Expenses() {
 
   useEffect(() => {
     if (user?.branch_id) loadData();
-  }, [user?.branch_id]);
+  }, [user?.branch_id, filterType, selectedMonth, selectedDate]);
 
   async function loadData() {
     if (!user?.branch_id) return;
@@ -46,7 +52,24 @@ export default function Expenses() {
       if (!['owner', 'manager'].includes(user.role)) {
         expQuery = expQuery.eq('created_by', user.id);
       }
-      expQuery = expQuery.order('created_at', { ascending: false }).limit(50);
+
+      if (filterType === 'month') {
+        if (selectedMonth) {
+          const start = new Date(`${selectedMonth}-01T00:00:00+07:00`).toISOString();
+          const end = new Date(new Date(`${selectedMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${selectedMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
+          expQuery = expQuery.gte('created_at', start).lte('created_at', end);
+        }
+        expQuery = expQuery.order('created_at', { ascending: false });
+      } else if (filterType === 'date') {
+        if (selectedDate) {
+          const start = new Date(`${selectedDate}T00:00:00+07:00`).toISOString();
+          const end = new Date(`${selectedDate}T23:59:59+07:00`).toISOString();
+          expQuery = expQuery.gte('created_at', start).lte('created_at', end);
+        }
+        expQuery = expQuery.order('created_at', { ascending: false });
+      } else {
+        expQuery = expQuery.order('created_at', { ascending: false }).limit(50);
+      }
 
       const [expRes, userRes, catRes] = await Promise.all([
         expQuery,
@@ -64,6 +87,10 @@ export default function Expenses() {
     e.preventDefault();
     if (!form.category || !form.amount || !form.description) {
       return alert('กรุณากรอกข้อมูลให้ครบ');
+    }
+    
+    if (!form.receipt_url) {
+      return alert('กรุณาอัปโหลดรูปใบเสร็จ / สลิปโอนเงิน');
     }
 
     const branch_id = user?.branch_id;
@@ -150,6 +177,11 @@ export default function Expenses() {
       alert("กรุณาระบุผู้อนุมัติและเหตุผลในการแก้ไข");
       return;
     }
+    
+    if (!form.receipt_url) {
+      alert("กรุณาอัปโหลดรูปใบเสร็จ / สลิปโอนเงิน");
+      return;
+    }
 
     const { error } = await supabase.from('expenses').update({
       created_by: form.created_by || selectedExpense.created_by,
@@ -190,10 +222,17 @@ export default function Expenses() {
     }
   };
 
-  const filtered = filter === 'all' ? expenses : expenses.filter(e => e.status === filter);
-  const totalPending = expenses.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
-  const totalApproved = expenses.filter(e => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
-  const totalAll = expenses.filter(e => e.status !== 'cancelled').reduce((s, e) => s + Number(e.amount), 0);
+  const activeSet = expenses.filter(e => {
+    const matchCategory = categoryFilter === 'all' || e.category === categoryFilter;
+    const matchPayment = paymentFilter === 'all' || e.payment_method === paymentFilter;
+    return matchCategory && matchPayment;
+  });
+
+  const filtered = activeSet.filter(e => filter === 'all' || e.status === filter);
+
+  const totalPending = activeSet.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
+  const totalApproved = activeSet.filter(e => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
+  const totalAll = activeSet.filter(e => e.status !== 'cancelled').reduce((s, e) => s + Number(e.amount), 0);
 
   return (
     <div>
@@ -211,7 +250,7 @@ export default function Expenses() {
         <div style={{ display: 'flex', gap: '8px', padding: '16px', background: 'var(--accent-info-bg)', color: 'var(--accent-info)', borderRadius: 'var(--radius-sm)' }}>
           <AlertCircle size={20} style={{ flexShrink: 0 }} />
           <div>
-            <strong>ประกาศสำคัญ:</strong> ห้ามคีย์ค่า "วัตถุดิบ" และ "แพ็กเกจจิ้ง" ในหน้านี้โดยเด็ดขาด! ค่าวัตถุดิบจะถูกบันทึกอัตโนมัติมาจากหน้า <b>สั่งซื้อวัตถุดิบ (Purchase Orders)</b> หน้านี้ใช้สำหรับค่าใช้จ่ายปฏิบัติการ (OPEX) เช่น ค่าเช่า, ค่าน้ำไฟ, เงินเดือน ฯลฯ เท่านั้น
+            <strong>ประกาศสำคัญ:</strong> ห้ามคีย์ค่า "วัตถุดิบ" ในหน้านี้โดยเด็ดขาด! ค่าวัตถุดิบจะถูกบันทึกอัตโนมัติมาจากหน้า <b>สั่งซื้อวัตถุดิบ (Purchase Orders)</b> หน้านี้ใช้สำหรับค่าใช้จ่ายปฏิบัติการ (OPEX) เช่น ค่าเช่า, ค่าน้ำไฟ, เงินเดือน, วัสดุสิ้นเปลือง ฯลฯ เท่านั้น
           </div>
         </div>
       </div>
@@ -250,22 +289,93 @@ export default function Expenses() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-2 mb-4">
-        {[
-          { val: 'all', label: 'ทั้งหมด' },
-          { val: 'pending', label: '⏳ รออนุมัติ' },
-          { val: 'approved', label: '✅ อนุมัติ' },
-          { val: 'rejected', label: '❌ ไม่อนุมัติ' },
-          { val: 'cancelled', label: '🚫 ยกเลิก' },
-        ].map(f => (
-          <button
-            key={f.val}
-            className={`pos-category-btn ${filter === f.val ? 'active' : ''}`}
-            onClick={() => setFilter(f.val)}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex flex-col gap-3 mb-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-slate-400 w-16">สถานะ:</span>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { val: 'all', label: 'ทั้งหมด' },
+              { val: 'pending', label: '⏳ รออนุมัติ' },
+              { val: 'approved', label: '✅ อนุมัติ' },
+              { val: 'rejected', label: '❌ ไม่อนุมัติ' },
+              { val: 'cancelled', label: '🚫 ยกเลิก' },
+            ].map(f => (
+              <button
+                key={f.val}
+                className={`pos-category-btn text-xs px-3 py-1.5 ${filter === f.val ? 'active' : ''}`}
+                onClick={() => setFilter(f.val)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-6 pt-3 border-t border-slate-700/50">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-400">แสดงผล:</span>
+            <select 
+              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
+              value={filterType}
+              onChange={e => setFilterType(e.target.value)}
+            >
+              <option value="recent">50 ล่าสุด</option>
+              <option value="date">รายวัน</option>
+              <option value="month">รายเดือน</option>
+            </select>
+          </div>
+
+          {filterType === 'date' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                className="form-input bg-slate-900 border-slate-700 text-sm py-1.5 px-3 rounded-lg text-white"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+              />
+            </div>
+          )}
+
+          {filterType === 'month' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="month"
+                className="form-input bg-slate-900 border-slate-700 text-sm py-1.5 px-3 rounded-lg text-white"
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-400">หมวดหมู่:</span>
+            <select 
+              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+            >
+              <option value="all">ทั้งหมด</option>
+              <option value="วัตถุดิบ (Raw Materials)">วัตถุดิบ (Raw Materials)</option>
+              {categories
+                .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('Raw Material'))
+                .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-400">ช่องทาง:</span>
+            <select 
+              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
+              value={paymentFilter}
+              onChange={e => setPaymentFilter(e.target.value)}
+            >
+              <option value="all">ทั้งหมด</option>
+              <option value="cash">เงินสด</option>
+              <option value="transfer">เงินโอน</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -376,7 +486,7 @@ export default function Expenses() {
                     <option value="">-- เลือก --</option>
                     {categories
                       .filter(c => user?.role !== 'staff' || !c.is_admin_only)
-                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('แพ็กเกจจิ้ง') && !c.name.includes('Raw Material'))
+                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('Raw Material'))
                       .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
@@ -406,8 +516,9 @@ export default function Expenses() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label mb-2 block">รูปใบเสร็จ / สลิปโอนเงิน (ถ้ามี)</label>
+                  <label className="form-label mb-2 block">รูปใบเสร็จ / สลิปโอนเงิน *</label>
                   <div
+
                     onClick={() => fileRef.current?.click()}
                     className="w-full flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-600 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden h-32"
                   >
@@ -488,7 +599,7 @@ export default function Expenses() {
                     <option value="">-- เลือก --</option>
                     {categories
                       .filter(c => user?.role !== 'staff' || !c.is_admin_only)
-                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('แพ็กเกจจิ้ง') && !c.name.includes('Raw Material'))
+                      .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('Raw Material'))
                       .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
                 </div>
@@ -515,6 +626,35 @@ export default function Expenses() {
                       <span className="font-medium text-sm">เงินโอน</span>
                     </label>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label mb-2 block">รูปใบเสร็จ / สลิปโอนเงิน *</label>
+                  <div
+                    onClick={() => editFileRef.current?.click()}
+                    className="w-full flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-600 rounded-xl bg-slate-800/50 hover:bg-slate-800 transition-colors cursor-pointer group relative overflow-hidden h-32"
+                  >
+                    {form.receipt_url ? (
+                      <>
+                        <img src={form.receipt_url} alt="receipt preview" className="h-full object-contain" />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <p className="text-white text-xs font-medium">เปลี่ยนรูปภาพ</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={24} className="text-slate-500 mb-2 group-hover:text-blue-400 transition-colors" />
+                        <p className="text-slate-400 text-xs font-medium">คลิกเพื่ออัปโหลดรูปภาพ</p>
+                        <p className="text-slate-500 text-[10px] mt-1">ไฟล์ JPG, PNG</p>
+                      </>
+                    )}
+                  </div>
+                  <input type="file" ref={editFileRef} accept="image/*" className="hidden" onChange={handleReceiptUpload} />
+                  {form.receipt_url && (
+                    <button type="button" onClick={() => setForm(f => ({ ...f, receipt_url: null }))} className="text-[10px] text-red-400 hover:text-red-300 mt-2 text-center w-full">
+                      ยกเลิกรูปภาพ
+                    </button>
+                  )}
                 </div>
 
               </div>

@@ -527,6 +527,7 @@ function HistoryTab() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '' });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, recordId: null, reason: '' });
+  const [previewImage, setPreviewImage] = useState(null);
 
   const { data, isLoading: loading } = useQuery({
     queryKey: ['attendanceHistory', user?.branch_id, selectedMonth, isManager, user?.id],
@@ -705,9 +706,12 @@ function HistoryTab() {
                     <td style={{ fontWeight: 600 }}>{getTimeStr(rec.timestamp)}</td>
                     <td>
                       {rec.selfie_url ? (
-                        <a href={rec.selfie_url} target="_blank" rel="noreferrer">
+                        <button 
+                          onClick={() => setPreviewImage(rec.selfie_url)}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                        >
                           <img src={rec.selfie_url} alt="selfie" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
-                        </a>
+                        </button>
                       ) : (
                         <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
                       )}
@@ -812,6 +816,28 @@ function HistoryTab() {
                 <button type="submit" className="btn btn-primary" style={{ background: '#ef4444' }}><Trash2 size={16} /> ยืนยันการลบ</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div className="modal-overlay" onClick={() => setPreviewImage(null)} style={{ zIndex: 9999 }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 'min(90vw, 500px)', background: 'transparent', boxShadow: 'none', border: 'none' }}>
+            <div style={{ position: 'relative' }}>
+              <button 
+                className="btn-icon" 
+                onClick={() => setPreviewImage(null)}
+                style={{ position: 'absolute', top: -40, right: 0, background: 'rgba(255,255,255,0.1)', color: '#fff', padding: 8, borderRadius: '50%' }}
+              >
+                ✕
+              </button>
+              <img 
+                src={previewImage} 
+                alt="selfie full" 
+                style={{ width: '100%', borderRadius: 16, border: '4px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
+              />
+            </div>
           </div>
         </div>
       )}

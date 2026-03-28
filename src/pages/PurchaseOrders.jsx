@@ -205,7 +205,27 @@ export default function PurchaseOrders() {
       if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
 
       const total_amount = calculateTotal();
-      const po_number = `PO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Generate sequential PO Number
+      const todayPrefix = `PO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-`;
+      const { data: latestPo } = await supabase
+        .from('purchase_orders')
+        .select('po_number')
+        .eq('branch_id', branch_id)
+        .like('po_number', `${todayPrefix}%`)
+        .order('po_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let nextSeq = 1;
+      if (latestPo && latestPo.po_number && latestPo.po_number.startsWith(todayPrefix)) {
+        const lastSeqStr = latestPo.po_number.substring(todayPrefix.length);
+        const lastSeqNum = parseInt(lastSeqStr, 10);
+        if (!isNaN(lastSeqNum)) {
+          nextSeq = lastSeqNum + 1;
+        }
+      }
+      const po_number = `${todayPrefix}${String(nextSeq).padStart(4, '0')}`;
 
       // 1. Insert PO Header
       const { data: newPo, error: headerErr } = await supabase

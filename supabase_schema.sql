@@ -144,7 +144,7 @@ CREATE TABLE public.transactions (
     subtotal NUMERIC(10, 2) NOT NULL DEFAULT 0,
     discount NUMERIC(10, 2) DEFAULT 0,
     total NUMERIC(10, 2) NOT NULL DEFAULT 0,
-    payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'promptpay', 'transfer', 'delivery', 'card')),
+    payment_method TEXT NOT NULL,
     cash_received NUMERIC(10, 2),
     change_amount NUMERIC(10, 2),
     status TEXT DEFAULT 'completed',

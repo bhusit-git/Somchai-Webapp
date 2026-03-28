@@ -53,8 +53,10 @@ export default function OwnerDashboard() {
 
       let expQuery = supabase
         .from('expenses')
-        .select('branch_id, amount')
-        .gte('created_at', startIso);
+        .select('branch_id, amount, category')
+        .gte('created_at', startIso)
+        .eq('status', 'approved')
+        .not('category', 'ilike', '%วัตถุดิบ%');
       if (currentBranchId) expQuery = expQuery.eq('branch_id', currentBranchId);
       const { data: expData } = await expQuery;
 
@@ -108,7 +110,8 @@ export default function OwnerDashboard() {
       setStats({
         totalRevenue: totalRev,
         totalCOGS: totalCOGS,
-        totalExpenses: totalExp + totalFixedCosts,
+        totalExpenses: totalExp,
+        totalFixedCosts: totalFixedCosts,
         netProfit: net,
         healthScore: health,
         managerSafe: totalSafe,
@@ -308,7 +311,7 @@ export default function OwnerDashboard() {
 
           {/* Smart Insights */}
           <div className="card">
-            <div style={{ fontSize: '12px', fontWeight: 500, color: '#2c2c2a', marginBottom: '8px' }}>Smart Insights — คำแนะนำอัตโนมัติ</div>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '8px' }}>Smart Insights — คำแนะนำอัตโนมัติ</div>
             {insights.map((insight, i) => (
               <div key={i} className="insight-row">
                 <div className="insight-dot" style={{ background: insight.color }}></div>
@@ -319,7 +322,7 @@ export default function OwnerDashboard() {
 
           {/* P&L */}
           <div className="card">
-            <div style={{ fontSize: '12px', fontWeight: 500, color: '#2c2c2a', marginBottom: '10px' }}>P&L สรุปเดือนนี้ ({new Date().getDate()} วัน จากเป้า 30 วัน)</div>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '10px' }}>P&L สรุปเดือนนี้ ({new Date().getDate()} วัน จากเป้า 30 วัน)</div>
             <table className="pl-table">
               <tbody>
                 <tr>
@@ -335,11 +338,15 @@ export default function OwnerDashboard() {
                   <td className="val-green">{formatCurrency(stats.totalRevenue - stats.totalCOGS)}</td>
                 </tr>
                 <tr>
+                  <td className="pl-label">OPEX (ค่าใช้จ่ายดำเนินงาน)</td>
+                  <td className="val-red">–{formatCurrency(stats.totalExpenses)}</td>
+                </tr>
+                <tr>
                   <td className="pl-label">Fixed Cost (ค่าเช่า + เงินเดือน)</td>
-                  <td className="pl-label">–{formatCurrency(stats.totalExpenses - stats.totalCOGS)}</td>
+                  <td className="val-red">–{formatCurrency(stats.totalFixedCosts)}</td>
                 </tr>
                 <tr className="divider pl-total">
-                  <td style={{ fontWeight: 500, color: '#2c2c2a' }}>Net Profit (ประมาณ)</td>
+                  <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Net Profit (ประมาณ)</td>
                   <td className="val-green">
                     {formatCurrency(stats.netProfit)} &nbsp;
                     <span style={{ fontSize: '11px' }}>({stats.totalRevenue > 0 ? (stats.netProfit / stats.totalRevenue * 100).toFixed(1) : 0}%)</span>

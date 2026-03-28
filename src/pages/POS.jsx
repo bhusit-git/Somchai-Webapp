@@ -29,7 +29,21 @@ function loadPaymentMethods() {
   return DEFAULT_PAYMENT_METHODS.filter(m => m.enabled);
 }
 
-const EMOJIS = ['🍜', '🍛', '🍲', '🍗', '🍚', '🥤', '🧊', '☕', '🍺', '🥗', '🍰', '🍣'];
+const DEFAULT_SALES_CHANNELS = [
+  { id: 'dine_in', label: 'หน้าร้าน', emoji: '🏪' },
+  { id: 'grab',    label: 'Grab',     emoji: '🟢' },
+  { id: 'lineman', label: 'LineMan',  emoji: '🟡' },
+];
+
+function loadSalesChannels() {
+  try {
+    const raw = localStorage.getItem('salesChannels');
+    if (raw) return JSON.parse(raw);
+  } catch { }
+  return DEFAULT_SALES_CHANNELS;
+}
+
+const EMOJIS = ['🍜', '🍛', '🍲', '🌗', '🍚', '🥤', '🧊', '☕', '🍺', '🥗', '🍰', '🍣'];
 
 export default function POS() {
   const [categories, setCategories] = useState([]);
@@ -48,6 +62,10 @@ export default function POS() {
   const [receiptData, setReceiptData] = useState(null);
   const [paymentMethods, setPaymentMethods] = useState(() => loadPaymentMethods());
   const [deliveryType, setDeliveryType] = useState('round'); // 'round' | 'express'
+  // Channel pricing
+  const [salesChannels, setSalesChannels] = useState(() => loadSalesChannels());
+  const [activeSalesChannel, setActiveSalesChannel] = useState('dine_in');
+  const [menuPrices, setMenuPrices] = useState({});
   const { user } = useAuth();
 
   useEffect(() => { 
@@ -63,8 +81,9 @@ export default function POS() {
       if (sConf) setSysConfig(JSON.parse(sConf));
       else setSysConfig({ vatPercent: 7, receiptFooter: 'ขอบคุณที่ใช้บริการ 🐷' });
 
-      // Reload payment methods (in case updated in Settings)
+      // Reload payment methods & sales channels (in case updated in Settings)
       setPaymentMethods(loadPaymentMethods());
+      setSalesChannels(loadSalesChannels());
     } catch {
       // ignore
     }
@@ -74,23 +93,54 @@ export default function POS() {
     setLoading(true);
     try {
       const branchId = user?.branch_id;
-      const [catRes, prodRes, custRes] = await Promise.all([
+      const [catRes, prodRes, custRes, mpRes] = await Promise.all([
         supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
         supabase.from('products').select('*').eq('is_available', true).order('sort_order'),
-        branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] })
+        branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] }),
+        supabase.from('menu_prices').select('*')
       ]);
       setCategories(catRes.data || []);
       setProducts(prodRes.data || []);
       setCustomers(custRes.data || []);
+
+      const mpMap = {};
+      (mpRes.data || []).forEach(r => {
+        if (!mpMap[r.menu_id]) mpMap[r.menu_id] = {};
+        mpMap[r.menu_id][r.channel] = { price: r.price, is_available: r.is_available };
+      });
+      setMenuPrices(mpMap);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }
 
-  const filteredProducts = activeCategory === 'all'
-    ? products
-    : products.filter(p => p.category_id === activeCategory);
+  // Helper to check if product is available in current sales channel
+  function isAvailable(product) {
+    if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
+      const mp = menuPrices[product.id]?.[activeSalesChannel];
+      if (mp && mp.is_available === false) return false;
+    }
+    return true; // Base products are already checked for base is_available
+  }
+
+  const filteredProducts = (
+    activeCategory === 'all'
+      ? products
+      : products.filter(p => p.category_id === activeCategory)
+  ).filter(isAvailable);
+
+  // Get effective price for a product given current sales channel
+  function getChannelPrice(product) {
+    if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
+      const mp = menuPrices[product.id]?.[activeSalesChannel];
+      if (mp && mp.price !== null && mp.price !== undefined) {
+        return Number(mp.price);
+      }
+    }
+    return Number(product.price);
+  }
 
   function addToCart(product) {
+    const effectivePrice = getChannelPrice(product);
     setCart(prev => {
       const existing = prev.find(item => item.product_id === product.id);
       if (existing) {
@@ -103,10 +153,11 @@ export default function POS() {
       return [...prev, {
         product_id: product.id,
         product_name: product.name,
-        unit_price: Number(product.price),
+        unit_price: effectivePrice,
         quantity: 1,
-        total_price: Number(product.price),
+        total_price: effectivePrice,
         emoji: EMOJIS[Math.floor(Math.random() * EMOJIS.length)],
+        image_url: product.image_url || null,
       }];
     });
   }
@@ -146,7 +197,25 @@ export default function POS() {
     const userId = user?.id;
     if (!userId) return alert('ไม่พบข้อมูลพนักงาน');
 
-    const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
+    // Generate sequential order number
+    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const todayOrdPrefix = `ORD-${todayStr}-`;
+    const { data: latestOrd } = await supabase
+      .from('transactions')
+      .select('order_number')
+      .eq('branch_id', shift.branch_id)
+      .like('order_number', `${todayOrdPrefix}%`)
+      .order('order_number', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let nextOrdSeq = 1;
+    if (latestOrd?.order_number?.startsWith(todayOrdPrefix)) {
+      const lastStr = latestOrd.order_number.substring(todayOrdPrefix.length);
+      const lastNum = parseInt(lastStr, 10);
+      if (!isNaN(lastNum)) nextOrdSeq = lastNum + 1;
+    }
+    const orderNumber = `${todayOrdPrefix}${String(nextOrdSeq).padStart(4, '0')}`;
 
     // Create transaction
     // Get GP for selected method
@@ -169,6 +238,7 @@ export default function POS() {
       cash_received: paymentMethod === 'cash' ? parseFloat(cashReceived) || total : null,
       change_amount: paymentMethod === 'cash' ? changeAmount : null,
       status: 'completed',
+      sales_channel: activeSalesChannel || 'dine_in',
     }).select('id').single();
 
     if (txError) return alert('Error: ' + txError.message);
@@ -292,6 +362,25 @@ export default function POS() {
     <div className="pos-layout">
       {/* Left: Menu */}
       <div className="pos-menu">
+        {/* Sales Channels Selection */}
+        {salesChannels && salesChannels.length > 0 && (
+          <div className="flex gap-2 mb-3 pb-3 border-b border-slate-700/50 overflow-x-auto shrink-0">
+            {salesChannels.map(ch => (
+              <button
+                key={ch.id}
+                onClick={() => setActiveSalesChannel(ch.id)}
+                className={`py-1.5 px-3 rounded-full text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                  activeSalesChannel === ch.id
+                    ? 'bg-emerald-600 text-white shadow-md border border-emerald-500' 
+                    : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+              >
+                <span>{ch.emoji}</span> {ch.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="pos-categories">
           <button
             className={`pos-category-btn ${activeCategory === 'all' ? 'active' : ''}`}
@@ -328,9 +417,20 @@ export default function POS() {
                 className="pos-product-card"
                 onClick={() => addToCart(product)}
               >
-                <div className="product-emoji">{EMOJIS[idx % EMOJIS.length]}</div>
+                {product.image_url ? (
+                  <div className="product-image" style={{ width: '56px', height: '56px', margin: '0 auto 8px auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
+                    <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                ) : (
+                  <div className="product-emoji">{EMOJIS[idx % EMOJIS.length]}</div>
+                )}
                 <div className="product-name">{product.name}</div>
-                <div className="product-price">฿{Number(product.price).toLocaleString()}</div>
+                <div className="product-price">
+                  ฿{getChannelPrice(product).toLocaleString()}
+                  {activeSalesChannel !== 'dine_in' && getChannelPrice(product) !== Number(product.price) && (
+                    <span className="text-[10px] text-slate-500 line-through ml-1">฿{Number(product.price).toLocaleString()}</span>
+                  )}
+                </div>
               </div>
             ))
           )}

@@ -97,9 +97,12 @@
 .owner-dashboard .insight-text { font-size: 12px; color: var(--text-primary); line-height: 1.5; }
 
 /* P&L table */
-.owner-dashboard .pl-table { width: 100%; font-size: 14px; border-collapse: collapse; }
-.owner-dashboard .pl-table td { padding: 8px 0; }
+.owner-dashboard .pl-table { width: 100%; font-size: 14px; border-collapse: separate; border-spacing: 0; margin-top: 8px; }
+.owner-dashboard .pl-table td { padding: 12px 16px; border-bottom: 1px solid var(--border-secondary); }
+.owner-dashboard .pl-table tr:last-child td { border-bottom: none; }
 .owner-dashboard .pl-table td:last-child { text-align: right; font-weight: 600; color: var(--text-primary); }
-.owner-dashboard .pl-table .divider td { border-top: 1px solid var(--border-primary); padding-top: 10px; }
-.owner-dashboard .pl-label { color: var(--text-secondary); }
-.owner-dashboard .pl-total td { font-size: 16px; }
+.owner-dashboard .pl-table .divider td { border-top: 2px solid var(--border-primary); }
+.owner-dashboard .pl-label { color: var(--text-secondary); font-weight: 500; }
+.owner-dashboard .pl-total td { font-size: 18px; background: rgba(16, 185, 129, 0.05); padding: 16px; border-radius: 4px; border-top: 2px solid var(--border-primary); }
+.owner-dashboard .val-green { color: var(--accent-success); }
+.owner-dashboard .val-red   { color: var(--accent-danger); font-weight: 500; }

@@ -137,6 +137,19 @@ export default function RecipeManagement() {
       }
 
       alert('✅ บันทึกสูตรอาหารเรียบร้อย!');
+
+      // Sync calculated cost → products.cost (for COGS on Dashboard)
+      const totalCost = ingredients.reduce((sum, ing) => {
+        const invItem = inventoryItems.find(i => i.id === ing.inventory_item_id);
+        return sum + (invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0);
+      }, 0);
+      
+      // Update both potential tables for consistency
+      await Promise.all([
+        supabase.from('products').update({ cost: totalCost }).eq('id', selectedMenu.id),
+        supabase.from('menu_items').update({ cost: totalCost }).eq('id', selectedMenu.id)
+      ]);
+
       // Reload to get fresh IDs
       selectMenu(selectedMenu);
     } catch (err) {
@@ -144,6 +157,43 @@ export default function RecipeManagement() {
       alert('Error saving recipe: ' + err.message);
     } finally {
       setSaving(false);
+    }
+  }
+  
+  async function syncAllCosts() {
+    if (!window.confirm('คุณต้องการคำนวณและอัปเดตต้นทุนของทุกเมนูตามสูตร BOM ใช่หรือไม่?')) return;
+    
+    setLoading(true);
+    try {
+      // 1. Get all ingredients
+      const { data: allIngredients, error: ingErr } = await supabase
+        .from('menu_item_ingredients')
+        .select('*');
+      if (ingErr) throw ingErr;
+
+      // 2. Group by menu_item_id
+      const costMap = {};
+      allIngredients.forEach(ing => {
+        const invItem = inventoryItems.find(i => i.id === ing.inventory_item_id);
+        const cost = invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0;
+        costMap[ing.menu_item_id] = (costMap[ing.menu_item_id] || 0) + cost;
+      });
+
+      // 3. Update both tables (Loop through menu items that have BOM)
+      const updatePromises = [];
+      Object.entries(costMap).forEach(([menuId, totalCost]) => {
+        updatePromises.push(supabase.from('products').update({ cost: totalCost }).eq('id', menuId));
+        updatePromises.push(supabase.from('menu_items').update({ cost: totalCost }).eq('id', menuId));
+      });
+
+      await Promise.all(updatePromises);
+      alert(`✅ ซิงค์ต้นทุนเรียบร้อยทั้งหมด ${Object.keys(costMap).length} เมนู!`);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      alert('Error syncing costs: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -163,6 +213,9 @@ export default function RecipeManagement() {
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>สูตรอาหาร (Bill of Materials)</h3>
           <p className="text-sm text-muted">M7C: กำหนดวัตถุดิบที่ใช้ในแต่ละเมนู เพื่อตัดสต๊อกอัตโนมัติเมื่อขาย</p>
         </div>
+        <button className="btn btn-sm btn-outline" onClick={syncAllCosts} disabled={loading}>
+          <Save size={14} className="mr-1" /> ซิงค์ต้นทุนทั้งหมดไป Dashboard
+        </button>
       </div>
 
       {/* Stats */}

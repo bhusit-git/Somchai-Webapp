@@ -2,19 +2,35 @@ import { useState, useEffect } from 'react';
 import {
   Receipt, Search, Filter, Eye, XCircle, ChevronDown, ChevronUp,
   ShoppingCart, Banknote, QrCode, CreditCard, Truck, Users,
-  DollarSign, Calendar, Clock, RefreshCw
+  DollarSign, Calendar, Clock, RefreshCw, Wallet, Smartphone, CircleDollarSign, HandCoins
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
-const PAYMENT_LABELS = {
-  cash: { label: 'เงินสด', icon: Banknote, color: 'var(--accent-success)' },
-  promptpay: { label: 'PromptPay', icon: QrCode, color: 'var(--accent-info)' },
-  transfer: { label: 'โอนเงิน', icon: CreditCard, color: 'var(--accent-cyan)' },
-  delivery: { label: 'Delivery', icon: Truck, color: 'var(--accent-orange)' },
-  credit: { label: 'เงินเชื่อ', icon: Users, color: 'var(--accent-warning)' },
-  card: { label: 'บัตรเครดิต', icon: CreditCard, color: 'var(--accent-purple)' },
+const PM_ICON_MAP = {
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
 };
+
+const DEFAULT_PAYMENT_METHODS = [
+  { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
+];
+
+function loadPaymentMethods() {
+  try {
+    const raw = localStorage.getItem('paymentMethods');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed; // We want all to display history, even if disabled now
+    }
+  } catch (err) {
+    console.error('Error loading payment methods:', err);
+  }
+  return DEFAULT_PAYMENT_METHODS;
+}
 
 const STATUS_LABELS = {
   completed: { label: 'สำเร็จ', class: 'badge-success' },
@@ -24,6 +40,7 @@ const STATUS_LABELS = {
 
 export default function SalesHistory() {
   const [transactions, setTransactions] = useState([]);
+  const [paymentMethods] = useState(() => loadPaymentMethods());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -293,7 +310,10 @@ export default function SalesHistory() {
                 </tr>
               ) : (
                 filteredTx.map((tx) => {
-                  const pm = PAYMENT_LABELS[tx.payment_method] || { label: tx.payment_method, icon: DollarSign, color: 'var(--text-muted)' };
+                  const pmDef = paymentMethods.find(m => m.value === tx.payment_method);
+                  const pm = pmDef 
+                    ? { label: pmDef.label, icon: PM_ICON_MAP[pmDef.icon] || DollarSign, color: 'var(--text-primary)' }
+                    : { label: tx.payment_method, icon: DollarSign, color: 'var(--text-muted)' };
                   const PayIcon = pm.icon;
                   const statusInfo = STATUS_LABELS[tx.status] || { label: tx.status, class: 'badge-ghost' };
                   const isExpanded = expandedRow === tx.id;
@@ -432,7 +452,7 @@ export default function SalesHistory() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>วิธีชำระ</span>
-                  <span>{PAYMENT_LABELS[voidTarget.payment_method]?.label || voidTarget.payment_method}</span>
+                  <span>{paymentMethods.find(m => m.value === voidTarget.payment_method)?.label || voidTarget.payment_method}</span>
                 </div>
               </div>
 

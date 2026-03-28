@@ -6,10 +6,16 @@ import { useAuth } from '../contexts/AuthContext';
 export default function ARManagement() {
   const [arList, setArList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedAr, setSelectedAr] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('transfer');
+
+  const [showItemsModal, setShowItemsModal] = useState(false);
+  const [itemsAr, setItemsAr] = useState(null);
+  const [arItems, setArItems] = useState([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   const { user } = useAuth();
   const currentBranchId = user?.branch_id;
@@ -70,6 +76,48 @@ export default function ARManagement() {
     }
   }
 
+  async function handleViewItems(ar) {
+    setItemsAr(ar);
+    setShowItemsModal(true);
+    setLoadingItems(true);
+    setArItems([]);
+
+    try {
+      // Find the transaction created at roughly the same time with the same total amount
+      const arTime = new Date(ar.created_at).getTime();
+      const minTime = new Date(arTime - 60000).toISOString(); // -1 minute
+      const maxTime = new Date(arTime + 60000).toISOString(); // +1 minute
+
+      const { data: txList, error: txError } = await supabase
+        .from('transactions')
+        .select('id, created_at')
+        .eq('branch_id', ar.branch_id)
+        .eq('payment_method', 'credit')
+        .eq('total', ar.total_amount)
+        .gte('created_at', minTime)
+        .lte('created_at', maxTime)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (txError) throw txError;
+      
+      if (txList && txList.length > 0) {
+        const txId = txList[0].id;
+        const { data: items, error: itemsError } = await supabase
+          .from('transaction_items')
+          .select('*')
+          .eq('transaction_id', txId);
+          
+        if (itemsError) throw itemsError;
+        setArItems(items || []);
+      }
+    } catch (err) {
+      console.error('Error fetching AR items:', err);
+    } finally {
+      setLoadingItems(false);
+    }
+  }
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'paid': return <span className="badge badge-success">ชำระแล้ว</span>;
@@ -78,6 +126,12 @@ export default function ARManagement() {
       default: return <span className="badge badge-outline">รอชำระ</span>;
     }
   };
+
+  const filteredArList = arList.filter(ar => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (ar.customer_name || '').toLowerCase().includes(term) || (ar.customer_company || '').toLowerCase().includes(term);
+  });
 
   const totalPending = arList.filter(ar => ar.status !== 'paid').reduce((sum, ar) => sum + (Number(ar.total_amount) - Number(ar.paid_amount)), 0);
 
@@ -99,7 +153,7 @@ export default function ARManagement() {
           <h3 className="card-title">รายการลูกหนี้การค้า (AR)</h3>
           <div className="search-bar">
             <Search size={16} />
-            <input type="text" placeholder="ค้นหาชื่อลูกค้า/บริษัท..." />
+            <input type="text" placeholder="ค้นหาชื่อลูกค้า/บริษัท..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         </div>
 
@@ -121,7 +175,7 @@ export default function ARManagement() {
                 <tr><td colSpan="7" className="text-center">กำลังโหลด...</td></tr>
               ) : arList.length === 0 ? (
                 <tr><td colSpan="7" className="text-center text-muted">ไม่มีรายการลูกหนี้</td></tr>
-              ) : arList.map(ar => {
+              ) : filteredArList.map(ar => {
                 const pending = Number(ar.total_amount) - Number(ar.paid_amount);
                 return (
                   <tr key={ar.id}>
@@ -130,7 +184,7 @@ export default function ARManagement() {
                       <div className="text-xs text-muted">{ar.customer_company || '-'}</div>
                     </td>
                     <td>{new Date(ar.created_at).toLocaleDateString('th-TH')}</td>
-                    <td>{new Date(ar.due_date).toLocaleDateString('th-TH')}</td>
+                    <td>{new Date(ar.due_date + 'T00:00:00').toLocaleDateString('th-TH')}</td>
                     <td>฿{Number(ar.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td className="text-warning">฿{pending.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>{getStatusBadge(ar.status)}</td>
@@ -147,6 +201,13 @@ export default function ARManagement() {
                           รับชำระเงิน
                         </button>
                       )}
+                      <button 
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => handleViewItems(ar)}
+                        style={{ marginLeft: '4px' }}
+                      >
+                        <FileText size={14} style={{ marginRight: '4px' }}/> ดูรายการ
+                      </button>
                     </td>
                   </tr>
                 );
@@ -201,6 +262,58 @@ export default function ARManagement() {
                 <button type="submit" className="btn btn-primary">ยืนยันรับชำระ</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showItemsModal && itemsAr && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h3>รายการสินค้าสำหรับหนี้ {itemsAr.customer_name}</h3>
+              <button className="btn-icon" onClick={() => setShowItemsModal(false)}><X size={20} /></button>
+            </div>
+            
+            <div className="modal-body">
+              {loadingItems ? (
+                <div className="text-center p-4">กำลังโหลดข้อมูล...</div>
+              ) : arItems.length === 0 ? (
+                <div className="text-center p-4 text-muted">ไม่พบรายการสินค้าที่เชื่อมโยงกับหนี้นี้</div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>สินค้า</th>
+                        <th className="text-center">จำนวน</th>
+                        <th className="text-right">ราคา/หน่วย</th>
+                        <th className="text-right">รวม</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {arItems.map((item, idx) => (
+                        <tr key={idx}>
+                          <td>{item.product_name}</td>
+                          <td className="text-center">{item.quantity}</td>
+                          <td className="text-right">฿{Number(item.unit_price).toLocaleString()}</td>
+                          <td className="text-right">฿{Number(item.total_price).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan="3" className="text-right"><strong>ยอดรวมสุทธิ:</strong></td>
+                        <td className="text-right"><strong>฿{Number(itemsAr.total_amount).toLocaleString()}</strong></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowItemsModal(false)}>ปิด</button>
+            </div>
           </div>
         </div>
       )}
