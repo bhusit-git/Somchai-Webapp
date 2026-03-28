@@ -25,6 +25,16 @@ function getShiftLabel(type) {
   return map[type] || { label: type, color: '#8b5cf6', icon: '📋' };
 }
 
+// Haversine formula: returns distance in meters between two lat/lng points
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function Attendance() {
   const [activeTab, setActiveTab] = useState('kiosk');
 
@@ -85,6 +95,9 @@ function KioskTab() {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { success, message }
+  const [location, setLocation] = useState(null); // { lat, lng }
+  const [locStatus, setLocStatus] = useState('idle'); // idle | fetching | ok | denied
+  const [distanceM, setDistanceM] = useState(null);
   const webcamRef = useRef(null);
 
   // Live clock
@@ -131,12 +144,42 @@ function KioskTab() {
     setLastRecord(lastRes.data);
     setClockType(lastRes.data?.type === 'clock_in' ? 'clock_out' : 'clock_in');
     setStep('confirm');
+
+    // Fetch GPS location immediately
+    setLocStatus('fetching');
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(coords);
+          setLocStatus('ok');
+        },
+        () => {
+          setLocStatus('denied');
+          setLocation(null);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      setLocStatus('denied');
+    }
   }
 
   const capturePhoto = useCallback(() => {
     const img = webcamRef.current?.getScreenshot();
     if (img) setCapturedImage(img);
   }, [webcamRef]);
+
+  // Compute geofence distance whenever location or branchSettings changes
+  useEffect(() => {
+    const gf = branchSettings?.geofence;
+    if (gf?.enabled && gf.lat && gf.lng && location) {
+      const d = haversineMeters(location.lat, location.lng, gf.lat, gf.lng);
+      setDistanceM(Math.round(d));
+    } else {
+      setDistanceM(null);
+    }
+  }, [location, branchSettings]);
 
   async function submitAttendance() {
     if (!capturedImage) return alert('กรุณาถ่ายรูปก่อน');
@@ -162,9 +205,23 @@ function KioskTab() {
       } catch (storageErr) {
         console.warn('Storage error, using data URL fallback:', storageErr.message);
       }
-      // Fallback: save the captured image data URL directly
-      if (!selfie_url) {
-        selfie_url = capturedImage;
+      if (!selfie_url) selfie_url = capturedImage;
+
+      // Geofence check
+      const gf = branchSettings?.geofence;
+      if (gf?.enabled && gf.lat && gf.lng) {
+        if (!location) {
+          // location unavailable — allow but will mark as no-location
+        } else {
+          const dist = haversineMeters(location.lat, location.lng, gf.lat, gf.lng);
+          if (dist > (gf.radius_m || 50)) {
+            setSubmitting(false);
+            setResult({ success: false, message: `⚠️ อยู่นอกพื้นที่ร้าน (ห่าง ${Math.round(dist)} เมตร)` });
+            setStep('done');
+            setTimeout(() => { setStep('confirm'); setResult(null); }, 4000);
+            return;
+          }
+        }
       }
 
       let is_late = false;
@@ -189,6 +246,8 @@ function KioskTab() {
         shift_type: todaySchedule?.shift_type || null,
         note: note.trim() || null,
         timestamp: new Date().toISOString(),
+        lat: location?.lat ?? null,
+        lng: location?.lng ?? null,
       });
 
       if (error) throw error;
@@ -219,7 +278,9 @@ function KioskTab() {
     setCapturedImage(null);
     setNote('');
     setResult(null);
-    // Re-load logged-in user data fresh and go back to confirm
+    setLocation(null);
+    setLocStatus('idle');
+    setDistanceM(null);
     if (authUser?.id) {
       await loadUserParallel(authUser.id);
     } else {
@@ -392,6 +453,38 @@ function KioskTab() {
                 }}
               />
             </div>
+
+            {/* Geofence / Location Status Badge */}
+            {(() => {
+              const gf = branchSettings?.geofence;
+              const gfActive = gf?.enabled && gf?.lat && gf?.lng;
+              if (!gfActive && locStatus === 'idle') return null;
+              if (locStatus === 'fetching') return (
+                <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', fontSize: 13, color: '#a5b4fc' }}>
+                  ⏳ กำลังดึงพิกัดที่ตั้งของคุณ...
+                </div>
+              );
+              if (locStatus === 'denied') return (
+                <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', fontSize: 13, color: '#9ca3af' }}>
+                  📵 ไม่ทราบพิกัด (Location ถูกปฐิเสธหรือไม่รองรับ)
+                </div>
+              );
+              if (locStatus === 'ok' && gfActive && distanceM !== null) {
+                const radius = gf.radius_m || 50;
+                const inZone = distanceM <= radius;
+                return (
+                  <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: inZone ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${inZone ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`, fontSize: 13, color: inZone ? '#86efac' : '#fca5a5' }}>
+                    {inZone ? `✅ อยู่ในพื้นที่ร้าน (ห่าง ${distanceM} เมตร)` : `⚠️ อยู่นอกพื้นที่ร้าน — ห่าง ${distanceM} เมตร (max ${radius}ม.)`}
+                  </div>
+                );
+              }
+              if (locStatus === 'ok') return (
+                <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', fontSize: 13, color: '#86efac' }}>
+                  📍 ดึงพิกัดสำเร็จ ({location?.lat?.toFixed(4)}, {location?.lng?.toFixed(4)})
+                </div>
+              );
+              return null;
+            })()}
 
             <button
               className="btn btn-primary"
@@ -668,14 +761,15 @@ function HistoryTab() {
                 <th>เวลา</th>
                 <th>รูปถ่าย</th>
                 <th>หมายเหตุ</th>
+                <th>พิกัด</th>
                 {canDelete && <th style={{ textAlign: 'right' }}>จัดการ</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan="7"><div className="empty-state"><Clock size={48} /><h3>ยังไม่มีข้อมูล</h3><p>เริ่มใช้แท็บ "ลงเวลา" เพื่อบันทึก</p></div></td></tr>
+                <tr><td colSpan="9"><div className="empty-state"><Clock size={48} /><h3>ยังไม่มีข้อมูล</h3><p>เริ่มใช้แท็บ "ลงเวลา" เพื่อบันทึก</p></div></td></tr>
               ) : (
                 records.map((rec) => (
                   <tr key={rec.id} style={{ opacity: rec.is_deleted ? 0.6 : 1, background: rec.is_deleted ? 'rgba(239,68,68,0.05)' : 'none' }}>
@@ -717,6 +811,21 @@ function HistoryTab() {
                       )}
                     </td>
                     <td>{rec.note || '—'}</td>
+                    <td>
+                       {rec.lat && rec.lng ? (
+                         <a
+                           href={`https://www.google.com/maps/search/?api=1&query=${rec.lat},${rec.lng}`}
+                           target="_blank"
+                           rel="noreferrer"
+                           style={{ color: '#60a5fa', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+                           title={`${Number(rec.lat).toFixed(5)}, ${Number(rec.lng).toFixed(5)}`}
+                         >
+                           📍 แผนที่
+                         </a>
+                       ) : (
+                         <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>ไม่ทราบพิกัด</span>
+                       )}
+                     </td>
                     {canDelete && (
                       <td style={{ textAlign: 'right' }}>
                         {rec.is_deleted ? (

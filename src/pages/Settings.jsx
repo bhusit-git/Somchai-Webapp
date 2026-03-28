@@ -747,11 +747,14 @@ function UsersTab() {
 // TAB 2: Branches
 // ============================================================
 function BranchesTab() {
+  const { user: authUser } = useAuth();
+  const isOwner = authUser?.role === 'owner';
   const [branches, setBranches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newBranch, setNewBranch] = useState({ name: '', address: '', code: '' });
   const [loading, setLoading] = useState(true);
   const [editBranch, setEditBranch] = useState(null);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
   useEffect(() => {
     loadBranches();
@@ -784,16 +787,45 @@ function BranchesTab() {
   const handleEditBranch = async () => {
     if (!editBranch.name) return;
     try {
+      // Build geofence settings from editBranch state
+      const geofence = {
+        enabled: editBranch._geoEnabled || false,
+        lat: editBranch._geoLat ? parseFloat(editBranch._geoLat) : null,
+        lng: editBranch._geoLng ? parseFloat(editBranch._geoLng) : null,
+        radius_m: editBranch._geoRadius ? parseInt(editBranch._geoRadius) : 50,
+      };
+      const existingSettings = editBranch.settings || {};
       await updateBranch(editBranch.id, { 
         code: editBranch.code, 
         name: editBranch.name, 
-        address: editBranch.address 
+        address: editBranch.address,
+        settings: { ...existingSettings, geofence },
       });
       setEditBranch(null);
       loadBranches();
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการแก้ไขสาขา: ' + err.message);
     }
+  };
+
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) return alert('เบราว์เซอร์นี้ไม่รองรับ GPS');
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setEditBranch(prev => ({
+          ...prev,
+          _geoLat: pos.coords.latitude.toFixed(7),
+          _geoLng: pos.coords.longitude.toFixed(7),
+        }));
+        setGettingLocation(false);
+      },
+      () => {
+        alert('ไม่สามารถดึงพิกัดได้ กรุณาอนุญาตการเข้าถึงตำแหน่ง');
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดข้อมูลสาขา...</div>;
@@ -854,7 +886,7 @@ function BranchesTab() {
       {/* Edit Branch Form/Modal */}
       {editBranch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl">
+          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลสาขา</h3>
             
             <div className="space-y-4">
@@ -883,6 +915,82 @@ function BranchesTab() {
                   onChange={e => setEditBranch({ ...editBranch, address: e.target.value })}
                 />
               </div>
+
+              {/* --- Geofence Section (Owner Only) --- */}
+              {isOwner && (
+                <div className="bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-emerald-400 text-sm font-semibold flex items-center gap-2">
+                      <MapPin className="w-4 h-4" /> ขอบเขตพื้นที่การลงเวลา (Geofence)
+                    </p>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded"
+                        checked={editBranch._geoEnabled || false}
+                        onChange={e => setEditBranch({ ...editBranch, _geoEnabled: e.target.checked })}
+                      />
+                      <span className="text-slate-300 text-xs">{editBranch._geoEnabled ? 'เปิดใช้งาน' : 'ปิดอยู่'}</span>
+                    </label>
+                  </div>
+
+                  {editBranch._geoEnabled && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-slate-400 text-xs mb-1 block">Latitude (เส้นรุ้ง)</label>
+                          <input
+                            type="number" step="0.0000001"
+                            className="form-input"
+                            placeholder="เช่น 13.7563"
+                            value={editBranch._geoLat ?? ''}
+                            onChange={e => setEditBranch({ ...editBranch, _geoLat: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-xs mb-1 block">Longitude (เส้นแวง)</label>
+                          <input
+                            type="number" step="0.0000001"
+                            className="form-input"
+                            placeholder="เช่น 100.5018"
+                            value={editBranch._geoLng ?? ''}
+                            onChange={e => setEditBranch({ ...editBranch, _geoLng: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGetCurrentLocation}
+                        disabled={gettingLocation}
+                        className="w-full flex items-center justify-center gap-2 bg-cyan-600/30 hover:bg-cyan-600/50 border border-cyan-500/40 text-cyan-300 text-sm py-2 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <MapPin className="w-4 h-4" />
+                        {gettingLocation ? '⏳ กำลังดึงพิกัด...' : '📍 ใช้ตำแหน่งปัจจุบันของฉัน'}
+                      </button>
+                      <div>
+                        <label className="text-slate-400 text-xs mb-1 block">รัศมีที่อนุญาต (เมตร)</label>
+                        <input
+                          type="number" min="10" max="5000"
+                          className="form-input"
+                          placeholder="50"
+                          value={editBranch._geoRadius ?? 50}
+                          onChange={e => setEditBranch({ ...editBranch, _geoRadius: e.target.value })}
+                        />
+                        <p className="text-slate-500 text-[10px] mt-1">• แนะนำ 50–200 เมตร เผื่อ GPS เพี้ยนเล็กน้อย</p>
+                      </div>
+                      {editBranch._geoLat && editBranch._geoLng && (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${editBranch._geoLat},${editBranch._geoLng}`}
+                          target="_blank" rel="noreferrer"
+                          className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 underline"
+                        >
+                          <MapPin className="w-3 h-3" /> ดูตำแหน่งบน Google Maps
+                        </a>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 justify-end mt-6">
@@ -911,18 +1019,29 @@ function BranchesTab() {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
                   <Building2 className="w-5 h-5 text-white" />
                 </div>
-                <div>
-                  <p className="text-white font-semibold">{branch.name}</p>
-                  {branch.address && (
-                    <p className="text-slate-400 text-sm flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5" /> {branch.address}
-                    </p>
-                  )}
-                </div>
+            <div>
+              <p className="text-white font-semibold">{branch.name}</p>
+              {branch.address && (
+                <p className="text-slate-400 text-sm flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5" /> {branch.address}
+                </p>
+              )}
+              {branch.settings?.geofence?.enabled && (
+                <p className="text-emerald-400 text-xs flex items-center gap-1 mt-1">
+                  📍 Geofence เปิดอยู่ · รัศมี {branch.settings.geofence.radius_m || 50} เมตร
+                </p>
+              )}
+            </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setEditBranch(branch)}
+                  onClick={() => setEditBranch({
+                    ...branch,
+                    _geoEnabled: branch.settings?.geofence?.enabled || false,
+                    _geoLat: branch.settings?.geofence?.lat?.toString() || '',
+                    _geoLng: branch.settings?.geofence?.lng?.toString() || '',
+                    _geoRadius: (branch.settings?.geofence?.radius_m || 50).toString(),
+                  })}
                   className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors border border-blue-500/20"
                 >
                   <Edit2 className="w-3.5 h-3.5" /> แก้ไข
