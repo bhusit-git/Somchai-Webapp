@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, FileText, CheckCircle, Clock, Search, DollarSign, X, Printer, History, Ban } from 'lucide-react';
+import { Users, FileText, CheckCircle, Clock, Search, DollarSign, X, Printer, History, Ban, TrendingDown, Wallet } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -183,18 +183,38 @@ export default function ARManagement() {
     return (ar.customer_name || '').toLowerCase().includes(term) || (ar.customer_company || '').toLowerCase().includes(term);
   });
 
-  const totalPending = arList.filter(ar => ar.status !== 'paid' && ar.status !== 'cancelled').reduce((sum, ar) => sum + (Number(ar.total_amount) - Number(ar.paid_amount)), 0);
+  const activeArList = arList.filter(ar => ar.status !== 'cancelled');
+  const totalPending = activeArList.reduce((sum, ar) => sum + (Number(ar.total_amount) - Number(ar.paid_amount)), 0);
+  const totalInvoiced = activeArList.reduce((sum, ar) => sum + Number(ar.total_amount), 0);
+  const totalPaid = activeArList.reduce((sum, ar) => sum + Number(ar.paid_amount), 0);
+  const pendingCount = activeArList.filter(ar => ar.status !== 'paid').length;
 
   return (
     <div className="page-container">
-      <div className="stats-grid">
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         <div className="stat-card">
           <div className="stat-header">
-            <h3 className="stat-title">ยอดลูกหนี้คงค้างทั้งหมด</h3>
+            <h3 className="stat-title">ยอดรวมทั้งหมด (ตั้งหนี้)</h3>
             <DollarSign size={20} className="text-secondary" />
           </div>
-          <p className="stat-value">฿{totalPending.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="stat-desc">จากลูกหนี้ {arList.filter(ar => ar.status !== 'paid' && ar.status !== 'cancelled').length} รายการ</p>
+          <p className="stat-value">฿{totalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="stat-desc">จาก {activeArList.length} รายการ (ไม่นับที่ยกเลิก)</p>
+        </div>
+        <div className="stat-card" style={{ borderColor: 'var(--accent-success)' }}>
+          <div className="stat-header">
+            <h3 className="stat-title">ชำระมาแล้วรวม</h3>
+            <Wallet size={20} style={{ color: 'var(--accent-success)' }} />
+          </div>
+          <p className="stat-value" style={{ color: 'var(--accent-success)' }}>฿{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="stat-desc">รับชำระสะสมทั้งหมด</p>
+        </div>
+        <div className="stat-card" style={{ borderColor: 'var(--accent-warning)' }}>
+          <div className="stat-header">
+            <h3 className="stat-title">ยอดคงค้างทั้งหมด</h3>
+            <TrendingDown size={20} style={{ color: 'var(--accent-warning)' }} />
+          </div>
+          <p className="stat-value" style={{ color: 'var(--accent-warning)' }}>฿{totalPending.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="stat-desc">รอเก็บเงิน {pendingCount} รายการ</p>
         </div>
       </div>
 

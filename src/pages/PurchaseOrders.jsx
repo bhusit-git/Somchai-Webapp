@@ -297,6 +297,9 @@ export default function PurchaseOrders() {
   const pendingCount = pos.filter(p => p.status === 'pending').length;
   const receivedCount = pos.filter(p => p.status === 'received').length;
 
+  // Extract unique suppliers from past POs for autocomplete
+  const uniqueSuppliers = Array.from(new Set(pos.map(p => p.supplier_name?.trim()).filter(Boolean))).sort();
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -414,7 +417,20 @@ export default function PurchaseOrders() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', padding: '16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">ชื่อผู้ขาย (ซัพพลายเออร์)</label>
-                  <input type="text" className="form-input" value={headerForm.supplier_name} onChange={e => setHeaderForm({...headerForm, supplier_name: e.target.value})} placeholder="เช่น CP, ร้านเจ๊อ้วน" />
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={headerForm.supplier_name} 
+                    onChange={e => setHeaderForm({...headerForm, supplier_name: e.target.value})} 
+                    placeholder="เช่น CP, ร้านเจ๊อ้วน" 
+                    list="supplier-list"
+                    autoComplete="off"
+                  />
+                  <datalist id="supplier-list">
+                    {uniqueSuppliers.map(sup => (
+                      <option key={sup} value={sup} />
+                    ))}
+                  </datalist>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">ช่องทางชำระเงินที่ตั้งไว้ (สำหรับบันทึกรายจ่าย)</label>

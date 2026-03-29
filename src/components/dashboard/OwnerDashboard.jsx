@@ -3,7 +3,28 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import './OwnerDashboard.css';
 
+const DEFAULT_PAYMENT_METHODS = [
+  { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
+];
+
+function loadPaymentMethods() {
+  try {
+    const raw = localStorage.getItem('paymentMethods');
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error('Error loading payment methods:', err);
+  }
+  return DEFAULT_PAYMENT_METHODS;
+}
+
 export default function OwnerDashboard() {
+  const [paymentMethods] = useState(() => loadPaymentMethods());
   const { user } = useAuth();
   const currentBranchId = user?.branch_id;
   const currentBranchName = user?.branch_name;
@@ -16,6 +37,9 @@ export default function OwnerDashboard() {
     netProfit: 0,
     healthScore: 0,
     managerSafe: 0,
+    totalDiscount: 0,
+    totalRefund: 0,
+    paymentBreakdown: {},
   });
   const [branchData, setBranchData] = useState([]);
   const [insights, setInsights] = useState([]);
@@ -45,11 +69,13 @@ export default function OwnerDashboard() {
       
       let txQuery = supabase
         .from('transactions')
-        .select('id, branch_id, total, status, created_at')
-        .gte('created_at', startIso)
-        .eq('status', 'completed');
+        .select('id, branch_id, total, status, created_at, payment_method, discount')
+        .gte('created_at', startIso);
       if (currentBranchId) txQuery = txQuery.eq('branch_id', currentBranchId);
       const { data: txData } = await txQuery;
+
+      const completedTxs = (txData || []).filter(t => t.status === 'completed');
+      const voidedTxs = (txData || []).filter(t => t.status === 'voided');
 
       let expQuery = supabase
         .from('expenses')
@@ -66,19 +92,23 @@ export default function OwnerDashboard() {
       const { data: safeData } = await safeQuery;
       const totalSafe = (safeData || []).reduce((s, row) => s + Number(row.balance), 0);
 
-      // Real Fixed Costs
-      const currentMonthStr = startOfMonth.toISOString().slice(0, 7);
-      let fcQuery = supabase.from('fixed_costs').select('amount').eq('period_month', currentMonthStr);
-      if (currentBranchId) fcQuery = fcQuery.eq('branch_id', currentBranchId);
-      const { data: fcData } = await fcQuery;
-      const totalFixedCosts = (fcData || []).reduce((s, row) => s + Number(row.amount), 0);
+      // Real Fixed Costs — ดึงจาก expenses ผ่าน is_fixed_cost flag ของ category
+      const { data: catData } = await supabase.from('expense_categories').select('name, is_fixed_cost').eq('is_active', true);
+      const fixedCostCatNames = (catData || []).filter(c => c.is_fixed_cost).map(c => c.name);
+      
+      let fcExpQuery = supabase.from('expenses').select('amount, category')
+        .eq('status', 'approved')
+        .gte('created_at', startIso);
+      if (currentBranchId) fcExpQuery = fcExpQuery.eq('branch_id', currentBranchId);
+      const { data: fcExpData } = await fcExpQuery;
+      const totalFixedCosts = (fcExpData || []).filter(e => fixedCostCatNames.includes(e.category)).reduce((s, row) => s + Number(row.amount), 0);
 
       // Calculate COGS
       let totalTheoreticalCOGS = 0; // World 1 (with Q-Factor)
       let totalFinancialCOGS = 0; // World 2 (raw materials only)
       let branchCogsMap = {}; // branch_id -> theoretical cogs for Gross Profit
-      if (txData && txData.length > 0) {
-        const txIds = txData.map(t => t.id);
+      if (completedTxs.length > 0) {
+        const txIds = completedTxs.map(t => t.id);
         const { data: txItems } = await supabase
           .from('transaction_items')
           .select('transaction_id, quantity, products(cost, misc_cost_type, misc_cost_value)')
@@ -114,8 +144,17 @@ export default function OwnerDashboard() {
       }
 
       // 1. Overall stats
-      const totalRev = (txData || []).reduce((sum, t) => sum + Number(t.total), 0);
+      const totalRev = completedTxs.reduce((sum, t) => sum + Number(t.total), 0);
       const totalExp = (expData || []).reduce((sum, e) => sum + Number(e.amount), 0);
+      
+      // Breakdown stats
+      const totalDiscount = completedTxs.reduce((sum, t) => sum + Number(t.discount || 0), 0);
+      const totalRefund = voidedTxs.reduce((sum, t) => sum + Number(t.total), 0);
+      const paymentBreakdown = completedTxs.reduce((acc, t) => {
+        const pm = t.payment_method || 'unknown';
+        acc[pm] = (acc[pm] || 0) + Number(t.total);
+        return acc;
+      }, {});
       
       // Dual World: Net Profit uses Financial COGS (raw material) to prevent double counting with OPEX
       const net = totalRev - totalFinancialCOGS - totalExp - totalFixedCosts;
@@ -133,6 +172,9 @@ export default function OwnerDashboard() {
         netProfit: net,
         healthScore: health,
         managerSafe: totalSafe,
+        totalDiscount,
+        totalRefund,
+        paymentBreakdown,
       });
 
       // 2. Branch Stats
@@ -142,7 +184,7 @@ export default function OwnerDashboard() {
           const todayStart = new Date();
           todayStart.setHours(0,0,0,0);
           
-          const bTx = (txData || []).filter(t => t.branch_id === b.id);
+          const bTx = completedTxs.filter(t => t.branch_id === b.id);
           const bTxToday = bTx.filter(t => new Date(t.created_at) >= todayStart);
           
           const revToday = bTxToday.reduce((sum, t) => sum + Number(t.total), 0);
@@ -174,7 +216,7 @@ export default function OwnerDashboard() {
         let maxDailyRev = 1;
         const branchDailyRevs = branches.map(b => {
           const daily = Array(daysInMonth).fill(0);
-          const bTx = (txData || []).filter(t => t.branch_id === b.id);
+          const bTx = completedTxs.filter(t => t.branch_id === b.id);
           bTx.forEach(t => {
              const d = new Date(t.created_at).getDate() - 1;
              daily[d] += Number(t.total);
@@ -323,6 +365,44 @@ export default function OwnerDashboard() {
                     ))}
                   </React.Fragment>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Cash Flow & Deductions */}
+          <div className="card">
+            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' }}>Cash Flow & Deductions — ช่องทางรับเงินและส่วนลด</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>ช่องทางชำระเงิน (Payment Methods)</div>
+                {Object.keys(stats.paymentBreakdown || {}).length > 0 ? (
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '13px' }}>
+                    {Object.entries(stats.paymentBreakdown).sort((a, b) => b[1] - a[1]).map(([pm, amount]) => (
+                      <li key={pm} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-primary)' }}>
+                        <span style={{ textTransform: 'capitalize' }}>{paymentMethods.find(m => m.value === pm)?.label || pm}</span>
+                        <span style={{ fontWeight: 500 }}>{formatCurrency(amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ไม่มีข้อมูลช่องทางชำระเงิน</div>
+                )}
+              </div>
+              <div style={{ borderLeft: '1px solid var(--border-primary)', paddingLeft: '16px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>ส่วนลดและยอดเงินคืน (Deductions & Refunds)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px' }}>ส่วนลดที่ให้ลูกค้า (Discounts)</span>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(stats.totalDiscount)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px' }}>คืนเงิน / ยกเลิกบิล (Refunds)</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ยอดเงินที่เสียไปจากการยกเลิก</span>
+                    </div>
+                    <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-warning)' }}>{formatCurrency(stats.totalRefund)}</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

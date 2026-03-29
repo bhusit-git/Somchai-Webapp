@@ -1,5 +1,6 @@
 import './Settings.tailwind.css';
 import { useState, useEffect, useRef, Fragment } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users, Building2, Info, Settings as SettingsIcon, Plus, Eye, EyeOff,
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
@@ -1671,7 +1672,7 @@ function ExpenseCategoriesTab() {
   const [categories, setCategories] = useState([]);
   const [branches, setBranches] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newCat, setNewCat] = useState({ name: '', branch_id: user?.branch_id || '', is_admin_only: false });
+  const [newCat, setNewCat] = useState({ name: '', branch_id: user?.branch_id || '', is_admin_only: false, is_fixed_cost: false });
   const [editCat, setEditCat] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -1701,8 +1702,8 @@ function ExpenseCategoriesTab() {
   const handleAdd = async () => {
     if (!newCat.name || !newCat.branch_id) return;
     try {
-      await createExpenseCategory({ name: newCat.name, branch_id: newCat.branch_id, is_admin_only: newCat.is_admin_only });
-      setNewCat(prev => ({ ...prev, name: '', branch_id: user?.branch_id || '', is_admin_only: false }));
+      await createExpenseCategory({ name: newCat.name, branch_id: newCat.branch_id, is_admin_only: newCat.is_admin_only, is_fixed_cost: newCat.is_fixed_cost });
+      setNewCat(prev => ({ ...prev, name: '', branch_id: user?.branch_id || '', is_admin_only: false, is_fixed_cost: false }));
       setShowAdd(false);
       loadData();
     } catch (err) {
@@ -1713,7 +1714,7 @@ function ExpenseCategoriesTab() {
   const handleEdit = async () => {
     if (!editCat.name) return;
     try {
-      await updateExpenseCategory(editCat.id, { name: editCat.name, branch_id: editCat.branch_id, is_admin_only: editCat.is_admin_only });
+      await updateExpenseCategory(editCat.id, { name: editCat.name, branch_id: editCat.branch_id, is_admin_only: editCat.is_admin_only, is_fixed_cost: editCat.is_fixed_cost });
       setEditCat(null);
       loadData();
     } catch (err) {
@@ -1779,6 +1780,16 @@ function ExpenseCategoriesTab() {
               />
               <label htmlFor="is_admin_only_new" className="text-slate-300 text-sm">แสดงเฉพาะผู้บริหาร (ซ่อนจากพนักงานทั่วไป)</label>
             </div>
+            <div className="md:col-span-2 flex items-center gap-2 mt-1">
+              <input 
+                type="checkbox" 
+                id="is_fixed_cost_new" 
+                style={{width: "1rem", height: "1rem"}}
+                checked={newCat.is_fixed_cost || false} 
+                onChange={e => setNewCat({ ...newCat, is_fixed_cost: e.target.checked })} 
+              />
+              <label htmlFor="is_fixed_cost_new" className="text-slate-300 text-sm">🏷️ ต้นทุนคงที่ (Fixed Cost) — เช่น ค่าเช่า, เงินเดือน</label>
+            </div>
           </div>
           <div className="flex gap-3">
             <button onClick={handleAdd} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
@@ -1825,6 +1836,16 @@ function ExpenseCategoriesTab() {
                 />
                 <label htmlFor="is_admin_only_edit" className="text-slate-300 text-sm">แสดงเฉพาะผู้บริหาร (ซ่อนจากพนักงานทั่วไป)</label>
               </div>
+              <div className="flex items-center gap-2 mt-2">
+                <input 
+                  type="checkbox" 
+                  id="is_fixed_cost_edit" 
+                  style={{width: "1rem", height: "1rem"}}
+                  checked={editCat.is_fixed_cost || false} 
+                  onChange={e => setEditCat({ ...editCat, is_fixed_cost: e.target.checked })} 
+                />
+                <label htmlFor="is_fixed_cost_edit" className="text-slate-300 text-sm">🏷️ ต้นทุนคงที่ (Fixed Cost) — เช่น ค่าเช่า, เงินเดือน</label>
+              </div>
             </div>
 
             <div className="flex gap-3 justify-end mt-6">
@@ -1858,6 +1879,9 @@ function ExpenseCategoriesTab() {
                     {cat.name}
                     {cat.is_admin_only && (
                       <span className="text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/30">ผู้บริหารเท่านั้น</span>
+                    )}
+                    {cat.is_fixed_cost && (
+                      <span className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">🏷️ ต้นทุนคงที่</span>
                     )}
                   </p>
                 </div>
@@ -2177,6 +2201,8 @@ function CustomersTab() {
 // ============================================================
 
 function ProductsTab() {
+  const navigate = useNavigate();
+  const [newlyCreatedProd, setNewlyCreatedProd] = useState(null);
   const [categories, setCategories]   = useState([]);
   const [products, setProducts]       = useState([]);
   const [bomCosts, setBomCosts]       = useState({}); // { product_id: calculatedCost }
@@ -2324,7 +2350,9 @@ function ProductsTab() {
 
       setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {}, misc_cost_type: 'PERCENT', misc_cost_value: 0 });
       setImgFile(null); setImgPreview(null);
-      setShowAddProd(false); loadData();
+      setShowAddProd(false);
+      setNewlyCreatedProd(inserted);
+      loadData();
     } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
     finally { setUploadingImg(false); }
   };
@@ -2562,6 +2590,34 @@ function ProductsTab() {
                 <button onClick={handleAddProd} disabled={uploadingImg}
                   className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium shadow-md transition-colors">
                   <Check className="w-4 h-4" /> {uploadingImg ? 'กำลังบันทึก...' : 'บันทึกเมนูใหม่'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {newlyCreatedProd && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-[#1f2937] border border-slate-700/50 rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl relative">
+                <button onClick={() => setNewlyCreatedProd(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-500/30">
+                  <Check className="w-8 h-8 text-emerald-400" />
+                </div>
+                <h3 className="text-white text-xl font-bold mb-1">เพิ่มเมนูสำเร็จ!</h3>
+                <p className="text-slate-400 text-sm mb-6">บันทึก <strong>{newlyCreatedProd.name}</strong> เรียบร้อยแล้ว</p>
+                
+                <button
+                  onClick={() => navigate(`/bom?menu_id=${newlyCreatedProd.id}`)}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white py-3 px-4 rounded-xl text-sm font-medium transition-all mb-3 shadow-lg shadow-blue-500/20"
+                >
+                  <span className="text-base">🔗</span> ไปกำหนดสูตรอาหาร (BOM) สำหรับเมนูนี้
+                </button>
+                <button
+                  onClick={() => setNewlyCreatedProd(null)}
+                  className="w-full text-slate-400 hover:text-white py-2.5 rounded-xl text-sm font-medium transition-colors border border-slate-700 hover:border-slate-600 hover:bg-slate-800"
+                >
+                  ปิด (ยังไม่กำหนดสูตร)
                 </button>
               </div>
             </div>

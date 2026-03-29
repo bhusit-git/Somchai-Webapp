@@ -233,23 +233,32 @@ export default function COGSEngine() {
         noBomCount: sorted.filter(m => !m.hasBom).length
       });
 
-      // === 8. Fixed costs ===
-      const { data: fixedCosts } = await supabase
-        .from('fixed_costs')
-        .select('type, amount')
-        .eq('period_month', monthStr);
+      // === 8. Fixed costs — ดึงจาก expenses ผ่าน is_fixed_cost flag ของ category ===
+      const { data: catDataFC } = await supabase.from('expense_categories').select('name, is_fixed_cost').eq('is_active', true);
+      const fixedCostCatNames = (catDataFC || []).filter(c => c.is_fixed_cost).map(c => c.name);
 
-      const laborAmt = (fixedCosts || []).filter(f => f.type === 'labor').reduce((s, f) => s + Number(f.amount), 0);
-      const rentAmt  = (fixedCosts || []).filter(f => f.type === 'rent').reduce((s, f) => s + Number(f.amount), 0);
-      const utilAmt  = (fixedCosts || []).filter(f => f.type === 'utilities').reduce((s, f) => s + Number(f.amount), 0);
+      const { data: monthExpenses } = await supabase.from('expenses')
+        .select('amount, category')
+        .eq('status', 'approved')
+        .gte('created_at', startStr)
+        .lte('created_at', endStr);
 
-      setFixedCostAmts({ labor: laborAmt, rent: rentAmt, utilities: utilAmt });
+      const fcExpenses = (monthExpenses || []).filter(e => fixedCostCatNames.includes(e.category));
+      
+      // Map old fixed cost types to category names for compatibility  
+      const laborAmt = fcExpenses.filter(f => /เงินเดือน|ค่าแรง|labor|salary/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      const rentAmt  = fcExpenses.filter(f => /ค่าเช่า|rent/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      const utilAmt  = fcExpenses.filter(f => /น้ำ|ไฟ|utility|utilities/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      // Other fixed costs that don't match specific labels
+      const otherFcAmt = fcExpenses.reduce((s, f) => s + Number(f.amount), 0) - laborAmt - rentAmt - utilAmt;
+
+      setFixedCostAmts({ labor: laborAmt, rent: rentAmt, utilities: utilAmt + otherFcAmt });
       const base = totalRevenue > 0 ? totalRevenue : 1;
       setCostStructure({
         foodCost:  totalRevenue > 0 ? (totalCogs / base) * 100 : 0,
         labor:     totalRevenue > 0 ? (laborAmt / base) * 100 : 0,
         rent:      totalRevenue > 0 ? (rentAmt / base) * 100 : 0,
-        utilities: totalRevenue > 0 ? (utilAmt / base) * 100 : 0
+        utilities: totalRevenue > 0 ? ((utilAmt + otherFcAmt) / base) * 100 : 0
       });
 
     } catch (err) {

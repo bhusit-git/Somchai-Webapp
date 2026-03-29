@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   BookOpen,
   Search,
@@ -24,6 +25,8 @@ import { useAuth } from '../contexts/AuthContext';
 */
 
 export default function RecipeManagement() {
+  const location = useLocation();
+  const preselectMenuId = new URLSearchParams(location.search).get('menu_id');
   const [menuItems, setMenuItems] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +40,15 @@ export default function RecipeManagement() {
   const { user } = useAuth();
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData().then(menus => {
+      if (preselectMenuId && menus) {
+        const menuToSelect = menus.find(m => m.id === preselectMenuId);
+        if (menuToSelect) {
+          selectMenu(menuToSelect);
+        }
+      }
+    });
+  }, [preselectMenuId]);
 
   async function loadData() {
     setLoading(true);
@@ -54,6 +64,7 @@ export default function RecipeManagement() {
 
       setMenuItems(menuRes.data || []);
       setInventoryItems(invRes.data || []);
+      return menuRes.data;
     } catch (err) {
       console.error(err);
     } finally {

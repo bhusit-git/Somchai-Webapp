@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Lock, DollarSign, TrendingUp, TrendingDown, Plus, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers } from 'lucide-react';
+import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfitDashboard() {
   const [safe, setSafe] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [fixedCosts, setFixedCosts] = useState([]);
-  const [expenseCategories, setExpenseCategories] = useState([]);
   const [revenue, setRevenue] = useState(0);
-  const [expensesAmount, setExpensesAmount] = useState(0);
+  const [opexAmount, setOpexAmount] = useState(0);
+  const [fixedCostAmount, setFixedCostAmount] = useState(0);
+  const [fixedCostDetails, setFixedCostDetails] = useState([]);
+  const [opexDetails, setOpexDetails] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  const [showCostModal, setShowCostModal] = useState(false);
-  const [costForm, setCostForm] = useState({ type: '', amount: '', description: '' });
 
   const [showSafeModal, setShowSafeModal] = useState(false);
   const [safeForm, setSafeForm] = useState({ type: 'in', amount: '', reason: '' });
@@ -43,20 +41,12 @@ export default function ProfitDashboard() {
       setTransactions(txData || []);
     }
 
-    // 2. Fetch Fixed Costs
-    const { data: fcData } = await supabase.from('fixed_costs').select('*').eq('branch_id', currentBranchId).eq('period_month', currentMonth).order('created_at', { ascending: false });
-    if (fcData) setFixedCosts(fcData);
+    // 2. Fetch Expense Categories (พร้อม is_fixed_cost flag)
+    const { data: catData } = await supabase.from('expense_categories').select('id, name, is_fixed_cost').eq('is_active', true);
+    const categoryMap = {};
+    (catData || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
 
-    // 3. Fetch Expense Categories (สำหรับ Dropdown)
-    const { data: catData } = await supabase.from('expense_categories').select('*').eq('is_active', true).order('sort_order');
-    if (catData) {
-      setExpenseCategories(catData);
-      if (catData.length > 0 && !costForm.type) {
-        setCostForm(prev => ({ ...prev, type: catData[0].name }));
-      }
-    }
-
-    // 4. Fetch Revenue (เดือนปัจจุบัน)
+    // 3. Fetch Revenue (เดือนปัจจุบัน)
     const { data: revData } = await supabase.from('transactions')
       .select('total')
       .eq('branch_id', currentBranchId)
@@ -66,17 +56,28 @@ export default function ProfitDashboard() {
     const totalRev = revData?.reduce((s, row) => s + Number(row.total), 0) || 0;
     setRevenue(totalRev);
 
-    // 5. Fetch Expenses — ยกเว้นหมวดหมู่ที่บันทึกเป็น Fixed Cost แล้ว (ป้องกันนับซ้ำ)
-    const fixedCostCategories = [...new Set((fcData || []).map(fc => fc.type))];
+    // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
     const { data: expData } = await supabase.from('expenses')
-      .select('amount, category')
+      .select('id, amount, category, description, created_at, receipt_url')
       .eq('branch_id', currentBranchId)
       .eq('status', 'approved')
       .gte('created_at', startStr)
-      .lte('created_at', endStr);
-    const filteredExp = (expData || []).filter(row => !fixedCostCategories.includes(row.category));
-    const totalExp = filteredExp.reduce((s, row) => s + Number(row.amount), 0);
-    setExpensesAmount(totalExp);
+      .lte('created_at', endStr)
+      .order('created_at', { ascending: false });
+
+    const allExpenses = expData || [];
+    
+    // แยก Fixed Cost vs OPEX ตาม is_fixed_cost flag ของ category
+    const fcItems = allExpenses.filter(e => categoryMap[e.category] === true);
+    const opexItems = allExpenses.filter(e => categoryMap[e.category] !== true);
+
+    const totalFC = fcItems.reduce((s, e) => s + Number(e.amount), 0);
+    const totalOPEX = opexItems.reduce((s, e) => s + Number(e.amount), 0);
+
+    setFixedCostAmount(totalFC);
+    setFixedCostDetails(fcItems);
+    setOpexAmount(totalOPEX);
+    setOpexDetails(opexItems);
 
     setLoading(false);
   }
@@ -118,35 +119,15 @@ export default function ProfitDashboard() {
     }
   }
 
-  async function handleAddCost(e) {
-    e.preventDefault();
-    if (!currentBranchId || !currentUserId) return;
-    
-    const { error } = await supabase.from('fixed_costs').insert([{
-      branch_id: currentBranchId,
-      period_month: currentMonth,
-      type: costForm.type,
-      amount: parseFloat(costForm.amount),
-      description: costForm.description,
-      created_by: currentUserId
-    }]);
+  // รวม Fixed Cost ตาม category name
+  const fixedCostByCategory = fixedCostDetails.reduce((acc, item) => {
+    if (!acc[item.category]) acc[item.category] = { total: 0, count: 0 };
+    acc[item.category].total += Number(item.amount);
+    acc[item.category].count += 1;
+    return acc;
+  }, {});
 
-    if (!error) {
-      setShowCostModal(false);
-      setCostForm({ type: '', amount: '', description: '' });
-      fetchData();
-    } else {
-      alert('Error: ' + error.message);
-    }
-  }
-
-  const getTypeLabel = (type) => {
-    const legacy = { rent: 'ค่าเช่าพื้นที่', salary: 'เงินเดือน', utility: 'ค่าน้ำไฟ', other: 'อื่นๆ' };
-    return legacy[type] || type; // หากเป็นระบบใหม่ type จะเป็นชื่อหมวดหมู่ไปเลย
-  };
-
-  const totalFixedCosts = fixedCosts.reduce((sum, fc) => sum + Number(fc.amount), 0);
-  const netProfit = revenue - expensesAmount - totalFixedCosts;
+  const netProfit = revenue - opexAmount - fixedCostAmount;
 
   return (
     <div className="page-container" style={{ paddingBottom: '60px' }}>
@@ -158,6 +139,23 @@ export default function ProfitDashboard() {
         <button className="btn btn-sm btn-ghost" onClick={fetchData} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> รีเฟรช
         </button>
+      </div>
+
+      {/* Info Banner: Single Source of Truth */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(59,130,246,0.08))',
+        border: '1px solid rgba(99,102,241,0.25)',
+        borderRadius: '12px',
+        padding: '12px 16px',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px'
+      }}>
+        <FileText size={16} style={{ color: 'var(--accent-info)', flexShrink: 0 }} />
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+          💡 ข้อมูลรายจ่ายทั้ง OPEX และ Fixed Cost ดึงจาก<strong style={{ color: 'var(--text-primary)' }}> หน้าบันทึกค่าใช้จ่าย (M3B) </strong>โดยอัตโนมัติ — ตั้งค่าหมวดหมู่ที่เป็นต้นทุนคงที่ได้ที่หน้า <strong style={{ color: 'var(--text-primary)' }}>Settings → หมวดหมู่รายจ่าย</strong>
+        </p>
       </div>
 
       {/* P&L Cards */}
@@ -177,8 +175,8 @@ export default function ProfitDashboard() {
             <h3 className="text-sm font-semibold text-muted">รายจ่ายร้าน (Purchases & OPEX)</h3>
             <TrendingDown size={20} className="text-danger" />
           </div>
-          <p className="text-2xl text-danger font-bold">-฿{expensesAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-muted">จากหน้าบันทึกค่าใช้จ่ายรายวัน</p>
+          <p className="text-2xl text-danger font-bold">-฿{opexAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = false ({opexDetails.length} รายการ)</p>
         </div>
 
         <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
@@ -186,8 +184,8 @@ export default function ProfitDashboard() {
             <h3 className="text-sm font-semibold text-muted">ต้นทุนคงที่ (Fixed Costs)</h3>
             <Layers size={20} className="text-warning" />
           </div>
-          <p className="text-2xl text-warning font-bold">-฿{totalFixedCosts.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-muted">บันทึกผ่านหน้านี้</p>
+          <p className="text-2xl text-warning font-bold">-฿{fixedCostAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = true ({fixedCostDetails.length} รายการ)</p>
         </div>
 
         <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
@@ -231,29 +229,54 @@ export default function ProfitDashboard() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
+        {/* Fixed Cost — Auto-pull from expenses */}
         <div className="content-card">
           <div className="card-header">
-            <h3 className="card-title">ต้นทุนคงที่รายเดือน ({currentMonth})</h3>
-            <button className="btn btn-sm btn-outline" onClick={() => setShowCostModal(true)}>
-              <Plus size={16} /> เพิ่ม
-            </button>
+            <h3 className="card-title">🏷️ ต้นทุนคงที่รายเดือน (Auto) — {currentMonth}</h3>
           </div>
+          {/* สรุปตามหมวดหมู่ */}
+          {Object.keys(fixedCostByCategory).length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px 16px', borderBottom: '1px solid var(--border-primary)' }}>
+              {Object.entries(fixedCostByCategory).map(([cat, data]) => (
+                <div key={cat} style={{
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-primary)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px'
+                }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{cat} ({data.count} บิล)</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--accent-warning)' }}>
+                    ฿{data.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="table-responsive">
             <table className="table">
               <thead>
                 <tr>
+                  <th>วันที่</th>
                   <th>หมวดหมู่</th>
                   <th>รายละเอียด</th>
                   <th className="text-right">จำนวนเงิน</th>
                 </tr>
               </thead>
               <tbody>
-                {fixedCosts.length === 0 ? (
-                  <tr><td colSpan="3" className="text-center text-muted">ยังไม่มีบันทึกต้นทุน</td></tr>
-                ) : fixedCosts.map(fc => (
+                {fixedCostDetails.length === 0 ? (
+                  <tr><td colSpan="4" className="text-center text-muted" style={{ padding: '24px' }}>
+                    ยังไม่มีรายจ่ายในหมวดต้นทุนคงที่เดือนนี้
+                    <br />
+                    <span style={{ fontSize: '11px' }}>ตั้งค่าหมวดหมู่เป็น "ต้นทุนคงที่" ที่หน้า Settings → หมวดหมู่รายจ่าย</span>
+                  </td></tr>
+                ) : fixedCostDetails.map(fc => (
                   <tr key={fc.id}>
-                    <td><span className="badge badge-outline">{getTypeLabel(fc.type)}</span></td>
-                    <td>{fc.description || '-'}</td>
+                    <td style={{ fontSize: '12px' }}>{new Date(fc.created_at).toLocaleDateString('th-TH')}</td>
+                    <td><span className="badge badge-outline">{fc.category}</span></td>
+                    <td style={{ fontSize: '12px' }}>{fc.description || '-'}</td>
                     <td className="text-right text-warning">฿{Number(fc.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                   </tr>
                 ))}
@@ -262,6 +285,7 @@ export default function ProfitDashboard() {
           </div>
         </div>
 
+        {/* Safe Transactions */}
         <div className="content-card">
           <div className="card-header">
             <h3 className="card-title">รายการเคลื่อนไหวเซฟ (Manager Safe)</h3>
@@ -301,60 +325,6 @@ export default function ProfitDashboard() {
           </div>
         </div>
       </div>
-
-      {showCostModal && (
-        <div className="modal-overlay" onClick={() => setShowCostModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>บันทึกต้นทุนคงที่ (Fixed Cost) - เดือน {currentMonth}</h3>
-              <button className="btn-icon" onClick={() => setShowCostModal(false)}><X size={20} /></button>
-            </div>
-            <form onSubmit={handleAddCost}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>หมวดหมู่ (ดึงจากหน้าบันทึกรายจ่าย)</label>
-                  <select 
-                    className="form-control form-select" 
-                    value={costForm.type}
-                    onChange={e => setCostForm({...costForm, type: e.target.value})}
-                    required
-                  >
-                    <option value="">-- เลือกหมวดหมู่ --</option>
-                    {expenseCategories.map(c => (
-                      <option key={c.id} value={c.name}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>จำนวนเงิน (บาท)</label>
-                  <input 
-                    type="number" 
-                    className="form-control form-input" 
-                    required 
-                    min="0"
-                    step="0.01"
-                    value={costForm.amount}
-                    onChange={e => setCostForm({...costForm, amount: e.target.value})}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>รายละเอียดเพิ่มเติม</label>
-                  <textarea 
-                    className="form-control form-textarea" 
-                    rows="3"
-                    value={costForm.description}
-                    onChange={e => setCostForm({...costForm, description: e.target.value})}
-                  ></textarea>
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-ghost" onClick={() => setShowCostModal(false)}>ยกเลิก</button>
-                <button type="submit" className="btn btn-primary">บันทึกคงที่</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Safe Deposit/Withdraw Modal */}
       {showSafeModal && (

@@ -212,7 +212,7 @@ export default function SmartInsights() {
         supabase.from('transactions').select('total').gte('created_at', lmStart).lte('created_at', lmEnd).eq('status', 'completed'),
         supabase.from('products').select('id, name, price, cost').eq('is_available', true),
         supabase.from('expenses').select('amount, category, created_at, status, payment_method').gte('created_at', monthStart).lte('created_at', monthEnd),
-        supabase.from('fixed_costs').select('type, amount').eq('period_month', monthStr),
+        supabase.from('expense_categories').select('name, is_fixed_cost').eq('is_active', true),
         supabase.from('inventory_items').select('id, name, current_stock, reorder_point, par_level, cost_per_stock_unit').eq('is_active', true),
         supabase.from('users').select('id', { count: 'exact', head: true }).eq('is_active', true),
         supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required')
@@ -223,10 +223,13 @@ export default function SmartInsights() {
       const lmTxData = lmTxRes.data || [];
       const products = productsRes.data || [];
       const expenses = expensesRes.data || [];
-      const fixedCosts = fixedRes.data || [];
+      const fixedCostsRaw = fixedRes.data || [];
       const invItems = invRes.data || [];
       const activeUsers = userRes.count || 0;
       const bomData = bomRes.data || [];
+
+      // Map expense categories by is_fixed_cost flag
+      const fixedCostCatNames = fixedCostsRaw.filter(c => c.is_fixed_cost).map(c => c.name);
 
       // ═══ Computed Metrics ═══
       const totalRevenue = txData.reduce((s, t) => s + Number(t.total), 0);
@@ -297,11 +300,14 @@ export default function SmartInsights() {
       const totalExpenses = expenses.filter(e => e.status !== 'cancelled' && e.status !== 'rejected').reduce((s, e) => s + Number(e.amount), 0);
       const rawMatExpenses = expenses.filter(e => e.category === 'วัตถุดิบ' || e.category === 'raw_material').reduce((s, e) => s + Number(e.amount), 0);
 
-      // Fixed costs
-      const laborCost = fixedCosts.filter(f => f.type === 'labor').reduce((s, f) => s + Number(f.amount), 0);
-      const rentCost = fixedCosts.filter(f => f.type === 'rent').reduce((s, f) => s + Number(f.amount), 0);
-      const utilCost = fixedCosts.filter(f => f.type === 'utilities').reduce((s, f) => s + Number(f.amount), 0);
-      const totalFixed = laborCost + rentCost + utilCost;
+      // Fixed costs — ดึงจาก expenses ที่หมวดหมู่เป็น is_fixed_cost = true
+      const fixedCostExpenses = expenses.filter(e => 
+        (e.status !== 'cancelled' && e.status !== 'rejected') && fixedCostCatNames.includes(e.category)
+      );
+      const laborCost = fixedCostExpenses.filter(f => /เงินเดือน|ค่าแรง|labor|salary/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      const rentCost = fixedCostExpenses.filter(f => /ค่าเช่า|rent/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      const utilCost = fixedCostExpenses.filter(f => /น้ำ|ไฟ|utility|utilities/i.test(f.category)).reduce((s, f) => s + Number(f.amount), 0);
+      const totalFixed = fixedCostExpenses.reduce((s, f) => s + Number(f.amount), 0);
       const netProfit = grossProfit - totalFixed;
 
       // Inventory alerts
@@ -330,7 +336,7 @@ export default function SmartInsights() {
       const hasProducts = products.length > 0;
       const hasTransactions = txData.length > 0;
       const hasBOM = bomData.length > 0;
-      const hasFixedCosts = fixedCosts.length > 0;
+      const hasFixedCosts = fixedCostExpenses.length > 0;
       const hasInventory = invItems.length > 0;
       const complianceScore = Math.round(
         (hasProducts ? 20 : 0) + (hasTransactions ? 20 : 0) + (hasBOM ? 20 : 0) + (hasFixedCosts ? 20 : 0) + (hasInventory ? 20 : 0)
@@ -423,7 +429,7 @@ export default function SmartInsights() {
 
       // — Compliance —
       if (!hasFixedCosts) {
-        rules.push({ id: id++, icon: <Lightbulb size={15} />, type: 'info', title: 'ยังไม่มีข้อมูลค่าใช้จ่ายคงที่', text: `เพิ่มค่าแรง/ค่าเช่า/ค่าน้ำไฟในหน้า "ต้นทุน" → Profit Dashboard เพื่อให้ Net Profit คำนวณถูกต้อง` });
+        rules.push({ id: id++, icon: <Lightbulb size={15} />, type: 'info', title: 'ยังไม่มีข้อมูลค่าใช้จ่ายคงที่', text: `ตั้งค่าหมวดหมู่เป็น "ต้นทุนคงที่" ที่หน้า Settings → หมวดหมู่รายจ่าย แล้วบันทึกค่าใช้จ่ายผ่านหน้า M3B ระบบจะคำนวณ Net Profit ให้อัตโนมัติ` });
       }
 
       // — No sales products —
