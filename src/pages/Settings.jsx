@@ -4,7 +4,8 @@ import {
   Users, Building2, Info, Settings as SettingsIcon, Plus, Eye, EyeOff,
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
   Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed,
-  Banknote, QrCode, CreditCard, Truck, Wallet, Smartphone, CircleDollarSign, HandCoins
+  Banknote, QrCode, CreditCard, Truck, Wallet, Smartphone, CircleDollarSign, HandCoins, ListTodo,
+  Gift, Calendar, Clock, ToggleLeft, ToggleRight, Shield
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
@@ -148,9 +149,11 @@ export default function Settings() {
     { id: 'branches', label: 'จัดการสาขา', icon: Building2 },
     { id: 'products', label: 'เมนูขาย', icon: UtensilsCrossed },
     { id: 'customers', label: 'ลูกค้ารายบุคคล', icon: Briefcase },
+    { id: 'promotions', label: 'โปรโมชั่น', icon: Gift },
     { id: 'company', label: 'ข้อมูลบริษัท', icon: Info },
     { id: 'expense_categories', label: 'หมวดหมู่รายจ่าย', icon: Tags },
     { id: 'system', label: 'ตั้งค่าระบบ', icon: SettingsIcon },
+    { id: 'checklist', label: 'Checklist ปิดกะ', icon: ListTodo },
   ];
 
   return (
@@ -205,6 +208,9 @@ export default function Settings() {
         <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
           {visitedTabs['customers'] && <CustomersTab />}
         </div>
+        <div style={{ display: activeTab === 'promotions' ? 'block' : 'none' }}>
+          {visitedTabs['promotions'] && <PromotionsTab />}
+        </div>
         <div style={{ display: activeTab === 'company' ? 'block' : 'none' }}>
           {visitedTabs['company'] && <CompanyInfoTab />}
         </div>
@@ -213,6 +219,9 @@ export default function Settings() {
         </div>
         <div style={{ display: activeTab === 'system' ? 'block' : 'none' }}>
           {visitedTabs['system'] && <SystemConfigTab />}
+        </div>
+        <div style={{ display: activeTab === 'checklist' ? 'block' : 'none' }}>
+          {visitedTabs['checklist'] && <ChecklistTab />}
         </div>
       </div>
     </div>
@@ -2179,9 +2188,8 @@ function ProductsTab() {
   const [newCat, setNewCat]           = useState({ name: '' });
   const [editCat, setEditCat]         = useState(null);
 
-  // Product state — menu_prices: { grab: { price: '13', is_available: true } }
   const [showAddProd, setShowAddProd] = useState(false);
-  const [newProd, setNewProd]         = useState({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {} });
+  const [newProd, setNewProd]         = useState({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {}, misc_cost_type: 'PERCENT', misc_cost_value: 0 });
   const [editProd, setEditProd]       = useState(null);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [imgPreview, setImgPreview]   = useState(null); // for new product
@@ -2286,6 +2294,8 @@ function ProductsTab() {
         category_id: newProd.category_id || null,
         is_available: newProd.is_available,
         sort_order: parseInt(newProd.sort_order) || 0,
+        misc_cost_type: newProd.misc_cost_type || 'PERCENT',
+        misc_cost_value: Number(newProd.misc_cost_value || 0),
       }).select().single();
       if (error) { alert('ไม่สามารถเพิ่มเมนูได้: ' + error.message); return; }
 
@@ -2312,7 +2322,7 @@ function ProductsTab() {
         await supabase.from('menu_prices').insert(mpInserts);
       }
 
-      setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {} });
+      setNewProd({ name: '', price: '', category_id: '', is_available: true, sort_order: 0, menu_prices: {}, misc_cost_type: 'PERCENT', misc_cost_value: 0 });
       setImgFile(null); setImgPreview(null);
       setShowAddProd(false); loadData();
     } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); }
@@ -2334,6 +2344,8 @@ function ProductsTab() {
         is_available: editProd.is_available,
         sort_order: parseInt(editProd.sort_order) || 0,
         image_url,
+        misc_cost_type: editProd.misc_cost_type || 'PERCENT',
+        misc_cost_value: Number(editProd.misc_cost_value || 0),
       }).eq('id', editProd.id);
       if (error) { alert('ไม่สามารถแก้ไขเมนูได้'); return; }
 
@@ -2482,6 +2494,19 @@ function ProductsTab() {
                   <input type="checkbox" id="avail_new" checked={newProd.is_available}
                     onChange={e => setNewProd({ ...newProd, is_available: e.target.checked })} className="w-4 h-4 rounded" />
                   <label htmlFor="avail_new" className="text-slate-300 text-sm cursor-pointer select-none">สวิตช์เปิด/ปิดขาย (ให้แสดงใน POS)</label>
+                </div>
+                {/* Misc Costs */}
+                <div className="md:col-span-2 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4 mt-2">
+                  <p className="text-indigo-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                    ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <select className={inputCls} style={{ width: '160px' }} value={newProd.misc_cost_type || 'PERCENT'} onChange={e => setNewProd({ ...newProd, misc_cost_type: e.target.value })}>
+                      <option value="PERCENT">% จากต้นทุนรวม</option>
+                      <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
+                    </select>
+                    <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={newProd.misc_cost_value ?? 0} onChange={e => setNewProd({ ...newProd, misc_cost_value: e.target.value })} />
+                  </div>
                 </div>
                 {/* Channel Pricing */}
                 {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
@@ -2651,6 +2676,19 @@ function ProductsTab() {
                   onChange={e => setEditProd({ ...editProd, is_available: e.target.checked })} className="w-4 h-4" />
                 <label htmlFor="avail_edit" className="text-slate-300 text-sm">เปิดขาย (แสดงใน POS)</label>
               </div>
+              {/* Misc Costs Edit */}
+              <div className="md:col-span-2 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4 mt-2">
+                <p className="text-indigo-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                  ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
+                </p>
+                <div className="flex items-center gap-3">
+                  <select className={inputCls} style={{ width: '160px' }} value={editProd.misc_cost_type || 'PERCENT'} onChange={e => setEditProd({ ...editProd, misc_cost_type: e.target.value })}>
+                    <option value="PERCENT">% จากต้นทุนรวม</option>
+                    <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
+                  </select>
+                  <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={editProd.misc_cost_value ?? 0} onChange={e => setEditProd({ ...editProd, misc_cost_value: e.target.value })} />
+                </div>
+              </div>
               {/* Channel Pricing Edit */}
               {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
                 <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4">
@@ -2732,3 +2770,606 @@ function ProductsTab() {
   );
 }
 
+// ============================================================
+// TAB 8: Checklist
+// ============================================================
+const DEFAULT_CHECKLIST = [
+  { id: 1, text: 'ปิดแก๊สและวาล์วหลักเรียบร้อย' },
+  { id: 2, text: 'เช็คอุณหภูมิตู้เย็นและจดบันทึก' },
+  { id: 3, text: 'ทำความสะอาดพื้นที่และทิ้งขยะ' },
+  { id: 4, text: 'ปิดเครื่องใช้ไฟฟ้าที่ไม่จำเป็น' },
+  { id: 5, text: 'ล็อกประตูและหน้าต่าง' },
+];
+
+function ChecklistTab() {
+  const [items, setItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem('shiftChecklist');
+      return saved ? JSON.parse(saved) : DEFAULT_CHECKLIST;
+    } catch {
+      return DEFAULT_CHECKLIST;
+    }
+  });
+  const [newItemText, setNewItemText] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditValue(item.text);
+  };
+
+  const saveEdit = (id) => {
+    if (!editValue.trim()) return;
+    setItems(items.map(item => item.id === id ? { ...item, text: editValue.trim() } : item));
+    setEditingId(null);
+  };
+
+  const handleSave = () => {
+    localStorage.setItem('shiftChecklist', JSON.stringify(items));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  const handleAdd = () => {
+    if (!newItemText.trim()) return;
+    const newItem = {
+      id: Date.now(),
+      text: newItemText.trim()
+    };
+    setItems([...items, newItem]);
+    setNewItemText('');
+  };
+
+  const handleDelete = (id) => {
+    setItems(items.filter(item => item.id !== id));
+  };
+
+  const handleMoveUp = (index) => {
+    if (index === 0) return;
+    const newItems = [...items];
+    [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+    setItems(newItems);
+  };
+
+  const handleMoveDown = (index) => {
+    if (index === items.length - 1) return;
+    const newItems = [...items];
+    [newItems[index + 1], newItems[index]] = [newItems[index], newItems[index + 1]];
+    setItems(newItems);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-white text-xl font-semibold">ตั้งค่า Checklist ปิดกะ</h2>
+          <p className="text-slate-400 text-sm mt-0.5">รายการตรวจสอบความเรียบร้อยก่อนปิดกะในหน้าแรก (Dashboard)</p>
+        </div>
+        <button
+          onClick={handleSave}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-all ${
+            saved ? 'bg-green-600 text-white' : 'bg-violet-600 hover:bg-violet-500 text-white'
+          }`}
+        >
+          {saved ? <><Check className="w-4 h-4" /> บันทึกแล้ว!</> : <><Save className="w-4 h-4" /> บันทึก Checklist</>}
+        </button>
+      </div>
+
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 max-w-2xl">
+        <div className="flex gap-2">
+          <input
+            className="form-input" style={{flex: 1}}
+            placeholder="ชื่อรายการตรวจสอบ..."
+            value={newItemText}
+            onChange={e => setNewItemText(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={!newItemText.trim()}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shrink-0"
+          >
+            <Plus className="w-4 h-4" /> เพิ่ม
+          </button>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          {items.map((item, index) => (
+            <div key={item.id} className="flex items-center justify-between bg-slate-700/40 border border-slate-600/60 rounded-xl px-4 py-3">
+              <div className="flex items-center gap-3 flex-1 min-w-0 mr-4">
+                <span className="text-slate-400 font-medium w-6 text-center">{index + 1}.</span>
+                {editingId === item.id ? (
+                  <input
+                    autoFocus
+                    className="form-input text-sm flex-1"
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') saveEdit(item.id);
+                      if (e.key === 'Escape') setEditingId(null);
+                    }}
+                  />
+                ) : (
+                  <p className="text-white text-sm truncate">{item.text}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                {editingId === item.id ? (
+                  <>
+                    <button onClick={() => saveEdit(item.id)} className="text-emerald-400/70 hover:text-emerald-400 hover:bg-emerald-400/10 p-1.5 rounded-lg transition-colors">
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-slate-400/70 hover:text-slate-400 hover:bg-slate-400/10 p-1.5 rounded-lg transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => startEdit(item)} className="text-blue-400/70 hover:text-blue-400 hover:bg-blue-400/10 p-1.5 rounded-lg transition-colors">
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleMoveUp(index)}
+                      disabled={index === 0}
+                      className="text-slate-400 hover:text-white disabled:opacity-30 p-1.5 rounded-lg transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                    </button>
+                    <button
+                      onClick={() => handleMoveDown(index)}
+                      disabled={index === items.length - 1}
+                      className="text-slate-400 hover:text-white disabled:opacity-30 p-1.5 rounded-lg transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="text-red-400/70 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors ml-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+          {items.length === 0 && (
+            <div className="text-center py-8 text-slate-500 text-sm">
+              ไม่มีรายการ (กรุณาเพิ่มรายการเพื่อแสดงในหน้าปิดกะ)
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// TAB: Promotions
+// ============================================================
+const DISCOUNT_TYPE_LABELS = {
+  PERCENTAGE: { label: 'ลดเป็น %', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', icon: '🏷️' },
+  FIXED_AMOUNT: { label: 'ลดเป็นบาท', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30', icon: '💵' },
+  FIXED_PRICE: { label: 'ราคาพิเศษเหมาจ่าย', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30', icon: '🎁' },
+};
+
+const APPLY_TO_LABELS = {
+  ENTIRE_BILL: { label: 'ลดทั้งบิล', color: 'bg-amber-500/20 text-amber-300' },
+  SPECIFIC_ITEM: { label: 'เฉพาะเมนู', color: 'bg-cyan-500/20 text-cyan-300' },
+  CATEGORY: { label: 'ทั้งหมวดหมู่', color: 'bg-pink-500/20 text-pink-300' },
+};
+
+function PromotionsTab() {
+  const { user } = useAuth();
+  const [promotions, setPromotions] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editPromo, setEditPromo] = useState(null);
+  const [salesChannels] = useState(() => getSalesChannels());
+
+  // Discount Limit config (stored in localStorage)
+  const [discountLimit, setDiscountLimit] = useState(() => {
+    try {
+      const saved = localStorage.getItem('discountLimitConfig');
+      return saved ? JSON.parse(saved) : { maxPercent: 100, maxAmount: 9999 };
+    } catch { return { maxPercent: 100, maxAmount: 9999 }; }
+  });
+  const [limitSaved, setLimitSaved] = useState(false);
+
+  const emptyForm = {
+    name: '',
+    discount_type: 'PERCENTAGE',
+    discount_value: '',
+    apply_to: 'ENTIRE_BILL',
+    target_ids: [],
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: '',
+    happy_hour_start: '',
+    happy_hour_end: '',
+    applicable_channels: [],
+    is_active: true,
+  };
+  const [form, setForm] = useState(emptyForm);
+
+  useEffect(() => { loadData(); }, []);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [promoRes, catRes, prodRes] = await Promise.all([
+        supabase.from('promotions').select('*').order('created_at', { ascending: false }),
+        supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
+        supabase.from('products').select('id, name, category_id').eq('is_available', true).order('name'),
+      ]);
+      setPromotions(promoRes.data || []);
+      setCategories(catRes.data || []);
+      setProducts(prodRes.data || []);
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  }
+
+  function openEdit(promo) {
+    setForm({
+      ...promo,
+      target_ids: promo.target_ids || [],
+      applicable_channels: promo.applicable_channels || [],
+      start_date: promo.start_date || '',
+      end_date: promo.end_date || '',
+      happy_hour_start: promo.happy_hour_start || '',
+      happy_hour_end: promo.happy_hour_end || '',
+    });
+    setEditPromo(promo);
+    setShowForm(true);
+  }
+
+  function openNew() {
+    setForm(emptyForm);
+    setEditPromo(null);
+    setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.name.trim()) return alert('กรุณาใส่ชื่อโปรโมชั่น');
+    if (!form.discount_value || Number(form.discount_value) <= 0) return alert('กรุณาใส่มูลค่าส่วนลด');
+
+    const payload = {
+      branch_id: user?.branch_id || null,
+      name: form.name.trim(),
+      discount_type: form.discount_type,
+      discount_value: Number(form.discount_value),
+      apply_to: form.apply_to,
+      target_ids: form.target_ids.length > 0 ? form.target_ids : null,
+      start_date: form.start_date || null,
+      end_date: form.end_date || null,
+      happy_hour_start: form.happy_hour_start || null,
+      happy_hour_end: form.happy_hour_end || null,
+      applicable_channels: form.applicable_channels.length > 0 ? form.applicable_channels : [],
+      is_active: form.is_active,
+    };
+
+    try {
+      if (editPromo) {
+        const { error } = await supabase.from('promotions').update(payload).eq('id', editPromo.id);
+        if (error) return alert('Error: ' + error.message);
+      } else {
+        const { error } = await supabase.from('promotions').insert(payload);
+        if (error) return alert('Error: ' + error.message);
+      }
+      setShowForm(false);
+      setEditPromo(null);
+      setForm(emptyForm);
+      loadData();
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + err.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('ยืนยันลบโปรโมชั่นนี้?')) return;
+    const { error } = await supabase.from('promotions').delete().eq('id', id);
+    if (error) return alert('Error: ' + error.message);
+    loadData();
+  }
+
+  async function handleToggleActive(promo) {
+    const { error } = await supabase.from('promotions').update({ is_active: !promo.is_active }).eq('id', promo.id);
+    if (!error) loadData();
+  }
+
+  function handleSaveLimit() {
+    localStorage.setItem('discountLimitConfig', JSON.stringify(discountLimit));
+    setLimitSaved(true);
+    setTimeout(() => setLimitSaved(false), 2500);
+  }
+
+  function toggleChannel(channelId) {
+    setForm(prev => {
+      const chs = prev.applicable_channels || [];
+      return {
+        ...prev,
+        applicable_channels: chs.includes(channelId)
+          ? chs.filter(c => c !== channelId)
+          : [...chs, channelId]
+      };
+    });
+  }
+
+  if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดโปรโมชั่น...</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-white text-xl font-semibold">🎉 จัดการโปรโมชั่น</h2>
+          <p className="text-slate-400 text-sm mt-0.5">สร้างแคมเปญส่วนลดอัตโนมัติ เช่น ลดเฉพาะ Grab, Happy Hour</p>
+        </div>
+        <button
+          onClick={openNew}
+          className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          <Plus className="w-4 h-4" /> สร้างโปรโมชั่นใหม่
+        </button>
+      </div>
+
+      {/* Discount Limit Config */}
+      <div className="bg-slate-800/50 border border-amber-500/30 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-white font-medium flex items-center gap-2">
+            <Shield className="w-4 h-4 text-amber-400" /> ขีดจำกัดส่วนลด Manual (สำหรับพนักงาน)
+          </h3>
+          <button
+            onClick={handleSaveLimit}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              limitSaved ? 'bg-green-600 text-white' : 'bg-amber-600 hover:bg-amber-500 text-white'
+            }`}
+          >
+            {limitSaved ? <><Check className="w-4 h-4" /> บันทึกแล้ว!</> : <><Save className="w-4 h-4" /> บันทึก Limit</>}
+          </button>
+        </div>
+        <p className="text-slate-400 text-xs mb-3">พนักงานจะไม่สามารถกดส่วนลด Manual (รายชิ้น/ท้ายบิล) เกินค่าที่ตั้งไว้ได้เลย</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-slate-400 text-xs mb-1 block">สูงสุด (%) ที่ลดได้ต่อครั้ง</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min="0" max="100" step="1"
+                className="form-input" style={{ width: '6rem' }}
+                value={discountLimit.maxPercent}
+                onChange={e => setDiscountLimit(prev => ({ ...prev, maxPercent: Number(e.target.value) || 0 }))}
+              />
+              <span className="text-slate-400 text-sm">%</span>
+            </div>
+          </div>
+          <div>
+            <label className="text-slate-400 text-xs mb-1 block">สูงสุด (บาท) ที่ลดได้ต่อครั้ง</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min="0" step="10"
+                className="form-input" style={{ width: '8rem' }}
+                value={discountLimit.maxAmount}
+                onChange={e => setDiscountLimit(prev => ({ ...prev, maxAmount: Number(e.target.value) || 0 }))}
+              />
+              <span className="text-slate-400 text-sm">บาท</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Promotions List */}
+      <div className="space-y-3">
+        {promotions.length === 0 ? (
+          <div className="text-center py-12 text-slate-500">
+            <Gift className="w-12 h-12 mx-auto mb-3 opacity-40" />
+            <p>ยังไม่มีโปรโมชั่น กดปุ่มด้านบนเพื่อสร้างแคมเปญแรกของคุณ</p>
+          </div>
+        ) : (
+          promotions.map(promo => {
+            const dtInfo = DISCOUNT_TYPE_LABELS[promo.discount_type] || { label: promo.discount_type, color: 'bg-slate-500/20 text-slate-300', icon: '🏷️' };
+            const atInfo = APPLY_TO_LABELS[promo.apply_to] || { label: promo.apply_to, color: 'bg-slate-500/20 text-slate-300' };
+            const isExpired = promo.end_date && new Date(promo.end_date) < new Date();
+
+            return (
+              <div key={promo.id} className={`bg-slate-800/50 border rounded-xl p-4 transition-all ${
+                promo.is_active && !isExpired
+                  ? 'border-emerald-500/30 hover:border-emerald-500/50'
+                  : 'border-slate-700/50 opacity-60'
+              }`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-lg">{dtInfo.icon}</span>
+                      <p className="text-white font-semibold">{promo.name}</p>
+                      {isExpired && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">หมดอายุ</span>}
+                      {!promo.is_active && <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-600/50 text-slate-400">ปิดอยู่</span>}
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-1">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${dtInfo.color}`}>
+                        {dtInfo.label}: {promo.discount_type === 'PERCENTAGE' ? `${promo.discount_value}%` : `฿${Number(promo.discount_value).toLocaleString()}`}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${atInfo.color}`}>{atInfo.label}</span>
+                      {(promo.applicable_channels || []).map(ch => {
+                        const chInfo = salesChannels.find(c => c.id === ch);
+                        return <span key={ch} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{chInfo?.emoji || ''} {chInfo?.label || ch}</span>;
+                      })}
+                    </div>
+                    <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                      {promo.start_date && <span>📅 {promo.start_date}</span>}
+                      {promo.end_date && <span>→ {promo.end_date}</span>}
+                      {promo.happy_hour_start && <span>⏰ {promo.happy_hour_start} - {promo.happy_hour_end}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => handleToggleActive(promo)} className="p-1.5 rounded-lg transition-colors hover:bg-slate-700" title={promo.is_active ? 'ปิดโปรโมชั่น' : 'เปิดโปรโมชั่น'}>
+                      {promo.is_active
+                        ? <ToggleRight className="w-6 h-6 text-emerald-400" />
+                        : <ToggleLeft className="w-6 h-6 text-slate-500" />}
+                    </button>
+                    <button onClick={() => openEdit(promo)} className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors border border-blue-500/20">
+                      <Edit2 className="w-3.5 h-3.5" /> แก้ไข
+                    </button>
+                    <button onClick={() => handleDelete(promo.id)} className="text-red-400/70 hover:text-red-400 hover:bg-red-400/10 p-1.5 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Create/Edit Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowForm(false); setEditPromo(null); }}>
+          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
+              <Gift className="w-5 h-5 text-emerald-400" />
+              {editPromo ? 'แก้ไขโปรโมชั่น' : 'สร้างโปรโมชั่นใหม่'}
+            </h3>
+
+            <div className="space-y-4">
+              {/* Name */}
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ชื่อแคมเปญ *</label>
+                <input className="form-input" placeholder='เช่น "Grab Flash Sale" หรือ "Happy Hour เครื่องดื่ม"'
+                  value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              </div>
+
+              {/* Discount Type + Value */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">ประเภทส่วนลด</label>
+                  <select className="form-select" value={form.discount_type} onChange={e => setForm({ ...form, discount_type: e.target.value })}>
+                    <option value="PERCENTAGE">ลดเป็น %</option>
+                    <option value="FIXED_AMOUNT">ลดเป็นบาท</option>
+                    <option value="FIXED_PRICE">ราคาพิเศษเหมาจ่าย</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">มูลค่าส่วนลด *</label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" className="form-input" placeholder="10"
+                      value={form.discount_value} onChange={e => setForm({ ...form, discount_value: e.target.value })} min="0" />
+                    <span className="text-slate-400 text-sm shrink-0">{form.discount_type === 'PERCENTAGE' ? '%' : 'บาท'}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Apply To */}
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ระดับการลด</label>
+                <select className="form-select" value={form.apply_to} onChange={e => setForm({ ...form, apply_to: e.target.value, target_ids: [] })}>
+                  <option value="ENTIRE_BILL">ลดท้ายบิลรวม</option>
+                  <option value="SPECIFIC_ITEM">ลดเฉพาะเมนูที่กำหนด</option>
+                  <option value="CATEGORY">ลดทั้งหมวดหมู่</option>
+                </select>
+              </div>
+
+              {/* Target selection */}
+              {form.apply_to === 'SPECIFIC_ITEM' && (
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">เลือกเมนูที่ต้องการลด (กดเพื่อเลือก/ยกเลิก)</label>
+                  <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2 bg-slate-900/50 rounded-lg border border-slate-700">
+                    {products.map(p => (
+                      <button key={p.id} type="button" onClick={() => {
+                        const ids = form.target_ids || [];
+                        setForm({ ...form, target_ids: ids.includes(p.id) ? ids.filter(i => i !== p.id) : [...ids, p.id] });
+                      }} className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all ${
+                        (form.target_ids || []).includes(p.id)
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                      }`}>{p.name}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {form.apply_to === 'CATEGORY' && (
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">เลือกหมวดหมู่ที่ต้องการลด</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {categories.map(c => (
+                      <button key={c.id} type="button" onClick={() => {
+                        const ids = form.target_ids || [];
+                        setForm({ ...form, target_ids: ids.includes(c.id) ? ids.filter(i => i !== c.id) : [...ids, c.id] });
+                      }} className={`text-xs px-2.5 py-1.5 rounded-lg border transition-all ${
+                        (form.target_ids || []).includes(c.id)
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                      }`}>{c.name}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Channels */}
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ช่องทางที่ใช้ได้ (ไม่เลือก = ใช้ได้ทุกช่องทาง)</label>
+                <div className="flex flex-wrap gap-2">
+                  {salesChannels.map(ch => (
+                    <button key={ch.id} type="button" onClick={() => toggleChannel(ch.id)}
+                      className={`text-xs px-3 py-2 rounded-lg border transition-all flex items-center gap-1.5 ${
+                        (form.applicable_channels || []).includes(ch.id)
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                      }`}>
+                      <span>{ch.emoji}</span> {ch.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date range */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">📅 วันที่เริ่ม</label>
+                  <input type="date" className="form-input" value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">📅 วันที่สิ้นสุด (ว่างไว้ = ไม่มีกำหนด)</label>
+                  <input type="date" className="form-input" value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} />
+                </div>
+              </div>
+
+              {/* Happy Hour */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">⏰ เวลาเริ่ม Happy Hour (ว่างไว้ = ทั้งวัน)</label>
+                  <input type="time" className="form-input" value={form.happy_hour_start} onChange={e => setForm({ ...form, happy_hour_start: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-xs mb-1 block">⏰ เวลาสิ้นสุด Happy Hour</label>
+                  <input type="time" className="form-input" value={form.happy_hour_end} onChange={e => setForm({ ...form, happy_hour_end: e.target.value })} />
+                </div>
+              </div>
+
+              {/* Active toggle */}
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setForm({ ...form, is_active: !form.is_active })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${
+                    form.is_active ? 'bg-emerald-500' : 'bg-slate-700'
+                  }`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                    form.is_active ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+                <span className="text-sm text-slate-300">{form.is_active ? 'เปิดใช้งาน' : 'ปิดอยู่'}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-700">
+              <button onClick={() => { setShowForm(false); setEditPromo(null); }} className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors border border-slate-600">ยกเลิก</button>
+              <button onClick={handleSave} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+                <Save className="w-4 h-4" /> {editPromo ? 'บันทึกการแก้ไข' : 'สร้างโปรโมชั่น'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

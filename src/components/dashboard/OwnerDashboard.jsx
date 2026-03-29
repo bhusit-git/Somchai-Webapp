@@ -74,25 +74,40 @@ export default function OwnerDashboard() {
       const totalFixedCosts = (fcData || []).reduce((s, row) => s + Number(row.amount), 0);
 
       // Calculate COGS
-      let totalCOGS = 0;
-      let branchCogsMap = {}; // branch_id -> cogs
+      let totalTheoreticalCOGS = 0; // World 1 (with Q-Factor)
+      let totalFinancialCOGS = 0; // World 2 (raw materials only)
+      let branchCogsMap = {}; // branch_id -> theoretical cogs for Gross Profit
       if (txData && txData.length > 0) {
         const txIds = txData.map(t => t.id);
         const { data: txItems } = await supabase
           .from('transaction_items')
-          .select('transaction_id, quantity, products(cost)')
+          .select('transaction_id, quantity, products(cost, misc_cost_type, misc_cost_value)')
           .in('transaction_id', txIds);
            
         if (txItems) {
            txItems.forEach(item => {
              const cost = Number(item.products?.cost || 0);
-             const lineCogs = Number(item.quantity) * cost;
-             totalCOGS += lineCogs;
+             const mType = item.products?.misc_cost_type || 'PERCENT';
+             const mVal = Number(item.products?.misc_cost_value || 0);
+             
+             // Reverse engineer true financial cost by stripping Q-Factor
+             let rawMcs = cost;
+             if (mType === 'PERCENT' && mVal > 0) {
+                 rawMcs = cost / (1 + (mVal / 100));
+             } else if (mType === 'FIXED_AMOUNT' && mVal > 0) {
+                 rawMcs = Math.max(0, cost - mVal);
+             }
+
+             const lineTheoreticalCogs = Number(item.quantity) * cost;
+             const lineFinancialCogs = Number(item.quantity) * rawMcs;
+             
+             totalTheoreticalCOGS += lineTheoreticalCogs;
+             totalFinancialCOGS += lineFinancialCogs;
              
              // group by branch_id
              const tx = txData.find(t => t.id === item.transaction_id);
              if (tx) {
-               branchCogsMap[tx.branch_id] = (branchCogsMap[tx.branch_id] || 0) + lineCogs;
+               branchCogsMap[tx.branch_id] = (branchCogsMap[tx.branch_id] || 0) + lineTheoreticalCogs;
              }
            });
         }
@@ -101,7 +116,9 @@ export default function OwnerDashboard() {
       // 1. Overall stats
       const totalRev = (txData || []).reduce((sum, t) => sum + Number(t.total), 0);
       const totalExp = (expData || []).reduce((sum, e) => sum + Number(e.amount), 0);
-      const net = totalRev - totalCOGS - totalExp - totalFixedCosts;
+      
+      // Dual World: Net Profit uses Financial COGS (raw material) to prevent double counting with OPEX
+      const net = totalRev - totalFinancialCOGS - totalExp - totalFixedCosts;
       
       const margin = totalRev > 0 ? (net / totalRev) * 100 : 0;
       // Map margin to 0-100 score safely (target 38% margin)
@@ -109,7 +126,8 @@ export default function OwnerDashboard() {
 
       setStats({
         totalRevenue: totalRev,
-        totalCOGS: totalCOGS,
+        totalCOGS: totalTheoreticalCOGS, // World 1: Shown in the GP section
+        totalFinancialCOGS: totalFinancialCOGS, // World 2: Used internally and shown as explanation
         totalExpenses: totalExp,
         totalFixedCosts: totalFixedCosts,
         netProfit: net,
@@ -322,34 +340,56 @@ export default function OwnerDashboard() {
 
           {/* P&L */}
           <div className="card">
-            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '10px' }}>P&L สรุปเดือนนี้ ({new Date().getDate()} วัน จากเป้า 30 วัน)</div>
+            <div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '10px' }}>ระบบบัญชี 2 โลก — สรุปเดือนนี้ ({new Date().getDate()} วัน จากเป้า 30 วัน)</div>
             <table className="pl-table">
               <tbody>
+                {/* 🌎 World 1: Daily Profit (Theoretical) */}
                 <tr>
-                  <td className="pl-label">Revenue รวม</td>
+                  <td colSpan="2" style={{ fontSize: '11px', color: 'var(--accent-info)', paddingBottom: '4px' }}>
+                    <strong>โลกที่ 1: กำไรหน้าบ้าน</strong> (คิดรวมต้นทุนแฝง/Q-Factor)
+                  </td>
+                </tr>
+                <tr>
+                  <td className="pl-label pl-4">Revenue (รายได้รวม)</td>
                   <td>{formatCurrency(stats.totalRevenue)}</td>
                 </tr>
                 <tr className="divider">
-                  <td className="pl-label">COGS รวม</td>
+                  <td className="pl-label pl-4" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span>Theoretical COGS (ต้นทุนทฤษฎี)</span>
+                    <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>*รวมต้นทุนหลัก + เปอร์เซ็นต์ Q-Factor แล้ว</span>
+                  </td>
                   <td className="val-red">–{formatCurrency(stats.totalCOGS)}</td>
                 </tr>
                 <tr>
-                  <td className="pl-label">Gross Profit</td>
+                  <td className="pl-label pl-4">Gross Profit (กำไรขั้นต้น)</td>
                   <td className="val-green">{formatCurrency(stats.totalRevenue - stats.totalCOGS)}</td>
                 </tr>
+                
+                {/* 🌍 World 2: Actual P&L (Monthly) */}
                 <tr>
-                  <td className="pl-label">OPEX (ค่าใช้จ่ายดำเนินงาน)</td>
+                  <td colSpan="2" style={{ fontSize: '11px', color: 'var(--accent-warning)', paddingTop: '16px', paddingBottom: '4px' }}>
+                    <strong>โลกที่ 2: บัญชีภาษีสุทธิ</strong> (ล้าง Q-Factor ออกเพื่อป้องกันการคิดซ้ำซ้อนกับบิลซื้อของ)
+                  </td>
+                </tr>
+                <tr className="divider">
+                  <td className="pl-label pl-4">
+                    + คืนค่า Q-Factor ย้อนกลับ <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>(ไม่นับซ้ำกับ OPEX)</span>
+                  </td>
+                  <td className="val-green">+{formatCurrency(stats.totalCOGS - stats.totalFinancialCOGS)}</td>
+                </tr>
+                <tr>
+                  <td className="pl-label pl-4">OPEX (บิลรายจ่ายจิปาถะ/ผงลาบ/ถุง)</td>
                   <td className="val-red">–{formatCurrency(stats.totalExpenses)}</td>
                 </tr>
                 <tr>
-                  <td className="pl-label">Fixed Cost (ค่าเช่า + เงินเดือน)</td>
+                  <td className="pl-label pl-4">Fixed Cost (ค่าเช่า + เงินเดือน)</td>
                   <td className="val-red">–{formatCurrency(stats.totalFixedCosts)}</td>
                 </tr>
                 <tr className="divider pl-total">
-                  <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Net Profit (ประมาณ)</td>
-                  <td className="val-green">
+                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Actual Net Profit (กำไรสุทธิเงินสด)</td>
+                  <td className="val-green font-bold" style={{ fontSize: '16px' }}>
                     {formatCurrency(stats.netProfit)} &nbsp;
-                    <span style={{ fontSize: '11px' }}>({stats.totalRevenue > 0 ? (stats.netProfit / stats.totalRevenue * 100).toFixed(1) : 0}%)</span>
+                    <span style={{ fontSize: '11px', fontWeight: 'normal' }}>({stats.totalRevenue > 0 ? (stats.netProfit / stats.totalRevenue * 100).toFixed(1) : 0}%)</span>
                   </td>
                 </tr>
               </tbody>

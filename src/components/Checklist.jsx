@@ -2,20 +2,30 @@ import { useState, useEffect } from 'react';
 import { CheckSquare, Square } from 'lucide-react';
 
 export default function Checklist({ onComplete }) {
-  const [tasks, setTasks] = useState([
-    { id: 1, text: 'ปิดแก๊สและวาล์วหลักเรียบร้อย', checked: false },
-    { id: 2, text: 'เช็คอุณหภูมิตู้เย็นและจดบันทึก', checked: false },
-    { id: 3, text: 'ทำความสะอาดพื้นที่และทิ้งขยะ', checked: false },
-    { id: 4, text: 'ปิดเครื่องใช้ไฟฟ้าที่ไม่จำเป็น', checked: false },
-    { id: 5, text: 'ล็อกประตูและหน้าต่าง', checked: false },
-  ]);
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const saved = localStorage.getItem('shiftChecklist');
+      if (saved) {
+        return JSON.parse(saved).map(item => ({...item, checked: false}));
+      }
+    } catch {}
+    
+    return [
+      { id: 1, text: 'ปิดแก๊สและวาล์วหลักเรียบร้อย', checked: false },
+      { id: 2, text: 'เช็คอุณหภูมิตู้เย็นและจดบันทึก', checked: false },
+      { id: 3, text: 'ทำความสะอาดพื้นที่และทิ้งขยะ', checked: false },
+      { id: 4, text: 'ปิดเครื่องใช้ไฟฟ้าที่ไม่จำเป็น', checked: false },
+      { id: 5, text: 'ล็อกประตูและหน้าต่าง', checked: false },
+    ];
+  });
 
   useEffect(() => {
     const allChecked = tasks.every((t) => t.checked);
     if (onComplete) {
       onComplete(allChecked);
     }
-  }, [tasks, onComplete]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
 
   const toggleTask = (id) => {
     setTasks(tasks.map((t) => (t.id === id ? { ...t, checked: !t.checked } : t)));

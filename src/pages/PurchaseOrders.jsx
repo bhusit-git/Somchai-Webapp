@@ -77,12 +77,13 @@ export default function PurchaseOrders() {
 
       if (poError && poError.code !== '42P01') console.error(poError);
 
-      // 2. Fetch Inventory Items for dropdown
+      // 2. Fetch Inventory Items for dropdown — only Recipe Items (trackable stock)
       const { data: invData, error: invErr } = await supabase
         .from('inventory_items')
         .select('*')
         .eq('is_active', true)
         .eq('branch_id', user.branch_id)
+        .eq('is_recipe_item', true)   // PO: สั่งซื้อเฉพาะวัตถุดิบหลัก (ไม่ใช่ของจุกจิก)
         .order('name');
       
       if (invErr && invErr.code !== '42P01') console.error(invErr);

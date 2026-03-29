@@ -1,155 +1,254 @@
-import { useState, useEffect } from 'react';
-import { 
-  PieChart, 
-  TrendingDown, 
-  AlertTriangle, 
-  DollarSign, 
+import { useState, useEffect, useMemo } from 'react';
+import {
+  PieChart,
+  TrendingDown,
+  TrendingUp,
+  AlertTriangle,
+  DollarSign,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  ChevronUp,
+  ChevronDown,
+  Search,
+  BarChart2,
+  Package,
+  Layers
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 /*
-  Supabase Integration (M8 — COGS Engine):
-  - menu_items: price, cost (true cost per item)
-  - pos_order_items + pos_orders: qty_sold ตาม dateRange
-  - fixed_costs: labor, rent, utilities (type + amount + period_month)
-  - Yield Loss = ประมาณจาก cost variance (ถ้าไม่มี recipe_bom ให้แสดง 0)
+  Supabase Tables (M8 — COGS Engine):
+  - products:            id, name, price, cost, is_available
+  - transactions:        id, created_at, total, status
+  - transaction_items:   transaction_id, product_id, product_name, quantity, unit_price, total_price
+  - menu_item_ingredients: menu_item_id (= product_id), inventory_item_id, qty_required
+  - inventory_items:     id, name, cost_per_stock_unit, current_stock
+  - fixed_costs:         type, amount, period_month (YYYY-MM)
 */
 
+// ─── helpers ──────────────────────────────────────────────────────────────────
+const fmtB   = (n) => Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (n) => `${Number(n).toFixed(1)}%`;
+
+const fcColor = (pct) => {
+  if (pct > 40) return 'var(--accent-danger)';
+  if (pct > 35) return 'var(--accent-warning)';
+  if (pct >= 20) return 'var(--accent-success)';
+  if (pct > 0)  return 'var(--accent-info)';
+  return 'var(--text-muted)';
+};
+
+function BenchmarkBar({ label, value, min, max, unit = '%' }) {
+  const color = value > max ? 'var(--accent-danger)' : value < min ? 'var(--accent-info)' : 'var(--accent-success)';
+  const capped = Math.min(value, 100);
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '13px' }}>
+        <span style={{ fontWeight: 600 }}>{label}</span>
+        <span style={{ color, fontWeight: 700 }}>{fmtPct(value)}</span>
+      </div>
+      <div style={{ height: '8px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden', marginBottom: '4px' }}>
+        <div style={{ height: '100%', width: `${capped}%`, background: color, borderRadius: '4px', transition: 'width 0.5s ease' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)' }}>
+        <span>Target: {min}–{max}{unit}</span>
+        <span style={{ color }}>{value > max ? '▲ สูงเกิน' : value < min && value > 0 ? '▼ ต่ำกว่า' : value === 0 ? 'ไม่มีข้อมูล' : '✓ ปกติ'}</span>
+      </div>
+    </div>
+  );
+}
+
+function MiniDonut({ segments }) {
+  // Simple stacked bar (horizontal) instead of SVG donut for simplicity
+  const total = segments.reduce((s, sg) => s + sg.value, 0);
+  if (total === 0) return null;
+  return (
+    <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', width: '100%' }}>
+      {segments.filter(s => s.value > 0).map(sg => (
+        <div
+          key={sg.label}
+          title={`${sg.label}: ${fmtPct((sg.value / total) * 100)}`}
+          style={{ flex: sg.value, background: sg.color, transition: 'flex 0.5s ease' }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function COGSEngine() {
-  const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState('month'); // today, week, month
-  
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dateRange, setDateRange] = useState('month');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortKey, setSortKey]     = useState('totalCogs');
+  const [sortDir, setSortDir]     = useState('desc');
+  const [filterHighFC, setFilterHighFC] = useState(false);
+
   const [metrics, setMetrics] = useState({
-    avgFoodCostPct: 0,
+    totalRevenue: 0,
     totalCogs: 0,
-    yieldLossCost: 0,
-    varianceAlerts: 0
+    grossProfit: 0,
+    avgFcPct: 0,
+    highFcCount: 0,
+    noBomCount: 0
   });
+  const [menuData, setMenuData]     = useState([]);
+  const [costStructure, setCostStructure] = useState({ foodCost: 0, labor: 0, rent: 0, utilities: 0 });
+  const [fixedCostAmts, setFixedCostAmts] = useState({ labor: 0, rent: 0, utilities: 0 });
 
-  const [menuData, setMenuData] = useState([]);
-  const [costStructure, setCostStructure] = useState({
-    foodCost: 0,
-    labor: 0,
-    rent: 0,
-    utilities: 0
-  });
-
-  useEffect(() => {
-    loadAnalytics();
-  }, [dateRange]);
-
-  function getDateRange(range) {
+  // ── date helpers ─────────────────────────────────────────────────────────────
+  function getRange(range) {
     const now = new Date();
     let start, end;
     if (range === 'today') {
       start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      end   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
     } else if (range === 'week') {
-      const day = now.getDay() || 7;
-      start = new Date(now);
-      start.setDate(now.getDate() - day + 1);
-      start.setHours(0, 0, 0, 0);
-      end = new Date(now);
-      end.setHours(23, 59, 59, 999);
+      const d = now.getDay() || 7;
+      start = new Date(now); start.setDate(now.getDate() - d + 1); start.setHours(0, 0, 0, 0);
+      end   = new Date(now); end.setHours(23, 59, 59, 999);
     } else { // month
-      start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     }
-    return {
-      startStr: start.toISOString(),
-      endStr: end.toISOString(),
-      monthStr: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    };
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return { startStr: start.toISOString(), endStr: end.toISOString(), monthStr };
   }
 
-  async function loadAnalytics() {
-    setLoading(true);
+  // ── Load ─────────────────────────────────────────────────────────────────────
+  useEffect(() => { loadData(); }, [dateRange]);
+
+  async function loadData(isRefresh = false) {
+    if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const { startStr, endStr, monthStr } = getDateRange(dateRange);
+      const { startStr, endStr, monthStr } = getRange(dateRange);
 
-      // 1. ดึง menu_items ทั้งหมด (name, price, cost)
-      const { data: menuItems, error: menuErr } = await supabase
-        .from('menu_items')
+      // === 1. Products (master data with BOM cost) ===
+      const { data: products } = await supabase
+        .from('products')
         .select('id, name, price, cost')
-        .eq('is_active', true);
+        .eq('is_available', true);
 
-      if (menuErr) throw menuErr;
+      // === 2. Transaction items in date range ===
+      const { data: txItems } = await supabase
+        .from('transaction_items')
+        .select('product_id, product_name, quantity, unit_price, total_price, transactions!inner(created_at, status)')
+        .gte('transactions.created_at', startStr)
+        .lte('transactions.created_at', endStr)
+        .eq('transactions.status', 'completed');
 
-      // 2. ดึง pos_order_items ตาม dateRange โดย join pos_orders
-      const { data: orderItems, error: itemErr } = await supabase
-        .from('pos_order_items')
-        .select('menu_item_id, quantity, pos_orders!inner(created_at, status)')
-        .gte('pos_orders.created_at', startStr)
-        .lte('pos_orders.created_at', endStr)
-        .eq('pos_orders.status', 'completed');
-
-      if (itemErr) {
-        console.warn('COGSEngine: pos_order_items join error:', itemErr.message);
+      // === 3. BOM ingredients (for all products sold) ===
+      const soldProductIds = [...new Set((txItems || []).map(i => i.product_id).filter(Boolean))];
+      let bomData = [];
+      if (soldProductIds.length > 0) {
+        const { data: bom } = await supabase
+          .from('menu_item_ingredients')
+          .select('menu_item_id, inventory_item_id, qty_required');
+        bomData = bom || [];
       }
 
-      // 3. รวม qty_sold รายเมนู
-      const qtySoldMap = {};
-      (orderItems || []).forEach(item => {
-        const id = item.menu_item_id;
-        qtySoldMap[id] = (qtySoldMap[id] || 0) + Number(item.quantity);
+      // === 4. Inventory items (for BOM cost) ===
+      const { data: invItems } = await supabase
+        .from('inventory_items')
+        .select('id, name, cost_per_stock_unit, current_stock, reorder_point');
+
+      const invMap = {};
+      (invItems || []).forEach(i => { invMap[i.id] = i; });
+
+      // === 5. Aggregate qty & revenue per product ===
+      const aggMap = {}; // product_id → { qty, revenue }
+      (txItems || []).forEach(item => {
+        const id = item.product_id;
+        if (!id) return;
+        if (!aggMap[id]) aggMap[id] = { qty: 0, revenue: 0 };
+        aggMap[id].qty     += Number(item.quantity);
+        aggMap[id].revenue += Number(item.total_price);
       });
 
-      // 4. คำนวณ COGS ต่อเมนู (ไม่มี recipe_bom → ใช้ cost จาก menu_items โดยตรง)
-      const processedMenus = (menuItems || []).map(menu => {
-        const sellingPrice = Number(menu.price);
-        const trueCost = Number(menu.cost);
-        const qtySold = qtySoldMap[menu.id] || 0;
+      // === 6. BOM cost map per product ===
+      const bomCostMap = {}; // product_id → { bomCost (per unit), hasBom }
+      bomData.forEach(b => {
+        const inv = invMap[b.inventory_item_id];
+        const cost = inv ? Number(b.qty_required) * Number(inv.cost_per_stock_unit || 0) : 0;
+        if (!bomCostMap[b.menu_item_id]) bomCostMap[b.menu_item_id] = { bomCost: 0, hasBom: true };
+        bomCostMap[b.menu_item_id].bomCost += cost;
+      });
+
+      // === 7. Process each product ===
+      const processed = (products || []).map(p => {
+        const agg = aggMap[p.id] || { qty: 0, revenue: 0 };
+        const sellingPrice = Number(p.price);
+        const bomEntry = bomCostMap[p.id];
+        // Use BOM cost if available, fallback to products.cost
+        const trueCost = bomEntry ? bomEntry.bomCost : Number(p.cost || 0);
+        const hasBom = !!bomEntry;
+        const qtySold = agg.qty;
+        const revenue = agg.revenue || (sellingPrice * qtySold);
         const fcPct = sellingPrice > 0 ? (trueCost / sellingPrice) * 100 : 0;
         const margin = sellingPrice - trueCost;
         const totalCogs = trueCost * qtySold;
-        // ไม่มี recipe_bom → yieldLossValue = 0
-        const yieldLossValue = 0;
-        const isHighFC = fcPct > 35;
-        const hasVariance = false; // ต้องการ recipe_bom เพื่อคำนวณ variance จริง
+        const totalMargin = margin * qtySold;
+        const isHighFC = fcPct > 35 && trueCost > 0;
+
+        // Variance: diff between products.cost (synced BOM) and live BOM calc
+        const syncedCost = Number(p.cost || 0);
+        const variance = hasBom && syncedCost > 0 ? trueCost - syncedCost : 0;
+        const hasVariance = Math.abs(variance) > 0.05 && hasBom && syncedCost > 0;
 
         return {
-          ...menu,
+          id: p.id,
+          name: p.name,
           sellingPrice,
           trueCost,
+          hasBom,
           qtySold,
+          revenue,
           fcPct,
           margin,
           totalCogs,
-          yieldLossValue,
+          totalMargin,
           isHighFC,
-          hasVariance
+          hasVariance,
+          variance
         };
       });
 
-      const totalRevenue = processedMenus.reduce((sum, m) => sum + (m.sellingPrice * m.qtySold), 0);
-      const totalCogs = processedMenus.reduce((sum, m) => sum + m.totalCogs, 0);
-      const avgFcPct = totalRevenue > 0 ? (totalCogs / totalRevenue) * 100 : 0;
+      // Show all products, but sort sold ones first
+      const sorted = processed.sort((a, b) => b.qtySold - a.qtySold);
 
-      setMenuData(processedMenus.filter(m => m.qtySold > 0 || processedMenus.every(x => x.qtySold === 0)));
+      const totalRevenue = sorted.reduce((s, m) => s + m.revenue, 0);
+      const totalCogs    = sorted.reduce((s, m) => s + m.totalCogs, 0);
+      const grossProfit  = totalRevenue - totalCogs;
+      const avgFcPct     = totalRevenue > 0 ? (totalCogs / totalRevenue) * 100 : 0;
+
+      setMenuData(sorted);
       setMetrics({
-        avgFoodCostPct: avgFcPct,
+        totalRevenue,
         totalCogs,
-        yieldLossCost: 0,
-        varianceAlerts: 0
+        grossProfit,
+        avgFcPct,
+        highFcCount: sorted.filter(m => m.isHighFC && m.qtySold > 0).length,
+        noBomCount: sorted.filter(m => !m.hasBom).length
       });
 
-      // 5. ดึง fixed_costs สำหรับ cost structure benchmark
+      // === 8. Fixed costs ===
       const { data: fixedCosts } = await supabase
         .from('fixed_costs')
         .select('type, amount')
         .eq('period_month', monthStr);
 
       const laborAmt = (fixedCosts || []).filter(f => f.type === 'labor').reduce((s, f) => s + Number(f.amount), 0);
-      const rentAmt = (fixedCosts || []).filter(f => f.type === 'rent').reduce((s, f) => s + Number(f.amount), 0);
-      const utilAmt = (fixedCosts || []).filter(f => f.type === 'utilities').reduce((s, f) => s + Number(f.amount), 0);
+      const rentAmt  = (fixedCosts || []).filter(f => f.type === 'rent').reduce((s, f) => s + Number(f.amount), 0);
+      const utilAmt  = (fixedCosts || []).filter(f => f.type === 'utilities').reduce((s, f) => s + Number(f.amount), 0);
 
-      const base = totalRevenue > 0 ? totalRevenue : 1; // ป้องกัน div/0
+      setFixedCostAmts({ labor: laborAmt, rent: rentAmt, utilities: utilAmt });
+      const base = totalRevenue > 0 ? totalRevenue : 1;
       setCostStructure({
-        foodCost: totalRevenue > 0 ? (totalCogs / base) * 100 : 0,
-        labor: totalRevenue > 0 ? (laborAmt / base) * 100 : 0,
-        rent: totalRevenue > 0 ? (rentAmt / base) * 100 : 0,
+        foodCost:  totalRevenue > 0 ? (totalCogs / base) * 100 : 0,
+        labor:     totalRevenue > 0 ? (laborAmt / base) * 100 : 0,
+        rent:      totalRevenue > 0 ? (rentAmt / base) * 100 : 0,
         utilities: totalRevenue > 0 ? (utilAmt / base) * 100 : 0
       });
 
@@ -157,29 +256,76 @@ export default function COGSEngine() {
       console.error('COGSEngine error:', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
-  const getStatusColor = (current, min, max) => {
-    if (current > max) return 'var(--accent-danger)';
-    if (current < min) return 'var(--accent-info)';
-    return 'var(--accent-success)';
-  };
+  // ── Sort & filter ─────────────────────────────────────────────────────────────
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('desc'); }
+  }
 
+  function SortIcon({ col }) {
+    if (sortKey !== col) return <ChevronUp size={11} style={{ opacity: 0.3 }} />;
+    return sortDir === 'asc'
+      ? <ChevronUp size={11} style={{ color: 'var(--accent-primary)' }} />
+      : <ChevronDown size={11} style={{ color: 'var(--accent-primary)' }} />;
+  }
+
+  const displayData = useMemo(() => {
+    let list = menuData.filter(m => {
+      const matchSearch = m.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchFC = !filterHighFC || m.isHighFC;
+      return matchSearch && matchFC;
+    });
+    return [...list].sort((a, b) => {
+      let va = a[sortKey] ?? 0, vb = b[sortKey] ?? 0;
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      return sortDir === 'asc' ? (va < vb ? -1 : 1) : (va > vb ? -1 : 1);
+    });
+  }, [menuData, searchTerm, filterHighFC, sortKey, sortDir]);
+
+  // ── P&L summary ───────────────────────────────────────────────────────────────
+  const totalFixed = fixedCostAmts.labor + fixedCostAmts.rent + fixedCostAmts.utilities;
+  const netProfit  = metrics.grossProfit - totalFixed;
+  const netProfitPct = metrics.totalRevenue > 0 ? (netProfit / metrics.totalRevenue) * 100 : 0;
+  const totalCostPct = metrics.totalRevenue > 0 
+    ? ((metrics.totalCogs + totalFixed) / metrics.totalRevenue) * 100 : 0;
+
+  const donutSegments = [
+    { label: 'COGS',      value: metrics.totalCogs,          color: 'var(--accent-warning)' },
+    { label: 'Labor',     value: fixedCostAmts.labor,        color: 'var(--accent-info)' },
+    { label: 'Rent',      value: fixedCostAmts.rent,         color: 'var(--accent-purple)' },
+    { label: 'Utilities', value: fixedCostAmts.utilities,    color: 'var(--accent-cyan)' },
+    { label: 'Net Profit',value: Math.max(0, netProfit),     color: 'var(--accent-success)' }
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>COGS Engine</h3>
-          <p className="text-sm text-muted">M8: วิเคราะห์ต้นทุนขาย (True Cost & Yield Loss)</p>
+          <p className="text-sm text-muted">M8: วิเคราะห์ต้นทุนขาย (BOM Cost, FC%, Variance, P&L)</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Calendar size={18} className="text-muted" />
-          <select 
-            className="form-select" 
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => loadData(true)}
+            disabled={refreshing || loading}
+          >
+            <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
+            รีเฟรช
+          </button>
+          <Calendar size={16} style={{ color: 'var(--text-muted)' }} />
+          <select
+            className="form-select"
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            style={{ width: '180px' }}
+            onChange={e => setDateRange(e.target.value)}
+            style={{ width: '160px' }}
           >
             <option value="today">วันนี้</option>
             <option value="week">สัปดาห์นี้</option>
@@ -188,171 +334,290 @@ export default function COGSEngine() {
         </div>
       </div>
 
-      {/* Primary Metrics */}
-      <div className="stats-grid">
+      {/* Stat Cards */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <div className="stat-card">
-          <div className={`stat-icon ${metrics.avgFoodCostPct > 35 ? 'red' : 'green'}`}>
+          <div className="stat-icon blue"><DollarSign size={22} /></div>
+          <div className="stat-info">
+            <h3>฿{fmtB(metrics.totalRevenue)}</h3>
+            <p>ยอดขายรวม</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon orange"><Layers size={22} /></div>
+          <div className="stat-info">
+            <h3>฿{fmtB(metrics.totalCogs)}</h3>
+            <p>COGS รวม</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon green"><TrendingUp size={22} /></div>
+          <div className="stat-info">
+            <h3 style={{ color: metrics.grossProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+              ฿{fmtB(metrics.grossProfit)}
+            </h3>
+            <p>กำไรขั้นต้น (Gross Profit)</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className={`stat-icon ${metrics.avgFcPct > 35 ? 'red' : 'green'}`}>
             <PieChart size={22} />
           </div>
           <div className="stat-info">
-            <h3 style={{ color: metrics.avgFoodCostPct > 35 ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
-              {metrics.avgFoodCostPct.toFixed(1)}%
+            <h3 style={{ color: metrics.avgFcPct > 35 ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
+              {fmtPct(metrics.avgFcPct)}
             </h3>
-            <p>Food Cost % (เป้า 28-35%)</p>
+            <p>FC% เฉลี่ย (เป้า 28-35%)</p>
           </div>
         </div>
         <div className="stat-card">
-          <div className="stat-icon blue">
-            <DollarSign size={22} />
-          </div>
-          <div className="stat-info">
-            <h3>฿{metrics.totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
-            <p>รวมต้นทุนของที่ขายไป</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon orange">
+          <div className={`stat-icon ${netProfit >= 0 ? 'green' : 'red'}`}>
             <TrendingDown size={22} />
           </div>
           <div className="stat-info">
-            <h3>฿{metrics.yieldLossCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
-            <p>มูลค่าสูญเสียจาก Yield Loss</p>
+            <h3 style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+              ฿{fmtB(netProfit)}
+            </h3>
+            <p>กำไรสุทธิ (Net — หักค่าใช้จ่ายคงที่)</p>
           </div>
         </div>
         <div className="stat-card">
-          <div className={`stat-icon ${metrics.varianceAlerts > 0 ? 'red' : 'purple'}`}>
+          <div className={`stat-icon ${metrics.highFcCount > 0 ? 'red' : 'purple'}`}>
             <AlertTriangle size={22} />
           </div>
           <div className="stat-info">
-            <h3 style={{ color: metrics.varianceAlerts > 0 ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
-              {metrics.varianceAlerts} รายการ
+            <h3 style={{ color: metrics.highFcCount > 0 ? 'var(--accent-danger)' : 'inherit' }}>
+              {metrics.highFcCount}
             </h3>
-            <p>ใช้วัตถุดิบจริง &gt; ทฤษฎี (BOM)</p>
+            <p>เมนู FC &gt; 35%</p>
           </div>
         </div>
       </div>
 
-      {/* Cost Structure Benchmark */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div className="card-header">
-          <h4 style={{ fontSize: '15px', fontWeight: 600 }}>โครงสร้างต้นทุนเทียบเป้าหมาย (Cost Structure Benchmark)</h4>
-        </div>
-        <div style={{ padding: '20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
-            
-            {/* FC */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                <span style={{ fontWeight: 600 }}>วัตถุดิบ (Food Cost)</span>
-                <span style={{ color: getStatusColor(costStructure.foodCost, 28, 35), fontWeight: 600 }}>{costStructure.foodCost.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(costStructure.foodCost, 100)}%`, background: getStatusColor(costStructure.foodCost, 28, 35), borderRadius: '4px' }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'right' }}>Target: 28-35%</div>
+      {/* P&L + Cost Stack */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+
+        {/* P&L Summary Card */}
+        <div className="card">
+          <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '16px' }}>
+            📊 สรุป P&L (Profit & Loss)
+          </h4>
+          {[
+            { label: 'รายได้รวม (Revenue)',          value: metrics.totalRevenue,  color: 'var(--accent-info)', sign: '' },
+            { label: '— ต้นทุนวัตถุดิบ (COGS)',       value: -metrics.totalCogs,    color: 'var(--accent-warning)', sign: '' },
+            { label: '= กำไรขั้นต้น (Gross Profit)', value: metrics.grossProfit,   color: metrics.grossProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', sign: '', bold: true },
+            { label: '— ค่าแรง (Labor)',              value: -fixedCostAmts.labor,  color: 'var(--text-secondary)', sign: '' },
+            { label: '— ค่าเช่า (Rent)',               value: -fixedCostAmts.rent,   color: 'var(--text-secondary)', sign: '' },
+            { label: '— น้ำไฟ (Utilities)',            value: -fixedCostAmts.utilities, color: 'var(--text-secondary)', sign: '' },
+            { label: '= กำไรสุทธิ (Net Profit)',      value: netProfit,             color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', sign: '', bold: true }
+          ].map((row, i) => (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between',
+              padding: '7px 0',
+              borderTop: (i === 2 || i === 6) ? '1px solid var(--border-primary)' : 'none',
+              marginTop: (i === 2 || i === 6) ? '4px' : '0',
+              fontWeight: row.bold ? 700 : 400,
+              fontSize: '13px'
+            }}>
+              <span style={{ color: 'var(--text-secondary)' }}>{row.label}</span>
+              <span style={{ color: row.color, fontWeight: row.bold ? 700 : 600 }}>
+                {row.value >= 0 ? '+' : ''}฿{fmtB(Math.abs(row.value))}
+                {row.bold && row.value !== 0 && metrics.totalRevenue > 0
+                  ? <span style={{ fontSize: '11px', marginLeft: '6px', opacity: 0.8 }}>
+                      ({fmtPct(Math.abs(row.value / metrics.totalRevenue) * 100)})
+                    </span>
+                  : null}
+              </span>
             </div>
+          ))}
 
-            {/* Labor */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                <span style={{ fontWeight: 600 }}>ค่าแรง (Labor)</span>
-                <span style={{ color: getStatusColor(costStructure.labor, 20, 30), fontWeight: 600 }}>{costStructure.labor.toFixed(1)}%</span>
+          {/* Revenue donut bar */}
+          {metrics.totalRevenue > 0 && (
+            <div style={{ marginTop: '16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>สัดส่วนต้นทุนจากรายได้</div>
+              <MiniDonut segments={donutSegments} />
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
+                {donutSegments.filter(s => s.value > 0).map(s => (
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: s.color }} />
+                    {s.label} ({fmtPct((s.value / metrics.totalRevenue) * 100)})
+                  </div>
+                ))}
               </div>
-              <div style={{ height: '8px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(costStructure.labor, 100)}%`, background: getStatusColor(costStructure.labor, 20, 30), borderRadius: '4px' }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'right' }}>Target: 20-30%</div>
-            </div>
-
-            {/* Rent */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                <span style={{ fontWeight: 600 }}>ค่าเช่า (Rent)</span>
-                <span style={{ color: getStatusColor(costStructure.rent, 10, 20), fontWeight: 600 }}>{costStructure.rent.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(costStructure.rent, 100)}%`, background: getStatusColor(costStructure.rent, 10, 20), borderRadius: '4px' }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'right' }}>Target: 10-20%</div>
-            </div>
-
-            {/* Utilities */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                <span style={{ fontWeight: 600 }}>น้ำไฟ (Utilities)</span>
-                <span style={{ color: getStatusColor(costStructure.utilities, 3, 7), fontWeight: 600 }}>{costStructure.utilities.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', background: 'var(--bg-secondary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${Math.min(costStructure.utilities, 100)}%`, background: getStatusColor(costStructure.utilities, 3, 7), borderRadius: '4px' }} />
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', textAlign: 'right' }}>Target: 3-7%</div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
-      {/* Menu COGS Table */}
-      <div className="card">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h4 style={{ fontSize: '15px', fontWeight: 600 }}>วิเคราะห์ต้นทุนแยกรายเมนู (Menu-level COGS)</h4>
-          {metrics.varianceAlerts > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--accent-warning)', background: 'var(--accent-warning-bg)', padding: '6px 12px', borderRadius: 'var(--radius-full)' }}>
-              <AlertCircle size={14} /> พบเมนูที่อาจมีการสูญเสียเกินเกณฑ์ {metrics.varianceAlerts} รายการ
             </div>
           )}
         </div>
-        
+
+        {/* Cost Structure Benchmark */}
+        <div className="card">
+          <h4 style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>
+            🎯 Cost Structure Benchmark
+          </h4>
+          <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
+            ยอดขาย: ฿{fmtB(metrics.totalRevenue)} — เทียบ % กับ Target อุตสาหกรรมร้านอาหาร
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <BenchmarkBar label="🥩 วัตถุดิบ (Food Cost)" value={costStructure.foodCost} min={28} max={35} />
+            <BenchmarkBar label="👷 ค่าแรง (Labor)" value={costStructure.labor} min={20} max={30} />
+            <BenchmarkBar label="🏬 ค่าเช่า (Rent)" value={costStructure.rent} min={10} max={20} />
+            <BenchmarkBar label="💡 น้ำไฟ (Utilities)" value={costStructure.utilities} min={3} max={7} />
+          </div>
+          {metrics.totalRevenue === 0 && (
+            <div style={{ marginTop: '16px', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)' }}>
+              ยังไม่มียอดขายในช่วงเวลาที่เลือก — ตัวเลขจะปรากฏเมื่อมีการขาย
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Menu-Level COGS Table */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <h4 style={{ fontSize: '15px', fontWeight: 600 }}>
+            วิเคราะห์ต้นทุนแยกรายเมนู (Menu-level COGS)
+          </h4>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {metrics.highFcCount > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px',
+                color: 'var(--accent-danger)', background: 'var(--accent-danger-bg)',
+                padding: '6px 12px', borderRadius: '20px', cursor: 'pointer',
+                border: filterHighFC ? '1px solid var(--accent-danger)' : '1px solid transparent'
+              }} onClick={() => setFilterHighFC(f => !f)}>
+                <AlertCircle size={13} />
+                FC &gt; 35%: {metrics.highFcCount} รายการ {filterHighFC ? '(แสดงอยู่)' : '(คลิกกรอง)'}
+              </div>
+            )}
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-input"
+                placeholder="ค้นหาเมนู..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{ paddingLeft: '32px', width: '200px', fontSize: '13px' }}
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="table-container">
           <table>
             <thead>
               <tr>
-                <th>เมนู (Menu Item)</th>
-                <th style={{ textAlign: 'right' }}>จำนวนขาย</th>
-                <th style={{ textAlign: 'right' }}>ราคาขาย (฿)</th>
-                <th style={{ textAlign: 'right' }}>ต้นทุนจริง/จาน (฿)</th>
-                <th style={{ textAlign: 'right' }}>Food Cost %</th>
-                <th style={{ textAlign: 'right' }}>กำไรขั้นต้น (Margin)</th>
-                <th>แจ้งเตือน Variance</th>
+                <th style={{ cursor: 'pointer' }} onClick={() => toggleSort('name')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>เมนู <SortIcon col="name" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('qtySold')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>ขายได้ <SortIcon col="qtySold" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('revenue')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>รายได้รวม (฿) <SortIcon col="revenue" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('trueCost')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>ต้นทุน/จาน <SortIcon col="trueCost" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('totalCogs')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>COGS รวม (฿) <SortIcon col="totalCogs" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('fcPct')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>FC% <SortIcon col="fcPct" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('totalMargin')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>กำไรรวม <SortIcon col="totalMargin" /></div>
+                </th>
+                <th>BOM / สถานะ</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังคำนวณต้นทุน...</span></td></tr>
-              ) : menuData.length === 0 ? (
-                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>ยังไม่มีข้อมูลเมนูในระบบ — กรุณาเพิ่มเมนูใน Settings</td></tr>
-              ) : menuData.map(menu => (
-                <tr key={menu.id}>
-                  <td style={{ fontWeight: 600 }}>{menu.name}</td>
-                  <td style={{ textAlign: 'right' }}>{menu.qtySold}</td>
-                  <td style={{ textAlign: 'right' }}>{menu.sellingPrice.toFixed(2)}</td>
-                  <td style={{ textAlign: 'right', color: menu.hasVariance ? 'var(--accent-warning)' : 'inherit' }}>
-                    {menu.trueCost.toFixed(2)}
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px' }}>
+                  <span className="animate-pulse">กำลังคำนวณต้นทุน...</span>
+                </td></tr>
+              ) : displayData.length === 0 ? (
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                  ไม่พบเมนูที่ตรงกับเงื่อนไข
+                </td></tr>
+              ) : displayData.map(m => (
+                <tr key={m.id} style={{ opacity: m.qtySold === 0 ? 0.55 : 1 }}>
+                  <td style={{ fontWeight: 600 }}>
+                    {m.name}
+                    {m.qtySold === 0 && <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>(ไม่มียอดขาย)</span>}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: m.qtySold > 0 ? 600 : 400 }}>
+                    {m.qtySold > 0 ? m.qtySold : '—'}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <span className={`badge ${menu.isHighFC ? 'badge-danger' : 'badge-success'}`}>
-                      {menu.fcPct.toFixed(1)}%
-                    </span>
+                    {m.qtySold > 0 ? `฿${fmtB(m.revenue)}` : '—'}
                   </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--accent-success)' }}>
-                    +{menu.margin.toFixed(2)}
+                  <td style={{ textAlign: 'right' }}>
+                    {m.trueCost > 0 ? `฿${fmtB(m.trueCost)}` : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>ไม่มี BOM</span>}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                    {m.qtySold > 0 && m.totalCogs > 0 ? `฿${fmtB(m.totalCogs)}` : '—'}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {m.trueCost > 0 ? (
+                      <span style={{
+                        color: fcColor(m.fcPct), fontWeight: 700,
+                        background: `${fcColor(m.fcPct)}18`,
+                        padding: '3px 8px', borderRadius: '10px', fontSize: '12px'
+                      }}>
+                        {fmtPct(m.fcPct)}
+                      </span>
+                    ) : <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, color: m.totalMargin >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>
+                    {m.qtySold > 0 ? `${m.totalMargin >= 0 ? '+' : ''}฿${fmtB(m.totalMargin)}` : '—'}
                   </td>
                   <td>
-                    {menu.hasVariance ? (
-                      <span style={{ fontSize: '12px', color: 'var(--accent-danger)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <AlertTriangle size={12} /> ใช้จริง &gt; ทฤษฎี
-                      </span>
-                    ) : (
-                      <span className="text-muted" style={{ fontSize: '12px' }}>ปกติ</span>
-                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      {m.hasBom && <span className="badge badge-success" style={{ fontSize: '11px' }}>✓ มี BOM</span>}
+                      {!m.hasBom && <span className="badge badge-ghost" style={{ fontSize: '11px' }}>ไม่มี BOM</span>}
+                      {m.isHighFC && m.qtySold > 0 && <span className="badge badge-danger" style={{ fontSize: '11px' }}>FC สูงเกิน!</span>}
+                      {m.hasVariance && (
+                        <span className="badge badge-warning" style={{ fontSize: '11px' }}>
+                          Δ {m.variance > 0 ? '+' : ''}฿{fmtB(m.variance)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
+            {/* Footer totals */}
+            {!loading && displayData.length > 0 && metrics.totalRevenue > 0 && (
+              <tfoot>
+                <tr style={{ background: 'var(--bg-tertiary)', fontWeight: 700 }}>
+                  <td colSpan="2" style={{ padding: '12px 16px', fontSize: '13px' }}>รวมทั้งหมด</td>
+                  <td style={{ textAlign: 'right', padding: '12px 16px', fontSize: '13px' }}>฿{fmtB(displayData.reduce((s, m) => s + m.revenue, 0))}</td>
+                  <td></td>
+                  <td style={{ textAlign: 'right', padding: '12px 16px', fontSize: '13px', color: 'var(--accent-warning)' }}>
+                    ฿{fmtB(displayData.reduce((s, m) => s + m.totalCogs, 0))}
+                  </td>
+                  <td style={{ textAlign: 'right', padding: '12px 16px', fontSize: '13px', color: fcColor(metrics.avgFcPct) }}>
+                    {fmtPct(metrics.avgFcPct)}
+                  </td>
+                  <td style={{ textAlign: 'right', padding: '12px 16px', fontSize: '13px', color: 'var(--accent-success)' }}>
+                    +฿{fmtB(displayData.reduce((s, m) => s + m.totalMargin, 0))}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
+
+        {!loading && (
+          <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>แสดง {displayData.length} จาก {menuData.length} รายการ | เมนูไม่มี BOM: {metrics.noBomCount} รายการ (ใช้ cost จาก products แทน)</span>
+            {filterHighFC && <button style={{ fontSize: '12px', color: 'var(--accent-primary)', cursor: 'pointer', background: 'none', border: 'none' }} onClick={() => setFilterHighFC(false)}>ล้างตัวกรอง</button>}
+          </div>
+        )}
       </div>
 
+      <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
     </div>
   );
 }

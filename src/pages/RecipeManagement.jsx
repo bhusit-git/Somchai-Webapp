@@ -30,6 +30,8 @@ export default function RecipeManagement() {
   const [selectedMenu, setSelectedMenu] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [miscCostType, setMiscCostType] = useState('PERCENT');
+  const [miscCostValue, setMiscCostValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [menuSearchTerm, setMenuSearchTerm] = useState('');
   const { user } = useAuth();
@@ -43,7 +45,11 @@ export default function RecipeManagement() {
     try {
       const [menuRes, invRes] = await Promise.all([
         supabase.from('products').select('*').eq('is_available', true).order('name'),
-        supabase.from('inventory_items').select('*').eq('is_active', true).order('name')
+        supabase.from('inventory_items')
+          .select('*')
+          .eq('is_active', true)
+          .eq('is_recipe_item', true)   // BOM: only trackable recipe items
+          .order('name')
       ]);
 
       setMenuItems(menuRes.data || []);
@@ -57,6 +63,8 @@ export default function RecipeManagement() {
 
   async function selectMenu(menu) {
     setSelectedMenu(menu);
+    setMiscCostType(menu.misc_cost_type || 'PERCENT');
+    setMiscCostValue(menu.misc_cost_value ? Number(menu.misc_cost_value) : 0);
     // load existing BOM for this menu item
     try {
       const { data, error } = await supabase
@@ -139,19 +147,26 @@ export default function RecipeManagement() {
       alert('✅ บันทึกสูตรอาหารเรียบร้อย!');
 
       // Sync calculated cost → products.cost (for COGS on Dashboard)
-      const totalCost = ingredients.reduce((sum, ing) => {
+      const mainCost = ingredients.reduce((sum, ing) => {
         const invItem = inventoryItems.find(i => i.id === ing.inventory_item_id);
         return sum + (invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0);
       }, 0);
       
+      const qFactor = miscCostType === 'PERCENT' ? mainCost * (Number(miscCostValue) / 100) : Number(miscCostValue);
+      const totalCost = mainCost + qFactor;
+      
       // Update both potential tables for consistency
       await Promise.all([
-        supabase.from('products').update({ cost: totalCost }).eq('id', selectedMenu.id),
-        supabase.from('menu_items').update({ cost: totalCost }).eq('id', selectedMenu.id)
+        supabase.from('products').update({ cost: totalCost, misc_cost_type: miscCostType, misc_cost_value: Number(miscCostValue) }).eq('id', selectedMenu.id),
+        supabase.from('menu_items').update({ cost: totalCost, misc_cost_type: miscCostType, misc_cost_value: Number(miscCostValue) }).eq('id', selectedMenu.id)
       ]);
 
+      // Update local state to reflect the new values immediately
+      const updatedMenu = { ...selectedMenu, cost: totalCost, misc_cost_type: miscCostType, misc_cost_value: Number(miscCostValue) };
+      setMenuItems(menuItems.map(m => m.id === updatedMenu.id ? updatedMenu : m));
+
       // Reload to get fresh IDs
-      selectMenu(selectedMenu);
+      selectMenu(updatedMenu);
     } catch (err) {
       console.error(err);
       alert('Error saving recipe: ' + err.message);
@@ -181,7 +196,16 @@ export default function RecipeManagement() {
 
       // 3. Update both tables (Loop through menu items that have BOM)
       const updatePromises = [];
-      Object.entries(costMap).forEach(([menuId, totalCost]) => {
+      Object.entries(costMap).forEach(([menuId, mainCost]) => {
+        const menu = menuItems.find(m => m.id === menuId);
+        let qFactor = 0;
+        if (menu) {
+          const type = menu.misc_cost_type || 'PERCENT';
+          const val = Number(menu.misc_cost_value || 0);
+          qFactor = type === 'PERCENT' ? mainCost * (val / 100) : val;
+        }
+        const totalCost = mainCost + qFactor;
+
         updatePromises.push(supabase.from('products').update({ cost: totalCost }).eq('id', menuId));
         updatePromises.push(supabase.from('menu_items').update({ cost: totalCost }).eq('id', menuId));
       });
@@ -235,7 +259,7 @@ export default function RecipeManagement() {
           </div>
           <div className="stat-info">
             <h3>{inventoryItems.length}</h3>
-            <p>วัตถุดิบในคลัง</p>
+            <p>วัตถุดิบ (Recipe Items)</p>
           </div>
         </div>
       </div>
@@ -399,23 +423,76 @@ export default function RecipeManagement() {
                     </tbody>
                   </table>
 
+                  {/* Misc. Costs Section */}
+                  <div style={{
+                    padding: '16px',
+                    borderTop: '1px solid var(--border-primary)',
+                    background: 'var(--bg-secondary)',
+                  }}>
+                    <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <AlertCircle size={14} style={{ color: 'var(--accent-info)' }} />
+                      ต้นทุนแฝง / เครื่องปรุง / แพ็กเกจจิ้ง (Misc. Costs)
+                    </h4>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <select 
+                        className="form-select" 
+                        value={miscCostType} 
+                        onChange={(e) => setMiscCostType(e.target.value)}
+                        style={{ width: '150px', fontSize: '13px' }}
+                      >
+                        <option value="PERCENT">% จากต้นทุนรวม</option>
+                        <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
+                      </select>
+                      <input 
+                        type="number"
+                        className="form-input"
+                        placeholder="ระบุตัวเลข"
+                        min="0"
+                        step="0.01"
+                        value={miscCostValue}
+                        onChange={(e) => setMiscCostValue(e.target.value)}
+                        style={{ width: '120px', fontSize: '13px' }}
+                      />
+                    </div>
+                  </div>
+
                   {/* Summary row */}
                   <div style={{
                     padding: '12px 16px',
                     borderTop: '1px solid var(--border-primary)',
                     background: 'var(--bg-tertiary)',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
+                    flexDirection: 'column',
+                    gap: '4px',
                     fontSize: '14px'
                   }}>
-                    <span style={{ fontWeight: 600 }}>ต้นทุนวัตถุดิบรวม / เสิร์ฟ</span>
-                    <span style={{ fontWeight: 700, color: 'var(--accent-warning)', fontSize: '16px' }}>
-                      ฿{ingredients.reduce((sum, ing) => {
-                        const invItem = getInvItem(ing.inventory_item_id);
-                        return sum + (invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0);
-                      }, 0).toFixed(2)}
-                    </span>
+                    {(() => {
+                        const mainCost = ingredients.reduce((sum, ing) => {
+                          const invItem = getInvItem(ing.inventory_item_id);
+                          return sum + (invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0);
+                        }, 0);
+                        const qFactor = miscCostType === 'PERCENT' ? mainCost * (Number(miscCostValue || 0) / 100) : Number(miscCostValue || 0);
+                        const finalCost = mainCost + qFactor;
+
+                        return (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '13px' }}>
+                              <span>ต้นทุนวัตถุดิบหลัก</span>
+                              <span>฿{mainCost.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '13px' }}>
+                              <span>ต้นทุนแฝง (Q-Factor)</span>
+                              <span>฿{qFactor.toFixed(2)}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', paddingTop: '8px', borderTop: '1px dashed var(--border-primary)' }}>
+                              <span style={{ fontWeight: 600 }}>ต้นทุนสุทธิ / เสิร์ฟ</span>
+                              <span style={{ fontWeight: 700, color: 'var(--accent-warning)', fontSize: '16px' }}>
+                                ฿{finalCost.toFixed(2)}
+                              </span>
+                            </div>
+                          </>
+                        );
+                    })()}
                   </div>
                   {/* Food Cost % */}
                   {selectedMenu.price > 0 && (
@@ -430,10 +507,13 @@ export default function RecipeManagement() {
                     }}>
                       <span style={{ color: 'var(--text-muted)' }}>Food Cost %</span>
                       {(() => {
-                        const totalCost = ingredients.reduce((sum, ing) => {
+                        const mainCost = ingredients.reduce((sum, ing) => {
                           const invItem = getInvItem(ing.inventory_item_id);
                           return sum + (invItem ? Number(ing.qty_required || 0) * Number(invItem.cost_per_stock_unit || 0) : 0);
                         }, 0);
+                        const qFactor = miscCostType === 'PERCENT' ? mainCost * (Number(miscCostValue || 0) / 100) : Number(miscCostValue || 0);
+                        const totalCost = mainCost + qFactor;
+
                         const pct = (totalCost / Number(selectedMenu.price)) * 100;
                         const color = pct > 35 ? 'var(--accent-danger)' : pct > 25 ? 'var(--accent-warning)' : 'var(--accent-success)';
                         return (

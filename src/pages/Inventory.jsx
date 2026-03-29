@@ -44,7 +44,8 @@ const INITIAL_FORM_STATE = {
   par_level: 0,
   lead_time_days: 1,
   cost_per_stock_unit: 0,
-  current_stock: 0
+  current_stock: 0,
+  is_recipe_item: false
 };
 
 export default function Inventory() {
@@ -179,7 +180,8 @@ export default function Inventory() {
       par_level: item.par_level || 0,
       lead_time_days: item.lead_time_days || 1,
       cost_per_stock_unit: item.cost_per_stock_unit || 0,
-      current_stock: item.current_stock || 0
+      current_stock: item.current_stock || 0,
+      is_recipe_item: item.is_recipe_item ?? false
     });
     setShowModal(true);
   };
@@ -301,6 +303,7 @@ export default function Inventory() {
                 <th>พาร์ (Par)</th>
                 <th>หน่วย (สต๊อก)</th>
                 <th>ความจุ (แปลงหน่วย)</th>
+                <th>BOM</th>
                 <th>สถานะ</th>
                 {['owner', 'manager'].includes(user?.role) && <th>ต้นทุนรวม (฿)</th>}
                 {['owner', 'manager'].includes(user?.role) && <th>จัดการ (Audit)</th>}
@@ -308,9 +311,9 @@ export default function Inventory() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 10 : 8} style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
+                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 11 : 9} style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : filteredItems.length === 0 ? (
-                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 10 : 8}><div className="empty-state"><Package size={48} /><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
+                <tr><td colSpan={['owner', 'manager'].includes(user?.role) ? 11 : 9}><div className="empty-state"><Package size={48} /><h3>ไม่มีสินค้านี้</h3><p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p></div></td></tr>
               ) : (
                 filteredItems.map((item) => {
                   const currentStock = Number(item.current_stock);
@@ -333,6 +336,12 @@ export default function Inventory() {
                         1 {item.purchase_unit} = {Number(item.conversion_factor)} {item.stock_unit}
                         <br />
                         (Yield {Number(item.yield_pct)}%)
+                      </td>
+                      <td>
+                        {item.is_recipe_item
+                          ? <span className="badge badge-success" title="ใช้เป็นส่วนผสมในเมนูอาหาร">✓ Recipe</span>
+                          : <span className="badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-primary)' }} title="ของจุกจิก / วัสดุสิ้นเปลือง">Misc</span>
+                        }
                       </td>
                       <td>
                         {isOut ? (
@@ -422,6 +431,51 @@ export default function Inventory() {
                   <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
                     <label className="form-label">สต๊อกปัจจุบัน</label>
                     <input type="number" className="form-input" min="0" step="0.01" value={formData.current_stock} onChange={(e) => setFormData({ ...formData, current_stock: e.target.value })} />
+                  </div>
+                </div>
+
+                {/* is_recipe_item Toggle */}
+                <div style={{
+                  padding: '14px 16px',
+                  background: formData.is_recipe_item ? 'rgba(var(--accent-success-rgb, 52,211,153), 0.08)' : 'var(--bg-tertiary)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: `1px solid ${formData.is_recipe_item ? 'var(--accent-success)' : 'var(--border-primary)'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  transition: 'all 0.2s'
+                }}>
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '2px' }}>
+                      ใช้เป็นส่วนผสมในเมนูอาหาร (Is Recipe Item)
+                    </p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      {formData.is_recipe_item
+                        ? '✅ เปิด — ตัดสต๊อกเป๊ะๆ เมื่อขาย (เช่น เนื้อหมู, ไม้เสียบ) และแสดงใน BOM Setup'
+                        : '⚪ ปิด — ของจุกจิก / วัสดุสิ้นเปลือง (เช่น ผงลาบ, ซอส, ถุง) — ไม่แสดงใน BOM'}
+                    </p>
+                  </div>
+                  {/* Toggle Switch */}
+                  <div
+                    onClick={() => setFormData({ ...formData, is_recipe_item: !formData.is_recipe_item })}
+                    style={{
+                      width: '48px', height: '26px', borderRadius: '13px',
+                      background: formData.is_recipe_item ? 'var(--accent-success)' : 'var(--border-primary)',
+                      position: 'relative', cursor: 'pointer', flexShrink: 0,
+                      transition: 'background 0.2s'
+                    }}
+                    role="switch"
+                    aria-checked={formData.is_recipe_item}
+                  >
+                    <div style={{
+                      position: 'absolute', top: '3px',
+                      left: formData.is_recipe_item ? '25px' : '3px',
+                      width: '20px', height: '20px', borderRadius: '50%',
+                      background: '#fff',
+                      boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+                      transition: 'left 0.2s'
+                    }} />
                   </div>
                 </div>
 
