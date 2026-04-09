@@ -171,8 +171,7 @@ export default function MenuPricing() {
     try {
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, price, cost')
-        .eq('is_available', true)
+        .select('id, name, price, cost, is_available')
         .order('name');
 
       if (error) throw error;

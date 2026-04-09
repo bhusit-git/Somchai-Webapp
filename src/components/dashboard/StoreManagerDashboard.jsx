@@ -91,15 +91,13 @@ export default function StoreManagerDashboard() {
         .from('transactions')
         .select('id, total, status, created_at')
         .eq('branch_id', user.branch_id)
-        .gte('created_at', todayISO)
-        .eq('status', 'completed');
+        .gte('created_at', todayISO);
 
       const { data: twoWeeksTx } = await supabase
         .from('transactions')
         .select('id, total, created_at, status')
         .eq('branch_id', user.branch_id)
-        .gte('created_at', fourteenDaysAgo.toISOString())
-        .eq('status', 'completed');
+        .gte('created_at', fourteenDaysAgo.toISOString());
 
       const { data: todayExp } = await supabase
         .from('expenses')
@@ -121,8 +119,17 @@ export default function StoreManagerDashboard() {
         .limit(1);
 
       // Calculations
-      const tSales = (todayTx || []).reduce((sum, tx) => sum + Number(tx.total), 0);
-      const tOrders = (todayTx || []).length;
+      let tSales = 0;
+      let tOrders = 0;
+      (todayTx || []).forEach(tx => {
+        const amt = Number(tx.total);
+        if (amt < 0) {
+          tSales += amt;
+        } else if (tx.status === 'completed') {
+          tSales += amt;
+          tOrders++;
+        }
+      });
       const tExpenses = (todayExp || []).reduce((sum, e) => sum + Number(e.amount), 0);
       const startingCash = activeShift?.[0]?.starting_cash || 500;
       const cashDrawer = startingCash + tSales - tExpenses; // simplified
@@ -189,12 +196,15 @@ export default function StoreManagerDashboard() {
       
       if (twoWeeksTx) {
         twoWeeksTx.forEach(tx => {
+           const amt = Number(tx.total);
+           if (amt >= 0 && tx.status !== 'completed') return;
+           
            const date = new Date(tx.created_at);
            const dayIdx = dayIndexMap[date.getDay()];
            if (date >= sevenDaysAgo) {
-             thisWeekData[dayIdx] += Number(tx.total);
+             thisWeekData[dayIdx] += amt;
            } else {
-             prevWeekData[dayIdx] += Number(tx.total);
+             prevWeekData[dayIdx] += amt;
            }
         });
       }

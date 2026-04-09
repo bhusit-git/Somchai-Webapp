@@ -177,11 +177,12 @@ export default function Expenses() {
       alert("กรุณาระบุผู้อนุมัติและเหตุผลในการแก้ไข");
       return;
     }
-    
+    /* 
     if (!form.receipt_url) {
       alert("กรุณาอัปโหลดรูปใบเสร็จ / สลิปโอนเงิน");
       return;
     }
+    */
 
     const { error } = await supabase.from('expenses').update({
       created_by: form.created_by || selectedExpense.created_by,
@@ -232,7 +233,7 @@ export default function Expenses() {
 
   const totalPending = activeSet.filter(e => e.status === 'pending').reduce((s, e) => s + Number(e.amount), 0);
   const totalApproved = activeSet.filter(e => e.status === 'approved').reduce((s, e) => s + Number(e.amount), 0);
-  const totalAll = activeSet.filter(e => e.status !== 'cancelled').reduce((s, e) => s + Number(e.amount), 0);
+  const totalAll = activeSet.filter(e => e.status !== 'cancelled' && e.status !== 'rejected').reduce((s, e) => s + Number(e.amount), 0);
 
   return (
     <div>
@@ -411,7 +412,7 @@ export default function Expenses() {
                         </a>
                       )}
                     </td>
-                    <td style={{ fontWeight: 700, color: 'var(--accent-danger)' }}>฿{Number(exp.amount).toLocaleString()}</td>
+                    <td style={{ fontWeight: 700, color: 'var(--accent-danger)' }}>฿{Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td>
                       <span className={`badge ${exp.payment_method === 'cash' ? 'badge-warning' : 'badge-info'}`}>
                         {exp.payment_method === 'cash' ? '💵 เงินสด' : '🏦 เงินโอน'}

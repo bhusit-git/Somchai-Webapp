@@ -31,9 +31,9 @@ export const ROUTE_PERMISSIONS = {
   '/expenses':        ['owner', 'manager', 'store_manager', 'staff'], // Expenses   (S / N / F / R / F)
 
   // --- Cash & Finance ---
-  '/cash-ledger':     mgmt,                                           // Cash Ledger      (N / N / F / F / F)
   '/ar-management':   upperMgmt,                                      // AR Management    (N / N / F / F / F)
   '/profit-dashboard':mgmt,                                           // Profit Dashboard (N / N / R / F / F)
+  '/reconciliation':  ['owner'],                                       // Daily Reconciliation (Owner only)
 
   // --- Inventory ---
   '/inventory':       upperMgmt,                                      // Inventory        (N / F / F / N / N)
@@ -68,9 +68,9 @@ export const SIDEBAR_ITEMS = [
   { to: '/expenses',        label: 'ค่าใช้จ่าย (M3B)',      icon: 'Receipt',         roles: ROUTE_PERMISSIONS['/expenses'] },
 
   { label: 'Cash Management', type: 'section' },
-  { to: '/cash-ledger',     label: 'เงินค้างกะ (M4)',       icon: 'Wallet',          roles: ROUTE_PERMISSIONS['/cash-ledger'] },
   { to: '/ar-management',   label: 'ลูกหนี้-AR (M5)',       icon: 'Users',           roles: ROUTE_PERMISSIONS['/ar-management'] },
   { to: '/profit-dashboard',label: 'ตู้เซฟและกำไร (M6)',    icon: 'LineChart',       roles: ROUTE_PERMISSIONS['/profit-dashboard'] },
+  { to: '/reconciliation',  label: 'ตรวจทานยอด (M10)',      icon: 'ClipboardCheck',  roles: ROUTE_PERMISSIONS['/reconciliation'] },
 
   { label: 'Inventory', type: 'section' },
   { to: '/inventory',       label: 'คลังสินค้า (M7A)',      icon: 'Package',         roles: ROUTE_PERMISSIONS['/inventory'] },

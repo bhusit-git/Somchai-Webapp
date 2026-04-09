@@ -7,7 +7,8 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
   { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
   { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
-  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'Grab',      label: 'Grab',           icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
 ];
 
@@ -75,7 +76,7 @@ export default function OwnerDashboard() {
       const { data: txData } = await txQuery;
 
       const completedTxs = (txData || []).filter(t => t.status === 'completed');
-      const voidedTxs = (txData || []).filter(t => t.status === 'voided');
+      const voidedTxs = (txData || []).filter(t => t.status === 'voided' || t.status === 'refunded' || Number(t.total) < 0);
 
       let expQuery = supabase
         .from('expenses')
@@ -144,12 +145,20 @@ export default function OwnerDashboard() {
       }
 
       // 1. Overall stats
-      const totalRev = completedTxs.reduce((sum, t) => sum + Number(t.total), 0);
+      let totalRev = 0;
+      let totalDiscount = 0;
+      (txData || []).forEach(t => {
+        const amt = Number(t.total);
+        if (amt < 0) totalRev += amt;
+        else if (t.status === 'completed') {
+           totalRev += amt;
+           totalDiscount += Number(t.discount || 0);
+        }
+      });
       const totalExp = (expData || []).reduce((sum, e) => sum + Number(e.amount), 0);
       
       // Breakdown stats
-      const totalDiscount = completedTxs.reduce((sum, t) => sum + Number(t.discount || 0), 0);
-      const totalRefund = voidedTxs.reduce((sum, t) => sum + Number(t.total), 0);
+      const totalRefund = voidedTxs.reduce((sum, t) => sum + Math.abs(Number(t.total)), 0);
       const paymentBreakdown = completedTxs.reduce((acc, t) => {
         const pm = t.payment_method || 'unknown';
         acc[pm] = (acc[pm] || 0) + Number(t.total);
@@ -205,7 +214,7 @@ export default function OwnerDashboard() {
 
         // Heatmap Real data generation
         const pallets = [
-          ['#1e293b', '#334155', '#475569', '#6366f1', '#818cf8', '#c7d2fe'],
+          ['#1c1917', '#292524', '#44403c', '#F5A623', '#FBBF24', '#FDE68A'],
           ['#1e293b', '#334155', '#475569', '#10b981', '#34d399', '#a7f3d0'],
           ['#1e293b', '#334155', '#475569', '#f59e0b', '#fbbf24', '#fde68a'],
         ];

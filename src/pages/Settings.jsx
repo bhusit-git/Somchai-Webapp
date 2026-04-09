@@ -6,11 +6,12 @@ import {
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
   Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed,
   Banknote, QrCode, CreditCard, Truck, Wallet, Smartphone, CircleDollarSign, HandCoins, ListTodo,
-  Gift, Calendar, Clock, ToggleLeft, ToggleRight, Shield
+  Gift, Calendar, Clock, ToggleLeft, ToggleRight, Shield, Layers, FileUp, Download, CheckSquare, Square, Search, AlertTriangle
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import Papa from 'papaparse';
 
 const roleLabels = {
   owner: { label: 'เจ้าของ', color: 'bg-purple-500/20 text-purple-300 border border-purple-500/30' },
@@ -54,7 +55,8 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'cash',      label: 'เงินสด',        icon: 'Banknote',    isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
   { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',      isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
   { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard',  isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
-  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 30 },
+  { value: 'Grab',      label: 'Grab',           icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 0 },
+  { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 0 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',       isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
 ];
 
@@ -163,8 +165,8 @@ export default function Settings() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
-              <SettingsIcon className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center shadow-lg shadow-amber-900/20">
+              <SettingsIcon className="w-5 h-5 text-black" />
             </div>
             ตั้งค่าระบบ
           </h1>
@@ -172,22 +174,18 @@ export default function Settings() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 bg-slate-800/50 p-1 rounded-xl border border-slate-700/50 flex-wrap">
+        <div className="flex gap-2 mb-8 bg-slate-900/50 p-1.5 rounded-xl border border-slate-700/50 flex-wrap">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${
                   activeTab === tab.id
-                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/50'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-black shadow-lg shadow-amber-900/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
-                style={{
-                  background: activeTab === tab.id ? undefined : 'transparent',
-                  border: 'none'
-                }}
               >
                 <Icon className="w-4 h-4" />
                 {tab.label}
@@ -204,7 +202,7 @@ export default function Settings() {
           {visitedTabs['branches'] && <BranchesTab />}
         </div>
         <div style={{ display: activeTab === 'products' ? 'block' : 'none' }}>
-          {visitedTabs['products'] && <ProductsTab />}
+          {visitedTabs['products'] && <CombinedMenuTab />}
         </div>
         <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
           {visitedTabs['customers'] && <CustomersTab />}
@@ -238,7 +236,7 @@ function UsersTab() {
   const [branches, setBranches] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [generatedPIN, setGeneratedPIN] = useState(null);
-  const [newUser, setNewUser] = useState({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, custom_rates: null });
+  const [newUser, setNewUser] = useState({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, position_allowance: 0, custom_rates: null });
   const [resetTarget, setResetTarget] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editUser, setEditUser] = useState(null);
@@ -249,7 +247,6 @@ function UsersTab() {
 
   const loadData = async () => {
     try {
-      setLoading(true);
       const [usersData, branchesData] = await Promise.all([
         getUsers(),
         getBranches()
@@ -285,6 +282,7 @@ function UsersTab() {
         base_salary: parseFloat(newUser.base_salary) || 0,
         daily_rate: parseFloat(newUser.daily_rate) || 0,
         daily_cash_advance: parseFloat(newUser.daily_cash_advance) || 0,
+        position_allowance: parseFloat(newUser.position_allowance) || 0,
         custom_rates: newUser.employment_type === 'daily' && newUser.custom_rates && Object.keys(newUser.custom_rates).length > 0
           ? newUser.custom_rates
           : null,
@@ -292,7 +290,7 @@ function UsersTab() {
       });
       
       setShowAddForm(false);
-      setNewUser({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, custom_rates: null });
+      setNewUser({ name: '', employee_id: '', phone: '', id_card_number: '', role: 'staff', branch_id: user?.branch_id || '', employment_type: 'monthly', pay_cycle: 'bimonthly', base_salary: 0, daily_rate: 0, daily_cash_advance: 0, position_allowance: 0, custom_rates: null });
       loadData();
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการสร้างผู้ใช้งาน');
@@ -332,6 +330,7 @@ function UsersTab() {
         base_salary: parseFloat(editUser.base_salary) || 0,
         daily_rate: parseFloat(editUser.daily_rate) || 0,
         daily_cash_advance: parseFloat(editUser.daily_cash_advance) || 0,
+        position_allowance: parseFloat(editUser.position_allowance) || 0,
         custom_rates: editUser.employment_type === 'daily' && editUser.custom_rates && Object.keys(editUser.custom_rates).length > 0
           ? editUser.custom_rates
           : null,
@@ -482,15 +481,27 @@ function UsersTab() {
           </div>
 
           {newUser.employment_type === 'monthly' ? (
-            <div>
-              <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
-              <input
-                type="number"
-                className="form-input"
-                placeholder="เช่น 15000"
-                value={newUser.base_salary}
-                onChange={e => setNewUser({ ...newUser, base_salary: e.target.value })}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="เช่น 15000"
+                  value={newUser.base_salary}
+                  onChange={e => setNewUser({ ...newUser, base_salary: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-xs mb-1 block">ค่าตำแหน่ง (บาทต่อเดือน)</label>
+                <input
+                  type="number"
+                  className="form-input"
+                  placeholder="เช่น 3000 (0 = ไม่มี)"
+                  value={newUser.position_allowance || ''}
+                  onChange={e => setNewUser({ ...newUser, position_allowance: e.target.value })}
+                />
+              </div>
             </div>
           ) : (
             <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
@@ -516,6 +527,16 @@ function UsersTab() {
                   />
                 </div>
               </div>
+              <div className="mb-4">
+                <label className="text-slate-400 text-xs mb-1 block">ค่าตำแหน่ง (บาทต่อเดือน)</label>
+                <input
+                  type="number"
+                  className="form-input bg-slate-800"
+                  placeholder="เช่น 3000 (0 = ไม่มี)"
+                  value={newUser.position_allowance || ''}
+                  onChange={e => setNewUser({ ...newUser, position_allowance: e.target.value })}
+                />
+              </div>
               <DayRatesEditor
                 baseRate={newUser.daily_rate}
                 value={newUser.custom_rates}
@@ -537,8 +558,8 @@ function UsersTab() {
 
       {/* Edit User Form/Modal */}
       {editUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 z-50">
+          <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl">
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลผู้ใช้งาน</h3>
             
             <div className="space-y-4">
@@ -633,15 +654,27 @@ function UsersTab() {
               </div>
 
               {(!editUser.employment_type || editUser.employment_type === 'monthly') ? (
-                <div>
-                  <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder="เช่น 15000"
-                    value={editUser.base_salary || 0}
-                    onChange={e => setEditUser({ ...editUser, base_salary: e.target.value })}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-slate-400 text-xs mb-1 block">ฐานเงินเดือน (บาท)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="เช่น 15000"
+                      value={editUser.base_salary || 0}
+                      onChange={e => setEditUser({ ...editUser, base_salary: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-400 text-xs mb-1 block">ค่าตำแหน่ง (บาทต่อเดือน)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="เช่น 3000 (0 = ไม่มี)"
+                      value={editUser.position_allowance || ''}
+                      onChange={e => setEditUser({ ...editUser, position_allowance: e.target.value })}
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
@@ -666,6 +699,16 @@ function UsersTab() {
                         onChange={e => setEditUser({ ...editUser, daily_cash_advance: e.target.value })}
                       />
                     </div>
+                  </div>
+                  <div className="mb-4">
+                    <label className="text-slate-400 text-xs mb-1 block">ค่าตำแหน่ง (บาทต่อเดือน)</label>
+                    <input
+                      type="number"
+                      className="form-input bg-slate-800"
+                      placeholder="เช่น 3000 (0 = ไม่มี)"
+                      value={editUser.position_allowance || ''}
+                      onChange={e => setEditUser({ ...editUser, position_allowance: e.target.value })}
+                    />
                   </div>
                   <DayRatesEditor
                     baseRate={editUser.daily_rate}
@@ -772,7 +815,6 @@ function BranchesTab() {
 
   const loadBranches = async () => {
     try {
-      setLoading(true);
       const data = await getBranches();
       setBranches(data || []);
     } catch (err) {
@@ -1230,6 +1272,7 @@ function CompanyInfoTab() {
 // TAB 4: System Config
 // ============================================================
 function SystemConfigTab() {
+  const { user } = useAuth();
   const [config, setConfig] = useState(() => {
     try {
       const saved = localStorage.getItem('systemConfig');
@@ -1278,6 +1321,263 @@ function SystemConfigTab() {
   const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
   const [newChannelLabel, setNewChannelLabel] = useState('');
   const [newChannelEmoji, setNewChannelEmoji] = useState('📦');
+
+  // Legacy CSV Import State
+  const [legacyCsvFile, setLegacyCsvFile] = useState(null);
+  const [legacyImporting, setLegacyImporting] = useState(false);
+  const [legacyResult, setLegacyResult] = useState(null);
+
+  // Legacy Expense CSV Import State
+  const [expenseCsvFile, setExpenseCsvFile] = useState(null);
+  const [expenseImporting, setExpenseImporting] = useState(false);
+  const [expenseResult, setExpenseResult] = useState(null);
+
+  const importLegacyExpenses = async () => {
+    if (!expenseCsvFile) return;
+    setExpenseImporting(true);
+    setExpenseResult(null);
+    
+    Papa.parse(expenseCsvFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = results.data;
+          let importedCount = 0;
+          let skippedCount = 0;
+
+          const branchId = user?.branch_id;
+          const createdBy = user?.id;
+          if (!branchId || !createdBy) throw new Error('No branch or user context');
+
+          // Fetch all existing users to map their names
+          const { data: usersData } = await supabase.from('users').select('id, name, full_name');
+          const userObj = {};
+          if (usersData) {
+            usersData.forEach(u => {
+              userObj[(u.name || '').toLowerCase()] = u.id;
+              userObj[(u.full_name || '').toLowerCase()] = u.id;
+            });
+          }
+
+          const newExpenses = [];
+          for (const row of rows) {
+            let [dateCol, catCol, amtCol, descCol, userCol] = Object.values(row);
+            if (!dateCol || !amtCol || !descCol) continue;
+            
+            // Expected date format: "3/13/2026" or "13/03/2026"
+            // Let's assume M/D/YYYY from the image
+            let d = new Date();
+            const dParts = dateCol.split('/');
+            if (dParts.length === 3) {
+              // try to parse as M/D/YYYY
+              d = new Date(`${dParts[2]}-${dParts[0].padStart(2,'0')}-${dParts[1].padStart(2,'0')}T12:00:00+07:00`);
+              if (isNaN(d.getTime())) {
+                  // Fallback to D/M/YYYY
+                  d = new Date(`${dParts[2]}-${dParts[1].padStart(2,'0')}-${dParts[0].padStart(2,'0')}T12:00:00+07:00`);
+              }
+            }
+
+            const amount = parseFloat(amtCol.toString().replace(/,/g, ''));
+            if (isNaN(amount) || amount <= 0) continue;
+
+            const categoryName = (catCol || 'อื่นๆ').split(' (')[0].trim(); // Removes English "(Labor)" part if present
+            
+            // Map created_by user
+            let expenseUser = createdBy;
+            if (userCol) {
+               const rawName = userCol.split('-')[1] || userCol;
+               // Attempt to find user
+               for (const [k, v] of Object.entries(userObj)) {
+                   if (k.includes(rawName.toLowerCase()) || rawName.toLowerCase().includes(k)) {
+                       expenseUser = v;
+                       break;
+                   }
+               }
+            }
+
+            newExpenses.push({
+              branch_id: branchId,
+              created_by: expenseUser,
+              approved_by: createdBy,
+              approved_at: d.toISOString(),
+              category: categoryName,
+              description: descCol,
+              amount: amount,
+              expense_type: 'planned',
+              payment_method: 'cash',
+              status: 'approved', // Pre-approve legacy expenses
+              created_at: d.toISOString(),
+            });
+          }
+
+          if (newExpenses.length > 0) {
+            // Batch insert chunking to 100 per request
+            for (let i = 0; i < newExpenses.length; i += 100) {
+               const chunk = newExpenses.slice(i, i + 100);
+               const { error } = await supabase.from('expenses').insert(chunk);
+               if (error) throw new Error(`ไม่สามารถเพิ่ม Expense ได้: ${error.message}`);
+               importedCount += chunk.length;
+            }
+          }
+
+          setExpenseResult({ success: true, count: importedCount, skipped: 0 });
+        } catch (err) {
+          console.error('Legacy exp import error:', err);
+          setExpenseResult({ success: false, error: err.message });
+        } finally {
+          setExpenseImporting(false);
+          setExpenseCsvFile(null);
+        }
+      }
+    });
+  };
+
+  const importLegacySales = async () => {
+    if (!legacyCsvFile) return;
+    setLegacyImporting(true);
+    setLegacyResult(null);
+
+    Papa.parse(legacyCsvFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const rows = results.data;
+          const receipts = {};
+          rows.forEach(r => {
+            const rn = (r['Receipt Number'] || '').trim();
+            if (!rn) return;
+            if (!receipts[rn]) {
+              receipts[rn] = {
+                date: (r['Date'] || '').trim(),
+                payment: (r['Payment'] || '').trim(),
+                type: (r['Type'] || 'SALE').trim().toUpperCase(),
+                items: []
+              };
+            }
+            receipts[rn].items.push({
+              name: (r['Item Name'] || '').trim(),
+              qty: parseInt(r['QTY']) || 0,
+              price: parseFloat(r['Price']) || 0,
+            });
+          });
+
+          let importedCount = 0;
+          let skippedCount = 0;
+          const branchId = user?.branch_id || null;
+          const createdBy = user?.id || null;
+
+          const allReceiptNos = Object.keys(receipts);
+          const CHUNK_SIZE = 25; // ลดขนาด Chunk เพื่อป้องกัน URL ยาวเกินไปจนเกิด Load failed
+
+          const generateId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
+          };
+
+          for (let i = 0; i < allReceiptNos.length; i += CHUNK_SIZE) {
+            const chunkNos = allReceiptNos.slice(i, i + CHUNK_SIZE);
+            
+            // Batch check existing receipts
+            const { data: existingData, error: existErr } = await supabase
+              .from('transactions')
+              .select('order_number')
+              .in('order_number', chunkNos);
+              
+            if (existErr) throw new Error('ตรวจสอบข้อมูลซ้ำล้มเหลว: ' + existErr.message);
+            
+            const existingNos = new Set((existingData || []).map(r => r.order_number));
+            skippedCount += existingNos.size;
+            
+            const newTxs = [];
+            const newItems = [];
+
+            for (const receiptNo of chunkNos) {
+               if (existingNos.has(receiptNo)) continue;
+               const data = receipts[receiptNo];
+
+               // ── Date parsing (robust) ──
+               let d;
+               if (data.date) {
+                 const parts = data.date.split(/,\s*/);
+                 if (parts.length >= 2) {
+                   const dParts = parts[0].split('/');
+                   const tParts = parts[1].split(':');
+                   if (dParts.length === 3 && tParts.length >= 2) {
+                     const paddedTime = tParts.map(p => p.padStart(2, '0')).join(':');
+                     const isoStr = `${dParts[2]}-${dParts[1].padStart(2, '0')}-${dParts[0].padStart(2, '0')}T${paddedTime}`;
+                     d = new Date(isoStr);
+                   }
+                 }
+               }
+               if (!d || isNaN(d.getTime())) d = new Date();
+
+               // ── Payment method mapping ──
+               const paymentMapping = { 'cash':'cash', 'transfer':'transfer', 'grab':'Grab', 'lineman':'Lineman' };
+               let pMethod = 'cash';
+               const rawPayment = (data.payment || '').toLowerCase();
+               for (const [k, v] of Object.entries(paymentMapping)) {
+                 if (rawPayment.includes(k)) pMethod = v;
+               }
+               if (data.payment.includes('เครดิต')) pMethod = 'credit';
+
+               // ── Compute total ──
+               const computedTotal = data.items.reduce((sum, item) => sum + (item.qty * item.price), 0);
+               const absTotal = Math.abs(computedTotal);
+               const isRefund = data.type === 'REFUND';
+
+               const txId = generateId(); // Generated so we can link items immediately
+               
+               newTxs.push({
+                 id: txId,
+                 branch_id: branchId,
+                 created_by: createdBy,
+                 order_number: receiptNo,
+                 subtotal: isRefund ? -absTotal : absTotal,
+                 discount: 0,
+                 total: isRefund ? -absTotal : absTotal,
+                 payment_method: pMethod,
+                 status: isRefund ? 'voided' : 'completed',
+                 created_at: d.toISOString()
+               });
+
+               data.items.forEach(item => {
+                 newItems.push({
+                   transaction_id: txId,
+                   product_name: item.name,
+                   quantity: Math.abs(item.qty),
+                   unit_price: item.price,
+                   total_price: Math.abs(item.qty) * item.price
+                 });
+               });
+               
+               importedCount++;
+            }
+
+            // Batch Execute
+            if (newTxs.length > 0) {
+               const { error: txErr } = await supabase.from('transactions').insert(newTxs);
+               if (txErr) throw new Error(`ไม่สามารถเพิ่ม Transactions ช่วงบิล ${chunkNos[0]} ได้: ${txErr.message}`);
+               
+               if (newItems.length > 0) {
+                 const { error: itemsErr } = await supabase.from('transaction_items').insert(newItems);
+                 if (itemsErr) console.error('Batch insert items error:', itemsErr); // Not throwing to avoid breaking halfway
+               }
+            }
+          }
+
+          setLegacyResult({ success: true, count: importedCount, skipped: skippedCount });
+        } catch (err) {
+          console.error('Legacy import error:', err);
+          setLegacyResult({ success: false, error: err.message });
+        } finally {
+          setLegacyImporting(false);
+          setLegacyCsvFile(null);
+        }
+      }
+    });
+  };
 
   const handleSave = () => {
     localStorage.setItem('systemConfig', JSON.stringify(config));
@@ -1657,6 +1957,72 @@ function SystemConfigTab() {
           </div>
         </div>
 
+        {/* ── Legacy Import ── */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4 md:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-white font-medium flex items-center gap-2">
+              <FileUp className="w-4 h-4 text-purple-400" /> นำข้อมูลจากระบบเดิม (Legacy POS)
+            </h3>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="bg-purple-900/20 border border-purple-500/30 rounded-xl p-4">
+              <h4 className="text-white font-medium mb-1">1. นำเข้าประวัติการขาย</h4>
+              <p className="text-slate-300 text-xs mb-3">แปลงไฟล์คำสั่งซื้อจาก POS เก่าเป็น `.csv` และอัปโหลดที่นี่ระบบจะสร้าง Transactions แยกตามเลขใบเสร็จพร้อมระบุวันที่ย้อนหลังให้แบบอัตโนมัติ</p>
+              
+              <div className="flex flex-col gap-3">
+                <input 
+                  type="file" 
+                  accept=".csv"
+                  onChange={e => setLegacyCsvFile(e.target.files[0])}
+                  className="block w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-500 bg-slate-900 border border-slate-700 rounded-lg"
+                />
+                <button
+                  onClick={importLegacySales}
+                  disabled={!legacyCsvFile || legacyImporting}
+                  className="whitespace-nowrap flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {legacyImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {legacyImporting ? 'กำลังนำเข้า...' : 'อัปโหลดการขาย'}
+                </button>
+              </div>
+              {legacyResult && (
+                <div className={`mt-3 p-3 rounded-lg text-xs border ${legacyResult.success ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : 'bg-red-900/30 border-red-500/30 text-red-300'}`}>
+                  {legacyResult.success ? `✅ สำเร็จ ${legacyResult.count} ใบเสร็จ${legacyResult.skipped ? ` (ข้าม ${legacyResult.skipped} รายการที่มีอยู่แล้ว)` : ''}` : `❌ ผิดพลาด: ${legacyResult.error}`}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-amber-900/20 border border-amber-500/30 rounded-xl p-4">
+              <h4 className="text-white font-medium mb-1">2. นำเข้าค่าใช้จ่ายย้อนหลัง</h4>
+              <p className="text-slate-300 text-xs mb-3">เตรียมไฟล์ CSV เรียงคอลัมน์: <b>วันที่, ประเภทค่าใช้จ่าย, จำนวนเงิน, เพิ่มเติม, ผู้ทำรายการ</b> เพื่อนำข้อมูลเข้าระบบ</p>
+              
+              <div className="flex flex-col gap-3">
+                <input 
+                  type="file" 
+                  accept=".csv"
+                  onChange={e => setExpenseCsvFile(e.target.files[0])}
+                  className="block w-full text-xs text-slate-400 file:mr-4 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-600 file:text-white hover:file:bg-amber-500 bg-slate-900 border border-slate-700 rounded-lg"
+                />
+                <button
+                  onClick={importLegacyExpenses}
+                  disabled={!expenseCsvFile || expenseImporting}
+                  className="whitespace-nowrap flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {expenseImporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {expenseImporting ? 'กำลังนำเข้า...' : 'อัปโหลดค่าใช้จ่าย'}
+                </button>
+              </div>
+              {expenseResult && (
+                <div className={`mt-3 p-3 rounded-lg text-xs border ${expenseResult.success ? 'bg-emerald-900/30 border-emerald-500/30 text-emerald-300' : 'bg-red-900/30 border-red-500/30 text-red-300'}`}>
+                  {expenseResult.success ? `✅ สำเร็จ ${expenseResult.count} รายการ` : `❌ ผิดพลาด: ${expenseResult.error}`}
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </div>
   );
@@ -1681,7 +2047,6 @@ function ExpenseCategoriesTab() {
   }, []);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [catsRes, branchesRes] = await Promise.all([
         getExpenseCategories(),
@@ -1871,7 +2236,7 @@ function ExpenseCategoriesTab() {
           <div key={cat.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center">
                   <Tags className="w-5 h-5 text-white" />
                 </div>
                 <div>
@@ -1927,7 +2292,6 @@ function CustomersTab() {
   }, []);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [custRes, branchesRes] = await Promise.all([
         getCustomers(),
@@ -2197,7 +2561,43 @@ function CustomersTab() {
 }
 
 // ============================================================
-// TAB 7: Products & Categories (เมนูขาย)
+// TAB 7: Combined Menu & Channels
+// ============================================================
+
+function CombinedMenuTab() {
+  const [subTab, setSubTab] = useState('main'); // 'main' | 'channel'
+  
+  return (
+    <div className="space-y-4">
+      {/* Sub Tabs Toggle for Menu Layout */}
+      <div className="flex gap-2 bg-slate-900/50 p-1.5 rounded-xl border border-slate-700/50 w-full overflow-x-auto">
+        <button
+          onClick={() => setSubTab('main')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+            subTab === 'main' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <UtensilsCrossed className="w-4 h-4" /> 📋 เมนูและหมวดหมู่หลัก
+        </button>
+        <button
+          onClick={() => setSubTab('channel')}
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+            subTab === 'channel' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Layers className="w-4 h-4" /> 📱 ตั้งราคาพิเศษรายช่องทาง
+        </button>
+      </div>
+
+      <div className="pt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {subTab === 'main' ? <ProductsTab /> : <ChannelMenuTab />}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// SUB-TAB: Products & Categories (เมนูขายหลัก)
 // ============================================================
 
 function ProductsTab() {
@@ -2229,7 +2629,6 @@ function ProductsTab() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [catRes, prodRes, bomRes, mpRes] = await Promise.all([
         supabase.from('categories').select('*').order('sort_order'),
@@ -2524,8 +2923,8 @@ function ProductsTab() {
                   <label htmlFor="avail_new" className="text-slate-300 text-sm cursor-pointer select-none">สวิตช์เปิด/ปิดขาย (ให้แสดงใน POS)</label>
                 </div>
                 {/* Misc Costs */}
-                <div className="md:col-span-2 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4 mt-2">
-                  <p className="text-indigo-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                <div className="md:col-span-2 bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mt-2">
+                  <p className="text-amber-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
                     ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
                   </p>
                   <div className="flex items-center gap-3">
@@ -2536,50 +2935,6 @@ function ProductsTab() {
                     <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={newProd.misc_cost_value ?? 0} onChange={e => setNewProd({ ...newProd, misc_cost_value: e.target.value })} />
                   </div>
                 </div>
-                {/* Channel Pricing */}
-                {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
-                  <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4">
-                    <p className="text-emerald-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
-                      💰 ตั้งราคาตามช่องทางการขาย (Channel Pricing)
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
-                        const mp = newProd.menu_prices?.[ch.id] || { is_available: true, price: '' };
-                        return (
-                          <div key={ch.id} className="bg-slate-900/50 p-2 rounded border border-slate-700/50">
-                            <div className="flex items-center justify-between mb-2">
-                              <label className="text-slate-300 text-xs font-medium">{ch.emoji} {ch.label}</label>
-                              <label className="flex items-center gap-1 cursor-pointer">
-                                <input 
-                                  type="checkbox" 
-                                  className="w-3 h-3 rounded" 
-                                  checked={mp.is_available !== false} 
-                                  onChange={e => setNewProd({
-                                    ...newProd,
-                                    menu_prices: { ...newProd.menu_prices, [ch.id]: { ...mp, is_available: e.target.checked } }
-                                  })} 
-                                />
-                                <span className="text-[10px] text-slate-400">เปิดขาย</span>
-                              </label>
-                            </div>
-                            <input
-                              type="number" min="0" step="0.01"
-                              className={inputCls}
-                              disabled={mp.is_available === false}
-                              placeholder={newProd.price || 'เท่ากับราคาปกติ'}
-                              value={mp.price ?? ''}
-                              onChange={e => setNewProd({
-                                ...newProd,
-                                menu_prices: { ...newProd.menu_prices, [ch.id]: { ...mp, price: e.target.value } }
-                              })}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p className="text-slate-500 text-[10px] mt-2">• ว่างไว้ = ใช้ราคาปกติ • ปิดสวิตช์ = ไม่แสดงในแท็บนี้</p>
-                  </div>
-                )}
               </div>
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mt-4">
                 💡 <strong>เคล็ดลับ:</strong> ต้นทุนจะคำนวณอัตโนมัติจากตาราง BOM+WAC — หากต้องการตั้งต้นทุนให้ไปตั้งสูตรที่หน้า <strong>สูตรอาหาร (M7C)</strong>
@@ -2733,8 +3088,8 @@ function ProductsTab() {
                 <label htmlFor="avail_edit" className="text-slate-300 text-sm">เปิดขาย (แสดงใน POS)</label>
               </div>
               {/* Misc Costs Edit */}
-              <div className="md:col-span-2 bg-indigo-900/20 border border-indigo-500/30 rounded-xl p-4 mt-2">
-                <p className="text-indigo-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+              <div className="md:col-span-2 bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mt-2">
+                <p className="text-amber-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
                   ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
                 </p>
                 <div className="flex items-center gap-3">
@@ -2745,50 +3100,6 @@ function ProductsTab() {
                   <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={editProd.misc_cost_value ?? 0} onChange={e => setEditProd({ ...editProd, misc_cost_value: e.target.value })} />
                 </div>
               </div>
-              {/* Channel Pricing Edit */}
-              {salesChannels.filter(ch => ch.id !== 'dine_in').length > 0 && (
-                <div className="md:col-span-2 bg-emerald-900/20 border border-emerald-500/30 rounded-xl p-4">
-                  <p className="text-emerald-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
-                    💰 ราคาตามช่องทางการขาย (Channel Pricing)
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
-                      const mp = editProd.menu_prices?.[ch.id] || { is_available: true, price: '' };
-                      return (
-                        <div key={ch.id} className="bg-slate-900/50 p-2 rounded border border-slate-700/50">
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-slate-300 text-xs font-medium">{ch.emoji} {ch.label}</label>
-                            <label className="flex items-center gap-1 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                className="w-3 h-3 rounded" 
-                                checked={mp.is_available !== false} 
-                                onChange={e => setEditProd({
-                                  ...editProd,
-                                  menu_prices: { ...editProd.menu_prices, [ch.id]: { ...mp, is_available: e.target.checked } }
-                                })} 
-                              />
-                              <span className="text-[10px] text-slate-400">เปิดขาย</span>
-                            </label>
-                          </div>
-                          <input
-                            type="number" min="0" step="0.01"
-                            className={inputCls}
-                            disabled={mp.is_available === false}
-                            placeholder={editProd.price || 'เท่ากับราคาปกติ'}
-                            value={mp.price ?? ''}
-                            onChange={e => setEditProd({
-                              ...editProd,
-                              menu_prices: { ...editProd.menu_prices, [ch.id]: { ...mp, price: e.target.value } }
-                            })}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-slate-500 text-[10px] mt-2">• ว่างไว้ = ใช้ราคาปกติ • ปิดสวิตช์ = ไม่แสดงในแท็บนี้</p>
-                </div>
-              )}
             </div>
             <div className="flex gap-3 justify-end pt-2">
               <button onClick={() => { setEditProd(null); setEditImgFile(null); setEditImgPreview(null); }}
@@ -3054,7 +3365,6 @@ function PromotionsTab() {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
-    setLoading(true);
     try {
       const [promoRes, catRes, prodRes] = await Promise.all([
         supabase.from('promotions').select('*').order('created_at', { ascending: false }),
@@ -3426,6 +3736,840 @@ function PromotionsTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// TAB: Channel Menu Manager (ตั้งค่าเมนูตามช่องทาง)
+// ============================================================
+
+function ChannelMenuTab() {
+  // Read channels live every render so newly-added channels appear immediately
+  const salesChannels = getSalesChannels();
+  const [activeChannel, setActiveChannel] = useState(() => {
+    const channels = getSalesChannels().filter(ch => ch.id !== 'dine_in');
+    return channels.length > 0 ? channels[0].id : 'grab';
+  });
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [menuPrices, setMenuPrices] = useState([]); // raw rows from menu_prices
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterCat, setFilterCat] = useState('all');
+  const [hasChanges, setHasChanges] = useState(false);
+
+  // Local editable state: { [product_id]: { is_available: bool, price: string|number } }
+  const [channelState, setChannelState] = useState({});
+
+  // CSV Import state
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [csvData, setCsvData] = useState(null);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState(null);
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    // When channel changes, rebuild channelState from menuPrices
+    if (products.length === 0) return;
+    const state = {};
+    products.forEach(p => {
+      const mp = menuPrices.find(r => r.menu_id === p.id && r.channel === activeChannel);
+      state[p.id] = {
+        is_available: mp ? mp.is_available !== false : false,
+        price: mp?.price ?? '',
+      };
+    });
+    setChannelState(state);
+    setHasChanges(false);
+  }, [activeChannel, menuPrices, products]);
+
+  async function loadData() {
+    try {
+      const [prodRes, catRes, mpRes] = await Promise.all([
+        supabase.from('products').select('*').order('sort_order'),
+        supabase.from('categories').select('*').order('sort_order'),
+        supabase.from('menu_prices').select('*'),
+      ]);
+      setProducts(prodRes.data || []);
+      setCategories(catRes.data || []);
+      setMenuPrices(mpRes.data || []);
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  }
+
+  // rebuildChannelState is now inlined in the useEffect above
+
+  function toggleProduct(productId) {
+    setChannelState(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], is_available: !prev[productId]?.is_available }
+    }));
+    setHasChanges(true);
+  }
+
+  function setProductPrice(productId, price) {
+    setChannelState(prev => ({
+      ...prev,
+      [productId]: { ...prev[productId], price }
+    }));
+    setHasChanges(true);
+  }
+
+  function selectAll() {
+    const filtered = getFilteredProducts();
+    setChannelState(prev => {
+      const next = { ...prev };
+      filtered.forEach(p => { next[p.id] = { ...next[p.id], is_available: true }; });
+      return next;
+    });
+    setHasChanges(true);
+  }
+
+  function deselectAll() {
+    const filtered = getFilteredProducts();
+    setChannelState(prev => {
+      const next = { ...prev };
+      filtered.forEach(p => { next[p.id] = { ...next[p.id], is_available: false }; });
+      return next;
+    });
+    setHasChanges(true);
+  }
+
+  function getFilteredProducts() {
+    return products.filter(p => {
+      const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCat = filterCat === 'all' || p.category_id === filterCat;
+      return matchSearch && matchCat;
+    });
+  }
+
+  async function handleSaveAll() {
+    setSaving(true);
+    try {
+      // Collect all upsert rows for the active channel
+      const upserts = [];
+      const deletes = [];
+
+      Object.entries(channelState).forEach(([productId, st]) => {
+        if (st.is_available || (st.price !== '' && st.price !== null && st.price !== undefined)) {
+          const parsedPrice = st.price !== '' && st.price !== null ? parseFloat(st.price) : null;
+          upserts.push({
+            menu_id: productId,
+            channel: activeChannel,
+            price: parsedPrice !== null && !isNaN(parsedPrice) ? parsedPrice : null,
+            is_available: st.is_available,
+          });
+        } else {
+          // If not available and no price, delete the row if it exists
+          deletes.push(productId);
+        }
+      });
+
+      // Delete rows for products that are now OFF and have no custom price
+      if (deletes.length > 0) {
+        await supabase.from('menu_prices').delete()
+          .eq('channel', activeChannel)
+          .in('menu_id', deletes);
+      }
+
+      // Upsert the rest
+      if (upserts.length > 0) {
+        const { error } = await supabase.from('menu_prices').upsert(upserts, { onConflict: 'menu_id,channel' });
+        if (error) throw error;
+      }
+
+      // Reload
+      const { data: freshMp } = await supabase.from('menu_prices').select('*');
+      setMenuPrices(freshMp || []);
+      setHasChanges(false);
+      alert('✅ บันทึกสำเร็จ!');
+    } catch (err) {
+      alert('❌ เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── CSV Import Logic ──
+  function handleCsvFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCsvFileName(file.name);
+    setCsvResult(null);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const text = ev.target.result;
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        if (lines.length < 2) { alert('ไฟล์ CSV ว่างเปล่า'); return; }
+
+        // CSV parser that handles quoted fields (e.g. "field with, comma")
+        function parseCsvLine(line) {
+          const result = [];
+          let current = '';
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+              if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } // escaped quote
+              else { inQuotes = !inQuotes; }
+            } else if (ch === ',' && !inQuotes) {
+              result.push(current.trim());
+              current = '';
+            } else {
+              current += ch;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        }
+
+        const headers = parseCsvLine(lines[0]);
+        const rows = lines.slice(1).map(line => {
+          const vals = parseCsvLine(line);
+          const obj = {};
+          headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
+          return obj;
+        });
+
+        setCsvData({ headers, rows });
+      } catch (err) {
+        alert('ไม่สามารถอ่านไฟล์ CSV ได้: ' + err.message);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  async function handleCsvImport() {
+    if (!csvData?.rows?.length) return;
+    setCsvImporting(true);
+    setCsvResult(null);
+
+    try {
+      // Detect columns
+      const hLower = csvData.headers.map(s => s.toLowerCase());
+      function findCol(predicate, fallbackIndex) {
+        const idx = hLower.findIndex(predicate);
+        return idx >= 0 ? csvData.headers[idx] : (fallbackIndex !== undefined ? csvData.headers[fallbackIndex] : null);
+      }
+      const idCol = findCol(x => x.includes('id'), 0);
+      const nameCol = findCol(x => x.includes('ชื่อ') || x.includes('name') || x.includes('เมนู'), 1);
+      const catCol = findCol(x => x.includes('หมวด') || x.includes('category'));
+      const priceCol = findCol(x => x.includes('ราคา') || x.includes('price'));
+
+      // Classify rows by prefix
+      const baseMenus = [];   // P*, PS*
+      const deliveryMenus = []; // PD*
+      const partnerMenus = []; // PP*
+      const staffMenus = [];   // PB*
+      const specialMenus = []; // PE*
+      const skipped = [];      // PC*, PW*
+
+      csvData.rows.forEach(row => {
+        const id = (row[idCol] || '').trim();
+        const name = (row[nameCol] || '').trim();
+        const category = catCol ? (row[catCol] || '').trim() : '';
+        const price = priceCol ? parseFloat(row[priceCol]) || 0 : 0;
+
+        if (!id || !name) return;
+
+        if (id.startsWith('PC') || id.startsWith('PW')) {
+          skipped.push({ id, name, reason: id.startsWith('PC') ? 'สต๊อก (เพิ่มแล้ว)' : 'ของเสีย' });
+        } else if (id.startsWith('PD')) {
+          deliveryMenus.push({ id, name, category, price });
+        } else if (id.startsWith('PP')) {
+          partnerMenus.push({ id, name, category, price });
+        } else if (id.startsWith('PB')) {
+          staffMenus.push({ id, name, category, price });
+        } else if (id.startsWith('PE')) {
+          specialMenus.push({ id, name, category, price });
+        } else {
+          // P*, PS* → base products
+          baseMenus.push({ id, name, category, price });
+        }
+      });
+
+      // ── Step 1: Create categories if needed
+      const existingCats = (await supabase.from('categories').select('*')).data || [];
+      const catMap = {};
+      existingCats.forEach(c => { catMap[c.name] = c.id; });
+
+      // Auto-create categories: หมูปิ้ง/ย่าง, ข้าว/เครื่องเคียง, เซ็ตเมนู
+      const autoCats = ['หมูปิ้ง/ย่าง', 'ข้าว/เครื่องเคียง', 'เซ็ตเมนู'];
+      for (const catName of autoCats) {
+        if (!catMap[catName]) {
+          const { data: newCat } = await supabase.from('categories')
+            .insert({ name: catName, is_active: true })
+            .select().single();
+          if (newCat) catMap[catName] = newCat.id;
+        }
+      }
+
+      // Classify base menus into categories
+      function guessCategory(name) {
+        const n = name.toLowerCase();
+        if (n.includes('ข้าวเหนียว') || n.includes('น้ำ') || n.includes('เก๊กฮวย')) return 'ข้าว/เครื่องเคียง';
+        if (n.includes('ชุด') || n.includes('set') || n.includes('meal') || n.includes('combo') || n.includes('hero') || n.includes('โปร')) return 'เซ็ตเมนู';
+        return 'หมูปิ้ง/ย่าง';
+      }
+
+      // ── Step 2: Insert base products (skip if name already exists)
+      const existingProds = (await supabase.from('products').select('id, name')).data || [];
+      const prodNameMap = {};
+      existingProds.forEach(p => { prodNameMap[p.name.toLowerCase().trim()] = p.id; });
+
+      let insertedCount = 0;
+      let skippedDup = 0;
+      const newProdMap = {}; // oldId → newId
+
+      for (const item of baseMenus) {
+        // Clean name: remove underscores → spaces
+        const cleanName = item.name.replace(/_/g, ' ').trim();
+        const lookupKey = cleanName.toLowerCase();
+
+        if (prodNameMap[lookupKey]) {
+          newProdMap[item.id] = prodNameMap[lookupKey];
+          skippedDup++;
+          continue;
+        }
+
+        const catName = guessCategory(cleanName);
+        const { data: inserted, error } = await supabase.from('products').insert({
+          name: cleanName,
+          price: item.price,
+          cost: 0,
+          category_id: catMap[catName] || null,
+          is_available: true,
+          sort_order: 0,
+        }).select().single();
+
+        if (!error && inserted) {
+          newProdMap[item.id] = inserted.id;
+          prodNameMap[lookupKey] = inserted.id;
+          insertedCount++;
+        }
+      }
+
+      // ── Step 3: Map delivery items → menu_prices
+      // Match by name similarity: "Grab_หมูปิ้งธรรมดา_ไม้เล็ก" → find "หมูปิ้งติดมัน ไม้เล็ก" or similar
+      let mpInserted = 0;
+      const mpUpserts = [];
+
+      function findBaseProduct(deliveryName) {
+        // Remove prefix like "Grab_", "LineMan_"
+        let cleanName = deliveryName
+          .replace(/^(Grab|LineMan|LineMAN|line_man|grab)_/i, '')
+          .replace(/_/g, ' ')
+          .trim()
+          .toLowerCase();
+
+        // Try exact match first
+        if (prodNameMap[cleanName]) return prodNameMap[cleanName];
+
+        // Try fuzzy match: check if any product name contains the core words
+        for (const [existingName, existingId] of Object.entries(prodNameMap)) {
+          // Check if significant overlap
+          const words = cleanName.split(/\s+/).filter(w => w.length > 1);
+          const matchCount = words.filter(w => existingName.includes(w)).length;
+          if (words.length > 0 && matchCount >= Math.ceil(words.length * 0.6)) {
+            return existingId;
+          }
+        }
+
+        return null;
+      }
+
+      function detectChannel(name) {
+        const n = name.toLowerCase();
+        if (n.startsWith('grab')) return 'grab';
+        if (n.startsWith('lineman') || n.startsWith('line_man')) return 'lineman';
+        return null;
+      }
+
+      // Delivery set menus that don't match any base product → create as new product
+      const unmatchedDelivery = [];
+
+      for (const item of deliveryMenus) {
+        const channel = detectChannel(item.name);
+        if (!channel) continue;
+
+        const baseId = findBaseProduct(item.name);
+        if (baseId) {
+          mpUpserts.push({
+            menu_id: baseId,
+            channel,
+            price: item.price,
+            is_available: true,
+          });
+        } else {
+          unmatchedDelivery.push({ ...item, channel });
+        }
+      }
+
+      // Create unmatched delivery items as new products + link to channel
+      for (const item of unmatchedDelivery) {
+        let cleanName = item.name
+          .replace(/^(Grab|LineMan|LineMAN|line_man|grab)_/i, '')
+          .replace(/_/g, ' ')
+          .trim();
+
+        const lookupKey = cleanName.toLowerCase();
+
+        let productId = prodNameMap[lookupKey];
+        if (!productId) {
+          const catName = guessCategory(cleanName);
+          const { data: inserted } = await supabase.from('products').insert({
+            name: cleanName,
+            price: item.price, // use delivery price as base
+            cost: 0,
+            category_id: catMap[catName] || null,
+            is_available: true,
+            sort_order: 0,
+          }).select().single();
+          if (inserted) {
+            productId = inserted.id;
+            prodNameMap[lookupKey] = inserted.id;
+            insertedCount++;
+          }
+        }
+
+        if (productId) {
+          mpUpserts.push({
+            menu_id: productId,
+            channel: item.channel,
+            price: item.price,
+            is_available: true,
+          });
+        }
+      }
+
+      // Partner menu_prices
+      for (const item of partnerMenus) {
+        const cleanName = item.name.replace(/_/g, ' ').trim().toLowerCase();
+        // Try to find matching product
+        let productId = null;
+        for (const [name, id] of Object.entries(prodNameMap)) {
+          const words = cleanName.split(/\s+/).filter(w => w.length > 1);
+          const matchCount = words.filter(w => name.includes(w)).length;
+          if (words.length > 0 && matchCount >= Math.ceil(words.length * 0.5)) {
+            productId = id;
+            break;
+          }
+        }
+        if (productId) {
+          mpUpserts.push({
+            menu_id: productId,
+            channel: 'partner',
+            price: item.price,
+            is_available: true,
+          });
+        }
+      }
+
+      // Upsert all menu_prices
+      if (mpUpserts.length > 0) {
+        // Deduplicate - keep last entry per menu_id+channel
+        const deduped = {};
+        mpUpserts.forEach(mp => {
+          deduped[`${mp.menu_id}_${mp.channel}`] = mp;
+        });
+        const finalUpserts = Object.values(deduped);
+
+        const { error } = await supabase.from('menu_prices').upsert(finalUpserts, { onConflict: 'menu_id,channel' });
+        if (error) console.error('menu_prices upsert error:', error);
+        mpInserted = finalUpserts.length;
+      }
+
+      setCsvResult({
+        success: true,
+        productsInserted: insertedCount,
+        productsDuplicate: skippedDup,
+        menuPricesInserted: mpInserted,
+        skipped: skipped.length,
+        unmatchedDelivery: unmatchedDelivery.length,
+      });
+
+      // Reload data
+      await loadData();
+
+    } catch (err) {
+      setCsvResult({ success: false, error: err.message });
+    } finally {
+      setCsvImporting(false);
+    }
+  }
+
+  // ── Filter channels (exclude dine_in for this tab) ──
+  const editableChannels = salesChannels.filter(ch => ch.id !== 'dine_in');
+  const activeChInfo = editableChannels.find(ch => ch.id === activeChannel) || editableChannels[0];
+  const filteredProducts = getFilteredProducts();
+  const enabledCount = filteredProducts.filter(p => channelState[p.id]?.is_available).length;
+
+  if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดข้อมูลเมนู...</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header Area */}
+      <div className="mb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex flex-shrink-0 items-center justify-center shadow-lg shadow-amber-900/20">
+              <Layers className="w-5 h-5 text-black" />
+            </div>
+            <div>
+              <h2 className="text-white text-xl font-bold">ตั้งค่าเมนูตามช่องทาง</h2>
+              <p className="text-slate-400 text-sm mt-0.5">กำหนดรายการอาหารและตั้งราคาพิเศษสำหรับแต่ละแพลตฟอร์ม</p>
+            </div>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setShowCsvImport(!showCsvImport)}
+              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <FileUp className="w-4 h-4 text-emerald-400" /> นำเข้า CSV (ระบบเก่า)
+            </button>
+            <button
+              onClick={handleSaveAll}
+              disabled={saving || !hasChanges}
+              className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${
+                hasChanges
+                  ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-900/30'
+                  : 'bg-slate-800/80 text-slate-300 cursor-not-allowed border border-slate-700'
+              }`}
+            >
+              <Save className="w-4 h-4" />
+              {saving ? 'กำลังบันทึก...' : hasChanges ? 'บันทึกการตั้งค่า' : 'ไม่มีการเปลี่ยนแปลง'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* CSV Import Panel (Hidden by default) */}
+      {showCsvImport && (
+        <div className="bg-slate-900/80 border border-amber-500/30 rounded-2xl overflow-hidden shadow-2xl mb-6 ring-1 ring-white/5">
+          <div className="flex items-center justify-between p-5 border-b border-white/5 bg-gradient-to-r from-amber-900/20 to-transparent">
+            <h3 className="text-amber-400 font-semibold text-base flex items-center gap-2">
+              <FileUp className="w-5 h-5" /> นำเข้าข้อมูลเมนูจากไฟล์ CSV
+            </h3>
+            <button onClick={() => setShowCsvImport(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800/50 p-2 rounded-lg hover:bg-slate-700">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="p-6 space-y-6">
+            <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-4 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-slate-200 text-sm font-medium mb-1">ระบบนำเข้าอัตโนมัติ (Automated Import)</p>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  อัปโหลดไฟล์ที่มีรหัส <span className="text-emerald-400 font-mono bg-emerald-900/30 px-1 rounded">P*</span>, <span className="text-emerald-400 font-mono bg-emerald-900/30 px-1 rounded">PS*</span> (เมนูหน้าร้าน), 
+                  <span className="text-blue-400 font-mono bg-blue-900/30 px-1 rounded ml-1">PD*</span> (เดลิเวอรี่), หรือ <span className="text-purple-400 font-mono bg-purple-900/30 px-1 rounded ml-1">PP*</span> (พาร์ทเนอร์).
+                  ระบบจะแยกประเภทและเชื่อมโยงราคาเข้ากับช่องทางต่างๆ ให้โดยอัตโนมัติ
+                </p>
+              </div>
+            </div>
+
+            {/* File Input */}
+            <div>
+              <label className="flex flex-col items-center justify-center gap-3 cursor-pointer w-full bg-slate-800/50 border-2 border-dashed border-slate-600 rounded-xl p-8 hover:border-amber-500 transition-colors group">
+                <div className="w-12 h-12 bg-slate-700 group-hover:bg-amber-500/20 rounded-full flex items-center justify-center transition-colors">
+                  <Upload className="w-6 h-6 text-slate-400 group-hover:text-amber-400 transition-colors" />
+                </div>
+                <div className="text-center">
+                  <span className="text-base text-slate-300 font-medium">{csvFileName || 'คลิกเพื่อเลือกไฟล์ CSV'}</span>
+                  {!csvFileName && <p className="text-xs text-slate-500 mt-1">หรือลากไฟล์มาวางที่นี่</p>}
+                </div>
+                <input type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+              </label>
+            </div>
+
+            {/* CSV Preview */}
+            {csvData && (
+              <div className="animate-in fade-in slide-in-from-bottom-2">
+                <div className="flex items-center justify-between mb-3 text-sm">
+                  <span className="text-slate-300 font-medium">ตัวอย่างข้อมูล <span className="text-slate-500 font-normal">({csvData.rows.length} รายการ)</span></span>
+                </div>
+                <div className="max-h-60 overflow-auto border border-slate-700/50 rounded-xl bg-[#0f172a]/80 custom-scrollbar">
+                  <table className="w-full text-left text-xs whitespace-nowrap">
+                    <thead className="sticky top-0 bg-slate-800 text-slate-400 z-10 shadow-md">
+                      <tr>
+                        {csvData.headers.map((h, i) => <th key={i} className="px-4 py-3 font-medium border-b border-slate-700">{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {csvData.rows.slice(0, 10).map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-800/50 transition-colors">
+                          {csvData.headers.map((h, j) => (
+                            <td key={j} className="px-4 py-2 text-slate-300">{row[h]}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={handleCsvImport}
+                    disabled={csvImporting}
+                    className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white px-8 py-3 rounded-xl text-sm font-bold shadow-lg shadow-emerald-900/20 transition-all transform hover:-translate-y-0.5"
+                  >
+                    <Download className="w-5 h-5" />
+                    {csvImporting ? 'กำลังประมวลผลข้อมูล...' : `ยืนยันการนำเข้าข้อมูล`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Result */}
+            {csvResult && (
+              <div className={`rounded-xl p-6 border ${
+                csvResult.success
+                  ? 'bg-emerald-950/20 border-emerald-500/30'
+                  : 'bg-red-950/20 border-red-500/30'
+              }`}>
+                {csvResult.success ? (
+                  <div className="space-y-4">
+                    <p className="text-emerald-400 font-bold text-lg flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center"><Check className="w-5 h-5" /></div>
+                      นำเข้าข้อมูลสำเร็จเรียบร้อยแล้ว
+                    </p>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-slate-900/50 border border-emerald-900/50 rounded-xl p-4 flex flex-col items-center justify-center">
+                        <div className="text-3xl font-black text-emerald-400 mb-1">{csvResult.productsInserted}</div>
+                        <div className="text-xs font-medium text-slate-400 uppercase tracking-widest">เมนูใหม่</div>
+                      </div>
+                      <div className="bg-slate-900/50 border border-blue-900/50 rounded-xl p-4 flex flex-col items-center justify-center">
+                        <div className="text-3xl font-black text-blue-400 mb-1">{csvResult.menuPricesInserted}</div>
+                        <div className="text-xs font-medium text-slate-400 uppercase tracking-widest">ผูกราคาต่อช่องทาง</div>
+                      </div>
+                      <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 flex flex-col items-center justify-center">
+                        <div className="text-3xl font-black text-slate-300 mb-1">{csvResult.productsDuplicate}</div>
+                        <div className="text-xs font-medium text-slate-500 uppercase tracking-widest">ข้อมูลอัปเดตซ้ำ</div>
+                      </div>
+                      <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 flex flex-col items-center justify-center">
+                        <div className="text-3xl font-black text-slate-500 mb-1">{csvResult.skipped}</div>
+                        <div className="text-xs font-medium text-slate-500 uppercase tracking-widest">รายการที่ข้าม (ของเสีย/สต๊อก)</div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-red-400 flex items-center gap-2 font-medium">
+                    <AlertTriangle className="w-5 h-5" /> ข้อผิดพลาด: {csvResult.error}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Layout */}
+      <div className="bg-slate-900/60 border border-white/5 rounded-2xl shadow-xl overflow-hidden flex flex-col h-[800px] max-h-[80vh]">
+        
+        {/* Top bar: Tabs & Filters */}
+        <div className="p-4 border-b border-white/5 bg-slate-800/40">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            
+            {/* Elegant Segmented Tabs for Channels */}
+            <div className="flex gap-2 bg-slate-800/80 p-1.5 rounded-lg border border-slate-700 overflow-x-auto w-full md:w-auto">
+              {editableChannels.map(ch => {
+                const isActive = activeChannel === ch.id;
+                const count = menuPrices.filter(mp => mp.channel === ch.id && mp.is_available !== false).length;
+                return (
+                  <button
+                    key={ch.id}
+                    onClick={() => { setActiveChannel(ch.id); setSearchTerm(''); setFilterCat('all'); }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                      isActive
+                        ? 'bg-slate-900 text-amber-400 shadow'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{ch.emoji}</span> {ch.label}
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full ml-1 font-bold ${
+                      isActive ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Actions & Stats */}
+            <div className="flex items-center gap-4 text-sm font-medium">
+              <div className="flex items-center gap-4 text-slate-400 px-4 py-2 bg-slate-900/50 rounded-xl border border-white/5">
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500"></span> รวม {filteredProducts.length}</div>
+                <div className="w-px h-4 bg-slate-700"></div>
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span> เปิด {enabledCount}</div>
+                <div className="w-px h-4 bg-slate-700"></div>
+                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span> ปิด {filteredProducts.length - enabledCount}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Toolbar */}
+        <div className="px-5 py-3 border-b border-white/5 bg-slate-800/20 flex flex-wrap gap-3 items-center justify-between">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="relative max-w-xs w-full group">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" />
+              <input
+                type="text"
+                className="form-input w-full pl-9"
+                placeholder={`ค้นหาในช่องทาง ${activeChInfo?.label}...`}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <select
+              className="form-select"
+              value={filterCat}
+              onChange={e => setFilterCat(e.target.value)}
+              style={{ minWidth: '150px' }}
+            >
+              <option value="all">ทุกหมวดหมู่อาหาร</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          
+          <div className="flex bg-slate-900/50 rounded-xl p-1 border border-slate-700/50">
+            <button onClick={selectAll} className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-emerald-400 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">
+              <CheckSquare className="w-3.5 h-3.5" /> เปิดทั้งหมด
+            </button>
+            <div className="w-px bg-slate-700 my-1 mx-1"></div>
+            <button onClick={deselectAll} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">
+              <Square className="w-3.5 h-3.5" /> ปิดทั้งหมด
+            </button>
+          </div>
+        </div>
+
+        {/* Products Table Area */}
+        <div className="flex-1 overflow-auto custom-scrollbar bg-[#0B1120]">
+          <table className="w-full relative border-collapse">
+            <thead className="sticky top-0 bg-slate-900 shadow-md ring-1 ring-white/5 z-10">
+              <tr>
+                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider w-16">เปิดขาย</th>
+                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">รายการเมนู</th>
+                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider w-36">หมวดหมู่</th>
+                <th className="px-5 py-4 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider w-32 border-l border-white/5 bg-slate-800/30">ราคาหน้าร้าน</th>
+                <th className="px-5 py-4 text-right text-[11px] font-bold text-amber-400 uppercase tracking-wider w-48 bg-amber-900/10 border-l border-amber-500/20">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <span className="text-lg">{activeChInfo?.emoji}</span> ราคา {activeChInfo?.label}
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center text-slate-500">
+                    <UtensilsCrossed className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p>ไม่พบรายการเมนูที่ค้นหา</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map(prod => {
+                  const state = channelState[prod.id] || { is_available: false, price: '' };
+                  const catName = categories.find(c => c.id === prod.category_id)?.name || '';
+                  const isOn = state.is_available;
+
+                  return (
+                    <tr
+                      key={prod.id}
+                      className={`group transition-all duration-200 border-b border-slate-800/50 last:border-0 ${
+                        isOn
+                          ? 'bg-transparent hover:bg-slate-800/30'
+                          : 'bg-slate-900/80 hover:bg-slate-800/50 opacity-60'
+                      }`}
+                    >
+                      {/* Toggle */}
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => toggleProduct(prod.id)}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+                            isOn ? 'bg-amber-500' : 'bg-slate-700'
+                          }`}
+                        >
+                          <span className={`inline-block h-4 w-4 rounded-full bg-black shadow transition-transform ${
+                            isOn ? 'translate-x-[1.4rem]' : 'translate-x-1'
+                          }`} />
+                        </button>
+                      </td>
+
+                      {/* Name + image */}
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-4">
+                          {prod.image_url ? (
+                            <img src={prod.image_url} alt="" className={`w-10 h-10 rounded-lg object-cover ring-1 transition-all ${isOn ? 'ring-white/10 group-hover:ring-amber-500/50 shadow-lg' : 'ring-white/5 grayscale opacity-70'}`} />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center ring-1 ring-white/5">
+                              <UtensilsCrossed className="w-4 h-4 text-slate-600" />
+                            </div>
+                          )}
+                          <span className={`font-semibold text-sm transition-colors ${isOn ? 'text-slate-200 group-hover:text-white' : 'text-slate-500'}`}>{prod.name}</span>
+                        </div>
+                      </td>
+
+                      {/* Category */}
+                      <td className="px-5 py-3">
+                        {catName && <span className="text-[11px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700 px-2.5 py-1 rounded-md">{catName}</span>}
+                      </td>
+
+                      {/* Dine-in price (reference) */}
+                      <td className="px-5 py-3 text-right border-l border-white/5 bg-slate-800/10">
+                        <span className="text-slate-400 text-sm font-medium">฿{Number(prod.price).toLocaleString()}</span>
+                      </td>
+
+                      {/* Channel price */}
+                      <td className="px-5 py-3 text-right border-l border-white/5 bg-slate-900/40">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="relative flex-1 max-w-[120px] ml-auto">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-medium">฿</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className={`form-input w-full text-right py-1.5 pr-3 pl-8 !rounded-lg text-sm transition-colors ${
+                                isOn 
+                                  ? 'border-slate-600 focus:border-amber-500' 
+                                  : 'border-slate-700 cursor-not-allowed bg-slate-800 opacity-70'
+                              }`}
+                              style={{ fontWeight: isOn ? 600 : 400 }}
+                              placeholder={String(prod.price)}
+                              value={state.price}
+                              disabled={!isOn}
+                              onChange={e => setProductPrice(prod.id, e.target.value)}
+                            />
+                          </div>
+                          
+                          {/* Price diff indicator */}
+                          <div className="w-12 text-left">
+                            {state.price !== '' && state.price !== null && Number(state.price) !== Number(prod.price) && isOn ? (
+                              <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 ${
+                                Number(state.price) > Number(prod.price) ? 'text-emerald-400 ring-1 ring-emerald-500/30' : 'text-amber-400 ring-1 ring-amber-500/30'
+                              }`}>
+                                {Number(state.price) > Number(prod.price) ? '▲' : '▼'}
+                                {Math.abs(Number(state.price) - Number(prod.price))}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

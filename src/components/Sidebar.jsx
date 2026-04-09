@@ -21,6 +21,7 @@ import {
   UserCheck,
   UserCircle,
   ClipboardList,
+  ClipboardCheck,
 } from 'lucide-react';
 
 /** Map icon name strings → actual Lucide components */
@@ -43,6 +44,7 @@ const ICON_MAP = {
   UserCheck,
   UserCircle,
   ClipboardList,
+  ClipboardCheck,
 };
 
 export default function Sidebar() {
@@ -103,16 +105,16 @@ export default function Sidebar() {
         <div className="sidebar-user mb-4">
           <div className="sidebar-user-avatar">{user?.name?.charAt(0) || 'U'}</div>
           <div className="sidebar-user-info max-w-[120px]">
-            <div className="sidebar-user-name truncate text-slate-200">{user?.name || 'Guest'}</div>
-            <div className="sidebar-user-role text-xs text-slate-400">
+            <div className="sidebar-user-name truncate">{user?.name || 'Guest'}</div>
+            <div className="sidebar-user-role text-xs">
               {user ? ROLE_LABELS[user.role] || user.role : ''} <br/> 
-              <span className="text-[10px] text-violet-400">{user?.branch_name}</span>
+              <span className="text-[10px] text-[color:var(--accent-primary)]">{user?.branch_name}</span>
             </div>
           </div>
         </div>
         <button 
           onClick={logout}
-          className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10 text-sm font-medium"
+          className="w-full flex items-center justify-center gap-2 text-[color:var(--text-secondary)] hover:text-[color:var(--accent-danger)] transition-colors p-2 rounded-lg hover:bg-red-500/10 text-sm font-medium"
         >
           <LogOut className="w-4 h-4" /> ออกจากระบบ
         </button>

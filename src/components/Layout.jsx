@@ -11,7 +11,6 @@ const pageTitles = {
   '/pos': 'ขายหน้าร้าน (M3A)',
   '/sales-history': 'รายการขาย',
   '/expenses': 'ค่าใช้จ่าย (M3B)',
-  '/cash-ledger': 'เงินค้างกะ (M4)',
   '/ar-management': 'ลูกหนี้-AR (M5)',
   '/profit-dashboard': 'ตู้เซฟและกำไร (M6)',
   '/inventory': 'คลังสินค้า (M7A)',

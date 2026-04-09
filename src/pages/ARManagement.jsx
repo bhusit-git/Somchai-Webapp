@@ -7,6 +7,8 @@ export default function ARManagement() {
   const [arList, setArList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCustomer, setFilterCustomer] = useState('');
+  const [inlinePayments, setInlinePayments] = useState({});
   const [selectedAr, setSelectedAr] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
@@ -39,7 +41,8 @@ export default function ARManagement() {
       .from('accounts_receivable')
       .select(`
         *,
-        creator:users!created_by(name)
+        creator:users!created_by(name),
+        transaction:transactions!transaction_id(order_number, created_at)
       `)
       .eq('branch_id', currentBranchId)
       .order('created_at', { ascending: false });
@@ -177,11 +180,64 @@ export default function ARManagement() {
     }
   };
 
+  const uniqueCustomers = [...new Set(arList.map(ar => ar.customer_name))].filter(Boolean).sort();
+
   const filteredArList = arList.filter(ar => {
-    if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
-    return (ar.customer_name || '').toLowerCase().includes(term) || (ar.customer_company || '').toLowerCase().includes(term);
+    const matchSearch = !searchTerm || (ar.customer_name || '').toLowerCase().includes(term) || (ar.customer_company || '').toLowerCase().includes(term);
+    const matchCustomer = !filterCustomer || ar.customer_name === filterCustomer;
+    return matchSearch && matchCustomer;
   });
+
+  async function handleInlinePayment(ar) {
+    if (!currentUserId) return;
+    const paymentState = inlinePayments[ar.id] || {};
+    const pending = Number(ar.total_amount) - Number(ar.paid_amount);
+    
+    // Default to pending amount if they haven't typed anything
+    const amountStr = paymentState.amount !== undefined && paymentState.amount !== '' ? paymentState.amount : pending.toString();
+    const amountToPay = parseFloat(amountStr);
+    
+    if (isNaN(amountToPay) || amountToPay <= 0) {
+      alert('กรุณากรอกจำนวนเงินให้ถูกต้อง');
+      return;
+    }
+    if (amountToPay > pending) {
+      alert('จำนวนเงินเกินยอดคงค้าง');
+      return;
+    }
+
+    const method = paymentState.method || 'transfer';
+    const newPaidAmount = Number(ar.paid_amount) + amountToPay;
+    const isFullyPaid = newPaidAmount >= Number(ar.total_amount);
+
+    if (!window.confirm(`ยืนยันรับชำระเงินยอด ฿${amountToPay.toLocaleString(undefined, { minimumFractionDigits: 2 })} สำหรับลูกหนี้ "${ar.customer_name}" ?`)) return;
+
+    // Create payment record
+    const { error: paymentError } = await supabase.from('ar_payments').insert([{
+      ar_id: ar.id,
+      amount: amountToPay,
+      payment_method: method,
+      received_by: currentUserId
+    }]);
+
+    if (!paymentError) {
+      // Update AR status
+      await supabase.from('accounts_receivable').update({
+        paid_amount: newPaidAmount,
+        status: isFullyPaid ? 'paid' : 'partial'
+      }).eq('id', ar.id);
+
+      setInlinePayments(prev => {
+        const next = { ...prev };
+        delete next[ar.id];
+        return next;
+      });
+      fetchAR();
+    } else {
+      alert('เกิดข้อผิดพลาด: ' + paymentError.message);
+    }
+  }
 
   const activeArList = arList.filter(ar => ar.status !== 'cancelled');
   const totalPending = activeArList.reduce((sum, ar) => sum + (Number(ar.total_amount) - Number(ar.paid_amount)), 0);
@@ -221,9 +277,22 @@ export default function ARManagement() {
       <div className="content-card">
         <div className="card-header">
           <h3 className="card-title">รายการลูกหนี้การค้า (AR)</h3>
-          <div className="search-bar">
-            <Search size={16} />
-            <input type="text" placeholder="ค้นหาชื่อลูกค้า/บริษัท..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          <div className="flex gap-2 items-center flex-wrap">
+            <select 
+              className="form-control" 
+              style={{ width: '180px', height: '36px', padding: '0 12px', fontSize: '14px' }}
+              value={filterCustomer}
+              onChange={e => setFilterCustomer(e.target.value)}
+            >
+              <option value="">ลูกหนี้ทั้งหมด</option>
+              {uniqueCustomers.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <div className="search-bar" style={{ margin: 0 }}>
+              <Search size={16} />
+              <input type="text" placeholder="ค้นหาชื่อลูกค้า/บริษัท..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
           </div>
         </div>
 
@@ -232,7 +301,8 @@ export default function ARManagement() {
             <thead>
               <tr>
                 <th>ลูกค้า / บริษัท</th>
-                <th>วันที่สร้าง</th>
+                <th>เลขบิล</th>
+                <th>วันที่ขาย</th>
                 <th>วันกำหนดชำระ</th>
                 <th>ยอดรวม</th>
                 <th>ยอดคงค้าง</th>
@@ -242,9 +312,9 @@ export default function ARManagement() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="7" className="text-center">กำลังโหลด...</td></tr>
+                <tr><td colSpan="8" className="text-center">กำลังโหลด...</td></tr>
               ) : arList.length === 0 ? (
-                <tr><td colSpan="7" className="text-center text-muted">ไม่มีรายการลูกหนี้</td></tr>
+                <tr><td colSpan="8" className="text-center text-muted">ไม่มีรายการลูกหนี้</td></tr>
               ) : filteredArList.map(ar => {
                 const pending = Number(ar.total_amount) - Number(ar.paid_amount);
                 const currentStatus = calculateDerivedStatus(ar);
@@ -254,37 +324,63 @@ export default function ARManagement() {
                       <div><strong>{ar.customer_name}</strong></div>
                       <div className="text-xs text-muted">{ar.customer_company || '-'}</div>
                     </td>
-                    <td>{new Date(ar.created_at).toLocaleDateString('th-TH')}</td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '13px', fontWeight: 600 }}>
+                      {ar.transaction?.order_number || <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>-</span>}
+                    </td>
+                    <td>{new Date(ar.transaction?.created_at || ar.created_at).toLocaleDateString('th-TH')}</td>
                     <td>{new Date(ar.due_date + 'T00:00:00').toLocaleDateString('th-TH')}</td>
                     <td>฿{Number(ar.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td className="text-warning">฿{pending.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td>{getStatusBadge(currentStatus)}</td>
                     <td>
-                      {currentStatus !== 'paid' && currentStatus !== 'cancelled' && (
-                        <button 
-                          className="btn btn-sm btn-primary"
-                          onClick={() => {
-                            setSelectedAr(ar);
-                            setPaymentAmount(pending.toString());
-                            setShowPaymentModal(true);
-                          }}
-                        >
-                          รับชำระเงิน
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {currentStatus !== 'paid' && currentStatus !== 'cancelled' && (
+                          <div className="flex items-center gap-1 bg-tertiary p-1 rounded-md border border-slate-200 dark:border-slate-700">
+                            <input 
+                              type="number" 
+                              className="form-control" 
+                              style={{ width: '90px', height: '28px', padding: '0 8px', fontSize: '13px' }}
+                              placeholder={pending.toString()}
+                              value={inlinePayments[ar.id]?.amount !== undefined ? inlinePayments[ar.id].amount : ''}
+                              onChange={e => setInlinePayments(prev => ({...prev, [ar.id]: { ...(prev[ar.id] || {}), amount: e.target.value }}))}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleInlinePayment(ar);
+                              }}
+                              min="0"
+                              step="0.01"
+                            />
+                            <select 
+                              className="form-control"
+                              style={{ width: '90px', height: '28px', padding: '0 4px', fontSize: '13px' }}
+                              value={inlinePayments[ar.id]?.method || 'transfer'}
+                              onChange={e => setInlinePayments(prev => ({...prev, [ar.id]: { ...(prev[ar.id] || {}), method: e.target.value }}))}
+                            >
+                              <option value="transfer">โอนเงิน</option>
+                              <option value="cash">เงินสด</option>
+                              <option value="credit_card">บัตร</option>
+                            </select>
+                            <button 
+                              className="btn btn-sm btn-primary h-7 min-h-0 px-2 flex items-center"
+                              onClick={() => handleInlinePayment(ar)}
+                            >
+                              <CheckCircle size={14} className="mr-1" /> บันทึก
+                            </button>
+                          </div>
+                        )}
+                        {Number(ar.paid_amount) > 0 && (
+                          <button className="btn btn-sm btn-ghost text-info h-8 w-8 p-0 flex items-center justify-center" onClick={() => handleViewHistory(ar)} title="ดูประวัติการชำระ">
+                            <History size={16} />
+                          </button>
+                        )}
+                        <button className="btn btn-sm btn-ghost h-8 w-8 p-0 flex items-center justify-center" onClick={() => handleViewItems(ar)} title="ดูรายการสินค้า">
+                          <FileText size={16} />
                         </button>
-                      )}
-                      {Number(ar.paid_amount) > 0 && (
-                        <button className="btn btn-sm btn-ghost text-info" onClick={() => handleViewHistory(ar)} style={{ marginLeft: '4px' }} title="ดูประวัติการชำระ">
-                          <History size={14} />
-                        </button>
-                      )}
-                      <button className="btn btn-sm btn-ghost" onClick={() => handleViewItems(ar)} style={{ marginLeft: '4px' }} title="ดูรายการสินค้า">
-                        <FileText size={14} />
-                      </button>
-                      {currentStatus !== 'paid' && currentStatus !== 'cancelled' && (
-                        <button className="btn btn-sm btn-ghost text-error" onClick={() => handleCancelAR(ar)} style={{ marginLeft: '4px' }} title="ยกเลิกหนี้">
-                          <Ban size={14} />
-                        </button>
-                      )}
+                        {currentStatus !== 'paid' && currentStatus !== 'cancelled' && (
+                          <button className="btn btn-sm btn-ghost text-error h-8 w-8 p-0 flex items-center justify-center" onClick={() => handleCancelAR(ar)} title="ยกเลิกหนี้">
+                            <Ban size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

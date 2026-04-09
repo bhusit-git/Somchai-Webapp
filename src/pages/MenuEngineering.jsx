@@ -219,8 +219,7 @@ export default function MenuEngineering() {
       // 1. Products
       const { data: products } = await supabase
         .from('products')
-        .select('id, name, price, cost')
-        .eq('is_available', true);
+        .select('id, name, price, cost, is_available');
 
       if (!products?.length) {
         setMenus([]); setMatrixData({ stars: 0, plowHorses: 0, puzzles: 0, dogs: 0, avgQtySold: 0, avgMargin: 0 });

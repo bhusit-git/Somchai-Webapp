@@ -20,7 +20,6 @@ import Attendance from './pages/Attendance';
 import Shifts from './pages/Shifts';
 import POS from './pages/POS';
 import Expenses from './pages/Expenses';
-import CashLedger from './pages/CashLedger';
 import ARManagement from './pages/ARManagement';
 import ProfitDashboard from './pages/ProfitDashboard';
 import Inventory from './pages/Inventory';
@@ -35,6 +34,7 @@ import Settings from './pages/Settings';
 import RecipeManagement from './pages/RecipeManagement';
 import Profile from './pages/Profile';
 import SalesHistory from './pages/SalesHistory';
+import DailyReconciliation from './pages/DailyReconciliation';
 import { ROUTE_PERMISSIONS } from './config/roles';
 
 export default function App() {
@@ -52,9 +52,9 @@ export default function App() {
               <Route path="pos" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/pos']}><POS /></ProtectedRoute>} />
               <Route path="sales-history" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/sales-history']}><SalesHistory /></ProtectedRoute>} />
               <Route path="expenses" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/expenses']}><Expenses /></ProtectedRoute>} />
-              <Route path="cash-ledger" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/cash-ledger']}><CashLedger /></ProtectedRoute>} />
               <Route path="ar-management" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/ar-management']}><ARManagement /></ProtectedRoute>} />
               <Route path="profit-dashboard" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/profit-dashboard']}><ProfitDashboard /></ProtectedRoute>} />
+              <Route path="reconciliation" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/reconciliation']}><DailyReconciliation /></ProtectedRoute>} />
               <Route path="inventory" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/inventory']}><Inventory /></ProtectedRoute>} />
               <Route path="purchase-orders" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/purchase-orders']}><PurchaseOrders /></ProtectedRoute>} />
               <Route path="stock-receiving" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/stock-receiving']}><StockReceiving /></ProtectedRoute>} />

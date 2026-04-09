@@ -12,6 +12,8 @@ import {
   AlertCircle,
   TrendingUp,
   TrendingDown,
+  Edit,
+  Trash2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -133,7 +135,7 @@ function PayslipPrintView({ payslip, employee }) {
   const netPay = totalIncome - totalDeductions;
   const cashPaid = payslip.cashPaid || 0;
   const clockInCount = payslip.clockInCount || 0;
-  const bankTransfer = Math.max(0, netPay - cashPaid);
+  const bankTransfer = Math.max(0, netPay);
 
   const printStyle = {
     background: '#ffffff',
@@ -299,11 +301,11 @@ function PayslipPrintView({ payslip, employee }) {
       </div>
 
       {/* Signature Area */}
-      <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '60px', paddingBottom: '20px' }}>
         {['ลายเซ็นผู้รับเงิน', 'ลายเซ็นฝ่ายบัญชี', 'ลายเซ็นผู้อนุมัติ'].map((label) => (
           <div key={label} style={{ textAlign: 'center' }}>
-            <div style={{ borderTop: '1px solid #000', width: '160px', marginBottom: '8px', paddingTop: '40px' }}></div>
-            <div style={{ fontSize: '13px' }}>{label}</div>
+            <div style={{ borderTop: '1px solid #333', width: '160px', marginBottom: '8px' }}></div>
+            <div style={{ fontSize: '13px', color: '#555' }}>{label}</div>
           </div>
         ))}
       </div>
@@ -366,8 +368,18 @@ function EPayslipTab({ role }) {
         })
         .map(u => {
           const payCycle = u.pay_cycle || 'monthly';
-          const uAtt = attData.filter(a => a.user_id === u.id);
-          const clockInCount = uAtt.length;
+          const uAttAll = attData.filter(a => a.user_id === u.id);
+          
+          // shiftCount = total clock_ins (each clock_in = 1 shift worked, used for income)
+          const shiftCount = uAttAll.length;
+          
+          // uniqueDayCount = unique calendar days worked (used for cash advance & display label)
+          const uniqueDaysSet = new Set();
+          uAttAll.forEach(att => {
+            uniqueDaysSet.add(new Date(att.timestamp).toDateString());
+          });
+          const uniqueDayCount = uniqueDaysSet.size;
+          
           const customRates = u.custom_rates || {};
           const hasCustomRates = Object.keys(customRates).length > 0;
 
@@ -375,17 +387,19 @@ function EPayslipTab({ role }) {
           let incomeLabel = '';
           if (u.employment_type === 'daily') {
             if (hasCustomRates) {
-              basicIncome = uAtt.reduce((sum, att) => {
+              // For custom rates, sum the rate for each shift based on the day of week
+              basicIncome = uAttAll.reduce((sum, att) => {
                 const dayOfWeek = new Date(att.timestamp).getDay();
                 const rate = customRates[dayOfWeek] !== undefined
                   ? Number(customRates[dayOfWeek])
                   : (u.daily_rate || 0);
                 return sum + rate;
               }, 0);
-              incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน, อัตราแยกตามวัน)`;
+              incomeLabel = 'ค่าจ้างรายวัน';
             } else {
-              basicIncome = clockInCount * (u.daily_rate || 0);
-              incomeLabel = `ค่าจ้างรายวัน (${clockInCount} วัน)`;
+              // Each clock_in = 1 shift = daily_rate per shift
+              basicIncome = shiftCount * (u.daily_rate || 0);
+              incomeLabel = 'ค่าจ้างรายวัน';
             }
           } else {
             // Salary employee:
@@ -399,28 +413,29 @@ function EPayslipTab({ role }) {
               incomeLabel = 'เงินเดือน (Base Salary)';
             }
           }
-
           const uAdj = adjData.filter(a => a.user_id === u.id);
           const incomes = uAdj.filter(a => a.adjust_type === 'income');
           const deductions = uAdj.filter(a => a.adjust_type === 'deduction');
 
-          let totalCashPaidForPeriod = 0;
-
-          if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && clockInCount > 0) {
-            const advanceTotal = clockInCount * u.daily_cash_advance;
-            deductions.push({ label: `เบิกเงินสดรายวัน (${clockInCount} วัน × ${u.daily_cash_advance.toLocaleString()} บาท)`, amount: advanceTotal });
-            totalCashPaidForPeriod += advanceTotal;
+          const positionAllowance = Number(u.position_allowance) || 0;
+          let allowanceToPay = 0;
+          if (positionAllowance > 0 && !isMid) {
+             allowanceToPay = positionAllowance;
+             
+             if (allowanceToPay > 0) {
+               incomes.unshift({ label: 'ค่าตำแหน่ง', amount: Math.round(allowanceToPay) });
+             }
           }
 
-          // Also count manual cash advances towards cashPaid (but NOT penalties like 'หักเงินสดหน้างาน')
-          deductions.forEach(d => {
-            if (d.label === 'เบิกล่วงหน้า') {
-              totalCashPaidForPeriod += Number(d.amount);
-            }
-            if (d.label === 'หักเงินสดหน้างาน') {
-              totalCashPaidForPeriod -= Number(d.amount); // Penalty directly reduces the cash handed out
-            }
-          });
+
+          let totalCashPaidForPeriod = 0;
+
+          // Cash advance is per CALENDAR DAY (not per shift)
+          if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && uniqueDayCount > 0) {
+            const advanceTotal = uniqueDayCount * u.daily_cash_advance;
+            deductions.push({ label: 'เบิกเงินสดรายวัน', amount: advanceTotal });
+            totalCashPaidForPeriod += advanceTotal;
+          }
 
           totalCashPaidForPeriod = Math.max(0, totalCashPaidForPeriod);
 
@@ -449,7 +464,7 @@ function EPayslipTab({ role }) {
             deductions: deductions.map(d => ({ label: d.label, amount: d.amount })),
             cashPaid: totalCashPaidForPeriod,
             dailyCashAdvanceRate: u.daily_cash_advance || 0,
-            clockInCount,
+            clockInCount: uniqueDayCount,
             cumulativeIncome: basicIncome
           };
         });
@@ -822,8 +837,13 @@ function SalaryAdjTab({ user: currentUser }) {
   const [adjustments, setAdjustments] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ user_id: '', adjType: 'income', label: '', amount: '', note: '' });
+  const getTodayStr = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const [form, setForm] = useState({ user_id: '', adjType: 'income', label: '', amount: '', note: '', action_date: getTodayStr() });
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -851,44 +871,87 @@ function SalaryAdjTab({ user: currentUser }) {
     deduction: ['หักเงินสดหน้างาน', 'ค่าเสียหาย', 'ลาไม่รับค่าจ้าง', 'เบิกล่วงหน้า', 'ขาด/สาย', 'รายการหักอื่นๆ'],
   };
 
+  const handleEdit = (adj) => {
+    setEditingId(adj.id);
+    setForm({
+      user_id: adj.user_id,
+      adjType: adj.adjust_type,
+      label: adj.label,
+      amount: adj.amount,
+      note: adj.note || '',
+      action_date: adj.action_date.substring(0, 10)
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('ยืนยันที่จะลบรายการนี้?')) return;
+    const { error } = await supabase.from('hr_salary_adjustments').delete().eq('id', id);
+    if (error) {
+      alert('เกิดข้อผิดพลาดในการลบ: ' + error.message);
+    } else {
+      loadData();
+    }
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     if (!form.user_id || !form.label || !form.amount) return alert('กรอกข้อมูลไม่ครบถ้วน');
-    const now = new Date();
-    const actionDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const actionDate = form.action_date || getTodayStr();
     const amt = Math.abs(parseFloat(form.amount));
-    const { error } = await supabase.from('hr_salary_adjustments').insert({
-      user_id: form.user_id,
-      adjust_type: form.adjType,
-      label: form.label,
-      amount: amt,
-      note: form.note || null,
-      action_date: actionDate
-    });
-    if (error) {
-      alert('เกิดข้อผิดพลาด: ' + error.message);
-    } else {
-      // Auto-create expense record ONLY for cash advance (cash given OUT to employee)
-      if (form.adjType === 'deduction' && form.label === 'เบิกล่วงหน้า') {
-        const targetUser = users.find(u => u.id === form.user_id);
-        const expenseDesc = `${form.label} - ${targetUser?.name || 'พนักงาน'}${form.note ? ': ' + form.note : ''}`;
-        await supabase.from('expenses').insert({
-          branch_id: currentUser?.branch_id || null,
-          created_by: currentUser?.id || null,
-          category: 'ค่าแรง/เงินเดือน',
-          description: expenseDesc,
-          amount: amt,
-          payment_method: 'cash',
-          expense_type: 'planned',
-          status: 'approved',
-          approved_by: currentUser?.id || null,
-          approved_at: new Date().toISOString(),
-          notes: `ลงรายการอัตโนมัติจากระบบ Payroll - ${actionDate}`
-        });
+    
+    if (editingId) {
+      const { error } = await supabase.from('hr_salary_adjustments').update({
+        user_id: form.user_id,
+        adjust_type: form.adjType,
+        label: form.label,
+        amount: amt,
+        note: form.note || null,
+        action_date: actionDate
+      }).eq('id', editingId);
+
+      if (error) {
+        alert('เกิดข้อผิดพลาด: ' + error.message);
+      } else {
+        setEditingId(null);
+        setShowForm(false);
+        setForm(f => ({ ...f, amount: '', note: '', action_date: getTodayStr() }));
+        loadData();
       }
-      setShowForm(false);
-      setForm(f => ({ ...f, amount: '', note: '' }));
-      loadData();
+    } else {
+      const { error } = await supabase.from('hr_salary_adjustments').insert({
+        user_id: form.user_id,
+        adjust_type: form.adjType,
+        label: form.label,
+        amount: amt,
+        note: form.note || null,
+        action_date: actionDate
+      });
+      if (error) {
+        alert('เกิดข้อผิดพลาด: ' + error.message);
+      } else {
+        // Auto-create expense record ONLY for cash advance (cash given OUT to employee)
+        if (form.adjType === 'deduction' && form.label === 'เบิกล่วงหน้า') {
+          const targetUser = users.find(u => u.id === form.user_id);
+          const expenseDesc = `${form.label} - ${targetUser?.name || 'พนักงาน'}${form.note ? ': ' + form.note : ''}`;
+          await supabase.from('expenses').insert({
+            branch_id: currentUser?.branch_id || null,
+            created_by: currentUser?.id || null,
+            category: 'ค่าแรง/เงินเดือน',
+            description: expenseDesc,
+            amount: amt,
+            payment_method: 'cash',
+            expense_type: 'planned',
+            status: 'approved',
+            approved_by: currentUser?.id || null,
+            approved_at: new Date().toISOString(),
+            notes: `ลงรายการอัตโนมัติจากระบบ Payroll - ${actionDate}`
+          });
+        }
+        setShowForm(false);
+        setForm(f => ({ ...f, amount: '', note: '', action_date: getTodayStr() }));
+        loadData();
+      }
     }
   };
 
@@ -905,7 +968,7 @@ function SalaryAdjTab({ user: currentUser }) {
 
       {showForm && (
         <form onSubmit={handleAdd} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
-          <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px' }}>เพิ่มรายการบวก/หัก</div>
+          <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px' }}>{editingId ? 'แก้ไขรายการ' : 'เพิ่มรายการบวก/หัก'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
               <label style={{ fontSize: '12px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>พนักงาน</label>
@@ -931,6 +994,10 @@ function SalaryAdjTab({ user: currentUser }) {
               <label style={{ fontSize: '12px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>จำนวนเงิน (฿)</label>
               <input type="number" step="0.01" required placeholder="0.00" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} style={inputStyle} />
             </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>วันที่ปรับปรุง</label>
+              <input type="date" required value={form.action_date} onChange={e => setForm({ ...form, action_date: e.target.value })} style={inputStyle} />
+            </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={{ fontSize: '12px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>หมายเหตุ</label>
               <input type="text" placeholder="ระบุเหตุผล/รายละเอียด..." value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} style={inputStyle} />
@@ -938,7 +1005,7 @@ function SalaryAdjTab({ user: currentUser }) {
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
             <button type="submit" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', fontWeight: '600' }}>บันทึก</button>
-            <button type="button" onClick={() => setShowForm(false)} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
+            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm(f => ({ ...f, amount: '', note: '', action_date: getTodayStr() })); }} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
           </div>
         </form>
       )}
@@ -960,8 +1027,18 @@ function SalaryAdjTab({ user: currentUser }) {
                   {adj.note && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>หมายเหตุ: {adj.note}</div>}
                 </div>
               </div>
-              <div style={{ fontWeight: '900', fontSize: '18px', color: adj.adjust_type === 'income' ? '#16a34a' : '#ef4444' }}>
-                {adj.adjust_type === 'income' ? '+' : '-'}฿{Number(adj.amount).toLocaleString()}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ fontWeight: '900', fontSize: '18px', color: adj.adjust_type === 'income' ? '#16a34a' : '#ef4444', textAlign: 'right' }}>
+                  {adj.adjust_type === 'income' ? '+' : '-'}฿{Number(adj.amount).toLocaleString()}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => handleEdit(adj)} title="แก้ไข" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
+                    <Edit size={16} />
+                  </button>
+                  <button onClick={() => handleDelete(adj.id)} title="ลบ" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -34,10 +34,22 @@ export default function ProfitDashboard() {
     const endStr = new Date(new Date(`${currentMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${currentMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
 
     // 1. Fetch Manager Safe
-    const { data: safeData } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).single();
-    if (safeData) {
-      setSafe(safeData);
-      const { data: txData } = await supabase.from('safe_transactions').select('*, creator:users!created_by(name)').eq('safe_id', safeData.id).order('created_at', { ascending: false }).limit(20);
+    const { data: safeData, error: safeError } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
+    
+    let currentSafe = safeData;
+
+    // Auto-create safe if it doesn't exist for this branch
+    if (!currentSafe && !safeError) {
+      const { data: newSafe } = await supabase.from('manager_safes').insert({
+        branch_id: currentBranchId,
+        balance: 0,
+      }).select().single();
+      currentSafe = newSafe;
+    }
+
+    if (currentSafe) {
+      setSafe(currentSafe);
+      const { data: txData } = await supabase.from('safe_transactions').select('*, creator:users!created_by(name)').eq('safe_id', currentSafe.id).order('created_at', { ascending: false }).limit(20);
       setTransactions(txData || []);
     }
 
@@ -48,12 +60,17 @@ export default function ProfitDashboard() {
 
     // 3. Fetch Revenue (เดือนปัจจุบัน)
     const { data: revData } = await supabase.from('transactions')
-      .select('total')
+      .select('total, status')
       .eq('branch_id', currentBranchId)
-      .eq('status', 'completed')
       .gte('created_at', startStr)
       .lte('created_at', endStr);
-    const totalRev = revData?.reduce((s, row) => s + Number(row.total), 0) || 0;
+      
+    let totalRev = 0;
+    (revData || []).forEach(row => {
+      const amt = Number(row.total || 0);
+      if (amt < 0) totalRev += amt;
+      else if (row.status === 'completed') totalRev += amt;
+    });
     setRevenue(totalRev);
 
     // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
@@ -158,47 +175,51 @@ export default function ProfitDashboard() {
         </p>
       </div>
 
-      {/* P&L Cards */}
-      <h4 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '12px' }}>📊 สรุปกำไรสุทธิตามกระแสเงินสด (Cash P&L) - เดือนปัจจุบัน</h4>
-      <div className="stats-grid mb-6">
-        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-sm font-semibold text-muted">ยอดยกมา (Revenue)</h3>
-            <DollarSign size={20} className="text-info" />
-          </div>
-          <p className="text-2xl text-info font-bold">฿{revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-muted">รายได้ทั้งหมดจากบิลที่ขายแล้ว</p>
-        </div>
+      {/* P&L Cards - Hidden from Store Manager */}
+      {['owner', 'manager'].includes(user?.role) && (
+        <>
+          <h4 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '12px' }}>📊 สรุปกำไรสุทธิตามกระแสเงินสด (Cash P&L) - เดือนปัจจุบัน</h4>
+          <div className="stats-grid mb-6">
+            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-sm font-semibold text-muted">ยอดยกมา (Revenue)</h3>
+                <DollarSign size={20} className="text-info" />
+              </div>
+              <p className="text-2xl text-info font-bold">฿{revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">รายได้ทั้งหมดจากบิลที่ขายแล้ว</p>
+            </div>
 
-        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-sm font-semibold text-muted">รายจ่ายร้าน (Purchases & OPEX)</h3>
-            <TrendingDown size={20} className="text-danger" />
-          </div>
-          <p className="text-2xl text-danger font-bold">-฿{opexAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = false ({opexDetails.length} รายการ)</p>
-        </div>
+            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-sm font-semibold text-muted">รายจ่ายร้าน (Purchases & OPEX)</h3>
+                <TrendingDown size={20} className="text-danger" />
+              </div>
+              <p className="text-2xl text-danger font-bold">-฿{opexAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = false ({opexDetails.length} รายการ)</p>
+            </div>
 
-        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-sm font-semibold text-muted">ต้นทุนคงที่ (Fixed Costs)</h3>
-            <Layers size={20} className="text-warning" />
-          </div>
-          <p className="text-2xl text-warning font-bold">-฿{fixedCostAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = true ({fixedCostDetails.length} รายการ)</p>
-        </div>
+            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-sm font-semibold text-muted">ต้นทุนคงที่ (Fixed Costs)</h3>
+                <Layers size={20} className="text-warning" />
+              </div>
+              <p className="text-2xl text-warning font-bold">-฿{fixedCostAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = true ({fixedCostDetails.length} รายการ)</p>
+            </div>
 
-        <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-          <div className="flex items-center justify-between w-full">
-            <h3 className="text-sm font-bold" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>กำไรสุทธิ (Net Profit)</h3>
-            {netProfit >= 0 ? <TrendingUp size={20} className="text-success" /> : <TrendingDown size={20} className="text-danger" />}
+            <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-sm font-bold" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>กำไรสุทธิ (Net Profit)</h3>
+                {netProfit >= 0 ? <TrendingUp size={20} className="text-success" /> : <TrendingDown size={20} className="text-danger" />}
+              </div>
+              <p className="text-2xl" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 800 }}>
+                {netProfit >= 0 ? '+' : '-'}฿{Math.abs(netProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </p>
+              <div style={{ height: '4px', background: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', borderRadius: '2px', marginTop: 'auto' }} />
+            </div>
           </div>
-          <p className="text-2xl" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 800 }}>
-            {netProfit >= 0 ? '+' : '-'}฿{Math.abs(netProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </p>
-          <div style={{ height: '4px', background: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', borderRadius: '2px', marginTop: 'auto' }} />
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Safe Section */}
       <div className="card mb-6" style={{ background: 'linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary))', border: '1px solid var(--border-primary)' }}>
@@ -228,8 +249,9 @@ export default function ProfitDashboard() {
         </div>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '20px' }}>
-        {/* Fixed Cost — Auto-pull from expenses */}
+      <div className="grid" style={{ gridTemplateColumns: ['owner', 'manager'].includes(user?.role) ? '1fr 1fr' : '1fr', gap: '20px', marginTop: '20px' }}>
+        {/* Fixed Cost — Auto-pull from expenses - Hidden from Store Manager */}
+        {['owner', 'manager'].includes(user?.role) && (
         <div className="content-card">
           <div className="card-header">
             <h3 className="card-title">🏷️ ต้นทุนคงที่รายเดือน (Auto) — {currentMonth}</h3>
@@ -284,6 +306,7 @@ export default function ProfitDashboard() {
             </table>
           </div>
         </div>
+        )}
 
         {/* Safe Transactions */}
         <div className="content-card">

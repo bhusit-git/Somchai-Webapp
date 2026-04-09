@@ -54,7 +54,7 @@ export default function RecipeManagement() {
     setLoading(true);
     try {
       const [menuRes, invRes] = await Promise.all([
-        supabase.from('products').select('*').eq('is_available', true).order('name'),
+        supabase.from('products').select('*').order('name'),
         supabase.from('inventory_items')
           .select('*')
           .eq('is_active', true)

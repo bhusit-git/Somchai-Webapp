@@ -12,7 +12,8 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
   { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
   { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
-  { value: 'delivery',  label: 'Delivery',       icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'Grab',      label: 'Grab',           icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
+  { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
 ];
 
@@ -137,6 +138,7 @@ export default function POS() {
   const [activeSalesChannel, setActiveSalesChannel] = useState('dine_in');
   const [menuPrices, setMenuPrices] = useState({});
   const { user } = useAuth();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // ── Promotions state ──
   const [promotions, setPromotions] = useState([]);
@@ -194,7 +196,8 @@ export default function POS() {
   function isAvailable(product) {
     if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
       const mp = menuPrices[product.id]?.[activeSalesChannel];
-      if (mp && mp.is_available === false) return false;
+      // For delivery channels: product must have an explicit menu_prices record with is_available = true
+      if (!mp || mp.is_available === false) return false;
     }
     return true;
   }
@@ -296,9 +299,10 @@ export default function POS() {
 
   const selectedMethodObj = paymentMethods.find(m => m.value === paymentMethod);
   const configuredDeliveryFee = Number(selectedMethodObj?.deliveryFee) || 0;
-  const deliveryFee = (paymentMethod === 'delivery' && deliveryType === 'express') ? configuredDeliveryFee : 0;
+  const deliveryFee = (configuredDeliveryFee > 0 && deliveryType === 'express') ? configuredDeliveryFee : 0;
   const total = Math.max(0, subtotal - totalDiscount + deliveryFee);
-  const changeAmount = paymentMethod === 'cash' ? Math.max(0, (parseFloat(cashReceived) || 0) - total) : 0;
+  const effectiveCashReceived = paymentMethod === 'cash' ? (parseFloat(cashReceived) || total) : 0;
+  const changeAmount = paymentMethod === 'cash' ? Math.max(0, effectiveCashReceived - total) : 0;
 
   // ── Item Discount Modal Handlers ──
   function openItemDiscountModal(productId) {
@@ -350,21 +354,31 @@ export default function POS() {
     if (paymentMethod === 'credit' && !selectedCustomer) {
       return alert('กรุณาเลือกลูกค้าสำหรับการขายเงินเชื่อ (AR)');
     }
+    
+    if (isProcessing) return;
+    setIsProcessing(true);
+    
+    try {
+      const { data: shifts } = await supabase.from('shifts').select('id, branch_id').eq('status', 'open').limit(1);
+      if (!shifts?.length) {
+        alert('ไม่มีกะที่เปิดอยู่ กรุณาเปิดกะก่อนขาย');
+        return;
+      }
 
-    const { data: shifts } = await supabase.from('shifts').select('id, branch_id').eq('status', 'open').limit(1);
-    if (!shifts?.length) return alert('ไม่มีกะที่เปิดอยู่ กรุณาเปิดกะก่อนขาย');
+      const shift = shifts[0];
+      const userId = user?.id;
+      if (!userId) {
+        alert('ไม่พบข้อมูลพนักงาน');
+        return;
+      }
 
-    const shift = shifts[0];
-    const userId = user?.id;
-    if (!userId) return alert('ไม่พบข้อมูลพนักงาน');
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const todayOrdPrefix = `ORD-${todayStr}-`;
+      const { data: latestOrd } = await supabase
+        .from('transactions').select('order_number').eq('branch_id', shift.branch_id)
+        .like('order_number', `${todayOrdPrefix}%`).order('order_number', { ascending: false }).limit(1).maybeSingle();
 
-    const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const todayOrdPrefix = `ORD-${todayStr}-`;
-    const { data: latestOrd } = await supabase
-      .from('transactions').select('order_number').eq('branch_id', shift.branch_id)
-      .like('order_number', `${todayOrdPrefix}%`).order('order_number', { ascending: false }).limit(1).maybeSingle();
-
-    let nextOrdSeq = 1;
+      let nextOrdSeq = 1;
     if (latestOrd?.order_number?.startsWith(todayOrdPrefix)) {
       const lastNum = parseInt(latestOrd.order_number.substring(todayOrdPrefix.length), 10);
       if (!isNaN(lastNum)) nextOrdSeq = lastNum + 1;
@@ -412,11 +426,33 @@ export default function POS() {
       if (customer) {
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + (customer.ar_reminder_days || 30));
-        await supabase.from('accounts_receivable').insert({
-          branch_id: shift.branch_id, customer_name: customer.name, customer_company: customer.company,
-          total_amount: total, paid_amount: 0, due_date: dueDate.toISOString().split('T')[0],
-          status: 'pending', created_by: userId, transaction_id: txData.id
-        });
+        
+        let arPayload = {
+          branch_id: shift.branch_id, 
+          customer_name: customer.name, 
+          customer_company: customer.company,
+          total_amount: total, 
+          paid_amount: 0, 
+          due_date: dueDate.toISOString().split('T')[0],
+          status: 'pending', 
+          created_by: userId, 
+          transaction_id: txData.id
+        };
+
+        let { error: arError } = await supabase.from('accounts_receivable').insert(arPayload);
+        
+        // Fallback for missing transaction_id migration
+        if (arError && arError.message && (arError.message.includes('transaction_id') || arError.message.includes('column'))) {
+          console.warn('transaction_id column might be missing. Trying without it...', arError);
+          delete arPayload.transaction_id;
+          const fallback = await supabase.from('accounts_receivable').insert(arPayload);
+          arError = fallback.error;
+        }
+
+        if (arError) {
+          alert('ไม่สามารถบันทึกข้อมูลลูกหนี้ได้: ' + arError.message);
+          console.error('AR Insert Error:', arError);
+        }
       }
     }
 
@@ -453,7 +489,7 @@ export default function POS() {
       paymentMethod,
       gpPercent: selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0,
       gpAmount: (total * (selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0)) / 100,
-      cashReceived: paymentMethod === 'cash' ? parseFloat(cashReceived) : null,
+      cashReceived: paymentMethod === 'cash' ? effectiveCashReceived : null,
       changeAmount: paymentMethod === 'cash' ? changeAmount : null,
       customerName: paymentMethod === 'credit' && selectedCustomer ? customers.find(c => c.id === selectedCustomer)?.name : null,
       user_name: user?.user_metadata?.name || user?.email || 'Cashier',
@@ -470,6 +506,10 @@ export default function POS() {
     setCart([]); setShowPayment(false); setCashReceived('');
     setSelectedCustomer(''); setPaymentMethod('cash'); setDeliveryType('round');
     setItemDiscounts({}); setBillDiscount(null);
+    
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   return (
@@ -743,7 +783,7 @@ export default function POS() {
                 })}
               </div>
 
-              {paymentMethod === 'delivery' && configuredDeliveryFee > 0 && (
+              {configuredDeliveryFee > 0 && (
                 <div className="form-group">
                   <label className="form-label">ประเภทการส่ง</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
@@ -776,9 +816,15 @@ export default function POS() {
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowPayment(false)}>ยกเลิก</button>
-              <button className="btn btn-success btn-lg" onClick={handleCheckout}>✅ ยืนยันชำระเงิน</button>
+            <div className="flex gap-2 w-full mt-4">
+              <button className="btn btn-ghost flex-1" onClick={() => setShowPayment(false)}>ยกเลิก</button>
+              <button 
+                className={`btn btn-success btn-lg flex-[2] flex items-center justify-center gap-2 ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''}`} 
+                onClick={handleCheckout}
+                disabled={isProcessing}
+              >
+                {isProcessing ? 'กำลังประมวลผล...' : '✅ ยืนยันชำระเงิน'}
+              </button>
             </div>
           </div>
         </div>
@@ -786,7 +832,7 @@ export default function POS() {
 
       {/* Receipt Modal */}
       {showReceipt && receiptData && (
-        <div className="modal-overlay">
+        <div className="modal-overlay" onClick={() => setShowReceipt(false)}>
           <style>{`
             @media print {
               body * { visibility: hidden; }
@@ -795,7 +841,8 @@ export default function POS() {
               .modal-overlay { background: transparent; }
             }
           `}</style>
-          <div className="modal" style={{ maxWidth: '380px', padding: 0, overflow: 'hidden' }}>
+          <div className="modal" style={{ maxWidth: '380px', padding: 0, overflow: 'auto', maxHeight: '90vh', position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowReceipt(false)} style={{ position: 'sticky', top: '8px', right: '8px', float: 'right', zIndex: 10, background: 'rgba(0,0,0,0.15)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333', marginRight: '8px', marginTop: '8px' }}>✕</button>
             <div id="receipt-print-area" style={{ padding: '24px', background: '#fff', color: '#000', fontFamily: 'monospace, sans-serif' }}>
               <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                 {companyInfo?.logo ? (

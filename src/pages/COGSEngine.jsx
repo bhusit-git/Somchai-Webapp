@@ -128,8 +128,7 @@ export default function COGSEngine() {
       // === 1. Products (master data with BOM cost) ===
       const { data: products } = await supabase
         .from('products')
-        .select('id, name, price, cost')
-        .eq('is_available', true);
+        .select('id, name, price, cost, is_available');
 
       // === 2. Transaction items in date range ===
       const { data: txItems } = await supabase

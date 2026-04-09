@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Webcam from 'react-webcam';
-import { Clock, LogIn, LogOut, Camera, UserCheck, Plus, Calendar, X, RefreshCw, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, RotateCcw } from 'lucide-react';
+import { Clock, LogIn, LogOut, Camera, UserCheck, Plus, Calendar, X, RefreshCw, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, RotateCcw, Upload, Edit } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import Papa from 'papaparse';
 
 // ============================================================
 // Utility helpers
@@ -611,7 +612,7 @@ function KioskTab() {
 function HistoryTab() {
   const { user } = useAuth();
   const isManager = ['owner', 'manager', 'store_manager'].includes(user?.role);
-  const canDelete = ['owner', 'manager'].includes(user?.role);
+  const canManageData = ['owner', 'area_manager', 'admin'].includes(user?.role);
   const queryClient = useQueryClient();
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -620,7 +621,10 @@ function HistoryTab() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '' });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, recordId: null, reason: '' });
+  const [editModal, setEditModal] = useState({ isOpen: false, record: null });
   const [previewImage, setPreviewImage] = useState(null);
+  const fileInputRef = useRef(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const { data, isLoading: loading } = useQuery({
     queryKey: ['attendanceHistory', user?.branch_id, selectedMonth, isManager, user?.id],
@@ -652,6 +656,186 @@ function HistoryTab() {
 
   const records = data?.records || [];
   const users = data?.users || [];
+
+  const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
+
+  const { incompleteGroupKeys, incompleteCount } = useMemo(() => {
+    const groups = {};
+    records.filter(r => !r.is_deleted).forEach(r => {
+      const dateKey = getDateStr(r.timestamp);
+      // Group by user, date, and shift
+      const key = `${r.user_id}_${dateKey}_${r.shift_type || 'none'}`;
+      if (!groups[key]) groups[key] = { in: 0, out: 0 };
+      if (r.type === 'clock_in') groups[key].in++;
+      else groups[key].out++;
+    });
+    
+    const incompleteKeys = new Set();
+    let count = 0;
+    Object.keys(groups).forEach(key => {
+      // If someone has clock_in but no clock_out, or vice versa
+      if ((groups[key].in > 0 && groups[key].out === 0) || (groups[key].out > 0 && groups[key].in === 0)) {
+        incompleteKeys.add(key);
+        count++;
+      }
+    });
+    return { incompleteGroupKeys: incompleteKeys, incompleteCount: count };
+  }, [records]);
+
+  const filteredRecords = useMemo(() => {
+    if (!showIncompleteOnly) return records;
+    return records.filter(r => {
+      if (r.is_deleted) return false;
+      const dateKey = getDateStr(r.timestamp);
+      const key = `${r.user_id}_${dateKey}_${r.shift_type || 'none'}`;
+      return incompleteGroupKeys.has(key);
+    });
+  }, [records, showIncompleteOnly, incompleteGroupKeys]);
+
+  function getFakeTime(type, shift) {
+      if (shift === 'ช่วงเช้า') return type === 'clock_in' ? '06:00:00' : '12:00:00';
+      if (shift === 'ช่วงบ่าย') return type === 'clock_in' ? '12:00:00' : '18:00:00';
+      if (shift === 'ช่วงเย็น') return type === 'clock_in' ? '18:00:00' : '23:59:00';
+      if (shift === 'ช่วงดึก' || shift === 'กะดึก') return type === 'clock_in' ? '00:00:00' : '06:00:00';
+      return type === 'clock_in' ? '08:00:00' : '17:00:00';
+  }
+
+  const handleImportCSV = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!user?.branch_id) {
+      alert("ไม่พบรหัสสาขา กรุณาเข้าสู่ระบบใหม่");
+      return;
+    }
+
+    setIsImporting(true);
+    Papa.parse(file, {
+      header: false,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          const { data: dbUsers, error: uErr } = await supabase.from('users').select('id, name, full_name, employee_id');
+          if (uErr) throw uErr;
+          const { data: dbBranches, error: bErr } = await supabase.from('branches').select('id, name, code');
+          if (bErr) throw bErr;
+
+          let successCount = 0;
+          let errors = [];
+          const allRows = results.data;
+          
+          let headerIdx = -1;
+          for (let i = 0; i < allRows.length; i++) {
+            if (allRows[i].some(col => col && (col.includes('Timestamp') || col.includes('รหัสพนักงาน')))) {
+                headerIdx = i;
+                break;
+            }
+          }
+
+          if (headerIdx === -1) {
+              alert('ไม่พบหัวตาราง (Timestamp / รหัสพนักงาน) ในไฟล์ CSV กรุณาตรวจสอบไฟล์');
+              setIsImporting(false);
+              if (e.target) e.target.value = null;
+              return;
+          }
+
+          const headers = allRows[headerIdx];
+          const dataRows = allRows.slice(headerIdx + 1);
+          const payloads = [];
+
+          for (let i = 0; i < dataRows.length; i++) {
+            const rowArray = dataRows[i];
+            const getKey = (keyName) => {
+              const colIdx = headers.findIndex(h => typeof h === 'string' && h.trim() === keyName);
+              return colIdx !== -1 ? rowArray[colIdx] : null;
+            };
+
+            const timestampRaw = getKey('Timestamp') || '';
+            const empRaw = getKey('รหัสพนักงาน') || '';
+            const branchRaw = getKey('สาขา') || '';
+            const clockRaw = getKey('ประเภทการลงเวลา') || '';
+            const shiftRaw = getKey('รอบเวลาทำงาน') || '';
+            const noteRaw = getKey('หมายเหตุ') || '';
+            const ownerRemark = getKey('Remark by Owner') || '';
+
+            if (!empRaw && !timestampRaw) continue;
+
+            let userId = null;
+            const foundUser = dbUsers.find((u) => {
+              if (u.employee_id && empRaw.includes(u.employee_id)) return true;
+              if (u.name && empRaw.includes(u.name)) return true;
+              return false;
+            });
+            if (foundUser) userId = foundUser.id;
+
+            let branchId = dbBranches[0]?.id || user.branch_id;
+            const foundBranch = dbBranches.find((b) => branchRaw.includes(b.code) || branchRaw.includes(b.name));
+            if (foundBranch) branchId = foundBranch.id;
+
+            const clockType = clockRaw.includes('ออกงาน') ? 'clock_out' : 'clock_in';
+
+            let shiftType = 'morning';
+            if (shiftRaw === 'ช่วงบ่าย') shiftType = 'afternoon';
+            else if (shiftRaw === 'ช่วงเย็น') shiftType = 'evening';
+            else if (shiftRaw.includes('ดึก')) shiftType = 'night';
+
+            const finalNote = [noteRaw, ownerRemark].filter(Boolean).join(' | ');
+
+            let finalTimestampIso = new Date().toISOString();
+            if (timestampRaw) {
+              const datePart = timestampRaw.split(' ')[0];
+              const parts = datePart.split('/');
+              if (parts.length >= 3) {
+                const [d, m, y] = parts;
+                let timePart = timestampRaw.split(' ')[1];
+                if (!timePart) timePart = getFakeTime(clockType, shiftRaw);
+                const isoStr = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${timePart}+07:00`;
+                try {
+                  const parsedDate = new Date(isoStr);
+                  if (!isNaN(parsedDate.getTime())) finalTimestampIso = parsedDate.toISOString();
+                } catch (err) {}
+              }
+            }
+
+            if (!userId) {
+              errors.push(`แถวที่ ${i + 2}: ไม่พบพนักงาน '${empRaw}'`);
+              continue;
+            }
+
+            payloads.push({
+              user_id: userId,
+              branch_id: branchId,
+              type: clockType,
+              shift_type: shiftType,
+              note: finalNote || null,
+              timestamp: finalTimestampIso,
+              selfie_url: null,
+              is_late: false,
+              lat: null,
+              lng: null,
+            });
+          }
+
+          if (payloads.length > 0) {
+            for (let i = 0; i < payloads.length; i += 100) {
+                const chunk = payloads.slice(i, i + 100);
+                const { error: insertError } = await supabase.from('attendance').insert(chunk);
+                if (insertError) throw insertError;
+                successCount += chunk.length;
+            }
+          }
+
+          alert(`✅ นำเข้าข้อมูลสำเร็จ: ${successCount} รายการ\n${errors.length > 0 ? `⚠️ พบข้อผิดพลาด ${errors.length} รายการ (พนักงานที่ไม่มีในระบบ):\n${errors.slice(0, 5).join('\\n')}` : ''}`);
+          await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] });
+        } catch (err) {
+          alert('❌ เกิดข้อผิดพลาดในการประมวลผล: ' + err.message);
+        } finally {
+          setIsImporting(false);
+          if (e.target) e.target.value = null;
+        }
+      },
+    });
+  };
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -702,6 +886,39 @@ function HistoryTab() {
     }
   }
 
+  function handleEditClick(rec) {
+    const d = new Date(rec.timestamp);
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    setEditModal({ 
+      isOpen: true, 
+      record: { ...rec, dateStr, timeStr }
+    });
+  }
+
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    try {
+      const rec = editModal.record;
+      const ts = new Date(`${rec.dateStr}T${rec.timeStr}:00`).toISOString();
+
+      const { error } = await supabase.from('attendance')
+        .update({ 
+          shift_type: rec.shift_type, 
+          type: rec.type, 
+          timestamp: ts, 
+          note: rec.note || null 
+        })
+        .eq('id', rec.id);
+        
+      if (error) throw error;
+      setEditModal({ isOpen: false, record: null });
+      await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] });
+    } catch (err) {
+      alert('เกิดข้อผิดพลาดในการแก้ไข: ' + err.message);
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
@@ -717,9 +934,27 @@ function HistoryTab() {
             onChange={(e) => setSelectedMonth(e.target.value)}
           />
           {isManager && (
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Plus size={18} /> ลงเวลาด้วยตนเอง
-            </button>
+            <div className="flex items-center gap-2">
+              <input 
+                type="file" 
+                accept=".csv" 
+                ref={fileInputRef} 
+                onChange={handleImportCSV} 
+                style={{ display: 'none' }} 
+              />
+              <button 
+                className="btn" 
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+              >
+                {isImporting ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />} 
+                {isImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
+              </button>
+              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                <Plus size={18} /> ลงเวลาด้วยตนเอง
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -749,7 +984,27 @@ function HistoryTab() {
       </div>
 
       <div className="card mt-6">
-        <div className="card-header"><div className="card-title">รายการทั้งหมด</div></div>
+        <div className="card-header flex justify-between items-center flex-wrap gap-4">
+          <div className="card-title">
+            {showIncompleteOnly ? '⚠️ รายการลงเวลาไม่ครบ (กะที่ลืมสแกนเข้า/ออก)' : 'รายการทั้งหมด'}
+          </div>
+          {incompleteCount > 0 && (
+            <button 
+               className={`btn ${showIncompleteOnly ? 'btn-primary' : ''}`}
+               style={{ 
+                 background: showIncompleteOnly ? 'var(--primary)' : 'rgba(239, 68, 68, 0.1)', 
+                 color: showIncompleteOnly ? '#fff' : '#ef4444', 
+                 border: `1px solid ${showIncompleteOnly ? 'var(--primary)' : 'rgba(239, 68, 68, 0.3)'}`,
+                 padding: '4px 12px',
+                 fontSize: '13px'
+               }}
+               onClick={() => setShowIncompleteOnly(!showIncompleteOnly)}
+            >
+              <AlertCircle size={16} />
+              {showIncompleteOnly ? 'แสดงรายการทั้งหมด' : `พบรายการไม่สมบูรณ์ ${incompleteCount} กะ (คลิกเพื่อดู)`}
+            </button>
+          )}
+        </div>
         <div className="table-container">
           <table>
             <thead>
@@ -762,16 +1017,16 @@ function HistoryTab() {
                 <th>รูปถ่าย</th>
                 <th>หมายเหตุ</th>
                 <th>พิกัด</th>
-                {canDelete && <th style={{ textAlign: 'right' }}>จัดการ</th>}
+                {canManageData && <th style={{ textAlign: 'right' }}>จัดการ</th>}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
-              ) : records.length === 0 ? (
-                <tr><td colSpan="9"><div className="empty-state"><Clock size={48} /><h3>ยังไม่มีข้อมูล</h3><p>เริ่มใช้แท็บ "ลงเวลา" เพื่อบันทึก</p></div></td></tr>
+              ) : filteredRecords.length === 0 ? (
+                <tr><td colSpan="9"><div className="empty-state"><Clock size={48} /><h3>ยังไม่มีข้อมูล</h3><p>{showIncompleteOnly ? 'ไม่พบรายการที่ไม่สมบูรณ์ในเดือนนี้ 🎉' : 'เริ่มใช้แท็บ "ลงเวลา" เพื่อบันทึก'}</p></div></td></tr>
               ) : (
-                records.map((rec) => (
+                filteredRecords.map((rec) => (
                   <tr key={rec.id} style={{ opacity: rec.is_deleted ? 0.6 : 1, background: rec.is_deleted ? 'rgba(239,68,68,0.05)' : 'none' }}>
                     <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                       {rec.users?.full_name || rec.users?.name || '—'}
@@ -826,7 +1081,7 @@ function HistoryTab() {
                          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>ไม่ทราบพิกัด</span>
                        )}
                      </td>
-                    {canDelete && (
+                    {canManageData && (
                       <td style={{ textAlign: 'right' }}>
                         {rec.is_deleted ? (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -843,14 +1098,24 @@ function HistoryTab() {
                             </button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => handleDeleteClick(rec.id)}
-                            className="btn btn-ghost"
-                            style={{ padding: '6px', color: '#ef4444' }}
-                            title="ลบข้อมูล"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4 }}>
+                            <button
+                              onClick={() => handleEditClick(rec)}
+                              className="btn btn-ghost"
+                              style={{ padding: '6px', color: '#60a5fa' }}
+                              title="แก้ไขข้อมูล"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(rec.id)}
+                              className="btn btn-ghost"
+                              style={{ padding: '6px', color: '#ef4444' }}
+                              title="ลบข้อมูล"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         )}
                       </td>
                     )}
@@ -893,6 +1158,69 @@ function HistoryTab() {
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>ยกเลิก</button>
                 <button type="submit" className="btn btn-primary"><Clock size={16} /> บันทึกเวลา</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editModal.isOpen && (
+        <div className="modal-overlay" onClick={() => setEditModal({ isOpen: false, record: null })}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>✏️ แก้ไขประวัติการลงเวลา</h3>
+              <button className="btn-icon" onClick={() => setEditModal({ isOpen: false, record: null })}>✕</button>
+            </div>
+            <form onSubmit={handleEditSubmit}>
+              <div className="modal-body">
+                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '10px 15px', borderRadius: 8, marginBottom: 16 }}>
+                  <p style={{ margin: 0, fontSize: 14 }}>พนักงาน: <strong>{editModal.record.users?.full_name || editModal.record.users?.name}</strong></p>
+                </div>
+
+                <div className="form-group grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label className="form-label">วันที่ *</label>
+                    <input type="date" className="form-input" 
+                      value={editModal.record.dateStr} 
+                      onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, dateStr: e.target.value } })} required />
+                  </div>
+                  <div>
+                    <label className="form-label">เวลา *</label>
+                    <input type="time" className="form-input" 
+                      value={editModal.record.timeStr} 
+                      onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, timeStr: e.target.value } })} required />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">ประเภทกะ *</label>
+                  <select className="form-select" value={editModal.record.shift_type || 'morning'} 
+                    onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, shift_type: e.target.value } })}>
+                    <option value="morning">🌅 กะเช้า</option>
+                    <option value="afternoon">☀️ กะบ่าย</option>
+                    <option value="evening">🌇 กะเย็น</option>
+                    <option value="night">🌙 กะดึก</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">ประเภทลงเวลา *</label>
+                  <select className="form-select" value={editModal.record.type} 
+                    onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, type: e.target.value } })}>
+                    <option value="clock_in">🟢 เข้างาน (Clock In)</option>
+                    <option value="clock_out">🟡 ออกงาน (Clock Out)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">หมายเหตุ (อัปเดต)</label>
+                  <textarea className="form-textarea" value={editModal.record.note || ''} 
+                    onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, note: e.target.value } })} placeholder="เช่น แก้ไขกะผิด..." />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-ghost" onClick={() => setEditModal({ isOpen: false, record: null })}>ยกเลิก</button>
+                <button type="submit" className="btn btn-primary"><Edit size={16} /> บันทึกการแก้ไข</button>
               </div>
             </form>
           </div>
@@ -992,6 +1320,7 @@ function EmployeeSchedulesTab() {
   // View state
   const [viewMode, setViewMode] = useState('week'); // 'week' | 'month'
   const [currentDate, setCurrentDate] = useState(() => getMonday(new Date()));
+  const [showAttendanceCheck, setShowAttendanceCheck] = useState(false);
   
   // Branch Settings State
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -1028,11 +1357,11 @@ function EmployeeSchedulesTab() {
   const endDate = gridDays[gridDays.length - 1];
 
   const { data, isLoading: loading } = useQuery({
-    queryKey: ['employeeSchedules', user?.branch_id, toDateStr(startDate), toDateStr(endDate)],
+    queryKey: ['employeeSchedules', user?.branch_id, toDateStr(startDate), toDateStr(endDate), showAttendanceCheck],
     queryFn: async () => {
       const startStr = toDateStr(startDate);
       const endStr = toDateStr(endDate);
-      const [schedRes, userRes, branchRes] = await Promise.all([
+      const queries = [
         supabase.from('employee_schedules')
           .select('*, users!user_id(name, full_name, employment_type)')
           .eq('branch_id', user?.branch_id)
@@ -1048,12 +1377,33 @@ function EmployeeSchedulesTab() {
           .select('settings')
           .eq('id', user?.branch_id)
           .maybeSingle()
-      ]);
+      ];
+
+      // Also fetch attendance records when check mode is on
+      if (showAttendanceCheck) {
+        const attStartISO = new Date(startStr + 'T00:00:00').toISOString();
+        const endDt = new Date(endStr + 'T00:00:00');
+        endDt.setDate(endDt.getDate() + 1);
+        const attEndISO = endDt.toISOString();
+        queries.push(
+          supabase.from('attendance')
+            .select('id, user_id, type, timestamp, shift_type')
+            .eq('branch_id', user?.branch_id)
+            .eq('is_deleted', false)
+            .eq('type', 'clock_in')
+            .gte('timestamp', attStartISO)
+            .lt('timestamp', attEndISO)
+        );
+      }
+
+      const results = await Promise.all(queries);
+      const [schedRes, userRes, branchRes] = results;
       
       return {
         schedules: schedRes.data || [],
         users: userRes.data || [],
-        branchSettings: branchRes.data?.settings || { shift_times: {}, late_tolerance_minutes: 15 }
+        branchSettings: branchRes.data?.settings || { shift_times: {}, late_tolerance_minutes: 15 },
+        attendance: showAttendanceCheck ? (results[3]?.data || []) : []
       };
     },
     enabled: !!user?.branch_id,
@@ -1062,6 +1412,7 @@ function EmployeeSchedulesTab() {
   const schedules = data?.schedules || [];
   const users = data?.users || [];
   const branchSettings = data?.branchSettings || { shift_times: {}, late_tolerance_minutes: 15 };
+  const attendanceRecords = data?.attendance || [];
 
   // Sync loaded settings to form state when settings modal opens
   useEffect(() => {
@@ -1077,6 +1428,66 @@ function EmployeeSchedulesTab() {
     if (!scheduleLookup[key]) scheduleLookup[key] = [];
     scheduleLookup[key].push(s);
   });
+
+  // Build attendance lookup: { `${user_id}_${date}`: [{ shift_type, ... }] }
+  const attendanceLookup = useMemo(() => {
+    const lookup = {};
+    attendanceRecords.forEach(a => {
+      const d = new Date(a.timestamp);
+      const dateKey = toDateStr(d);
+      const key = `${a.user_id}_${dateKey}`;
+      if (!lookup[key]) lookup[key] = [];
+      lookup[key].push(a);
+    });
+    return lookup;
+  }, [attendanceRecords]);
+
+  // Cross-reference schedules vs attendance → compute mismatch stats
+  const mismatchStats = useMemo(() => {
+    if (!showAttendanceCheck) return { matched: 0, absent: 0, wrongShift: 0, unscheduled: 0 };
+    let matched = 0, absent = 0, wrongShift = 0;
+    const today = new Date(); today.setHours(23, 59, 59);
+    schedules.forEach(s => {
+      const schedDate = new Date(s.schedule_date + 'T23:59:59');
+      if (schedDate > today) return; // skip future dates
+      const key = `${s.user_id}_${s.schedule_date}`;
+      const attList = attendanceLookup[key] || [];
+      if (attList.length === 0) {
+        absent++;
+      } else {
+        const hasMatchingShift = attList.some(a => a.shift_type === s.shift_type);
+        if (hasMatchingShift) matched++;
+        else wrongShift++;
+      }
+    });
+    // Unscheduled: attendance exists but no schedule for that user+date
+    let unscheduled = 0;
+    Object.keys(attendanceLookup).forEach(key => {
+      if (!scheduleLookup[key] || scheduleLookup[key].length === 0) {
+        unscheduled++;
+      }
+    });
+    return { matched, absent, wrongShift, unscheduled };
+  }, [showAttendanceCheck, schedules, attendanceLookup, scheduleLookup]);
+
+  // Get cell status for a specific user+date
+  function getCellStatus(userId, dateStr) {
+    if (!showAttendanceCheck) return null;
+    const today = new Date(); today.setHours(23, 59, 59);
+    const cellDate = new Date(dateStr + 'T23:59:59');
+    if (cellDate > today) return null; // future date — no status
+    const schedKey = `${userId}_${dateStr}`;
+    const daySchedules = scheduleLookup[schedKey] || [];
+    const dayAttendance = attendanceLookup[schedKey] || [];
+
+    if (daySchedules.length === 0 && dayAttendance.length === 0) return null; // nothing
+    if (daySchedules.length === 0 && dayAttendance.length > 0) return 'unscheduled'; // came but not scheduled
+    if (daySchedules.length > 0 && dayAttendance.length === 0) return 'absent'; // scheduled but didn't come
+    // Check shift match
+    const allMatch = daySchedules.every(s => dayAttendance.some(a => a.shift_type === s.shift_type));
+    if (allMatch) return 'matched';
+    return 'wrong_shift';
+  }
 
   function navigateTime(dir) {
     setCurrentDate(prev => {
@@ -1219,7 +1630,21 @@ function EmployeeSchedulesTab() {
         </div>
         
         {isManager && (
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button 
+              onClick={() => setShowAttendanceCheck(!showAttendanceCheck)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                border: showAttendanceCheck ? '1.5px solid #22c55e' : '1px solid var(--border)',
+                background: showAttendanceCheck ? 'rgba(34,197,94,0.12)' : 'rgba(255,255,255,0.04)',
+                color: showAttendanceCheck ? '#4ade80' : 'var(--text-secondary)',
+                transition: 'all 0.2s',
+              }}
+            >
+              {showAttendanceCheck ? <CheckCircle size={15} /> : <UserCheck size={15} />}
+              {showAttendanceCheck ? '✅ กำลังตรวจสอบ' : '🔍 ตรวจสอบการลงชื่อ'}
+            </button>
             <button 
               className="btn btn-ghost border border-slate-700 hover:bg-slate-800"
               onClick={() => setShowSettingsModal(true)}
@@ -1375,6 +1800,15 @@ function EmployeeSchedulesTab() {
                       const key = `${emp.id}_${dateStr}`;
                       const daySchedules = scheduleLookup[key] || [];
                       const isToday = dateStr === todayStr;
+                      const cellStatus = getCellStatus(emp.id, dateStr);
+
+                      // Cell background based on attendance check status
+                      const statusBg = !cellStatus ? (isToday ? 'rgba(139,92,246,0.04)' : 'transparent')
+                        : cellStatus === 'matched' ? 'rgba(34,197,94,0.06)'
+                        : cellStatus === 'absent' ? 'rgba(239,68,68,0.08)'
+                        : cellStatus === 'wrong_shift' ? 'rgba(245,158,11,0.08)'
+                        : cellStatus === 'unscheduled' ? 'rgba(59,130,246,0.06)'
+                        : (isToday ? 'rgba(139,92,246,0.04)' : 'transparent');
 
                       return (
                         <td
@@ -1383,11 +1817,11 @@ function EmployeeSchedulesTab() {
                             padding: '6px 4px',
                             borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)',
                             textAlign: 'center', verticalAlign: 'top',
-                            background: isToday ? 'rgba(139,92,246,0.04)' : 'transparent',
+                            background: statusBg,
                             transition: 'background 0.15s',
                           }}
                           onMouseEnter={e => { if (isManager) e.currentTarget.style.background = 'rgba(139,92,246,0.08)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = isToday ? 'rgba(139,92,246,0.04)' : 'transparent'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = statusBg; }}
                         >
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, height: '100%' }}>
                             {daySchedules.map(schedule => {
@@ -1420,6 +1854,30 @@ function EmployeeSchedulesTab() {
                               );
                             })}
 
+                            {/* Attendance status indicator */}
+                            {cellStatus && (
+                              <div style={{
+                                fontSize: 10, fontWeight: 700, borderRadius: 4, padding: '2px 4px', textAlign: 'center',
+                                marginTop: daySchedules.length > 0 ? 2 : 0,
+                                ...(cellStatus === 'matched' ? { color: '#22c55e', background: 'rgba(34,197,94,0.15)' }
+                                  : cellStatus === 'absent' ? { color: '#ef4444', background: 'rgba(239,68,68,0.15)' }
+                                  : cellStatus === 'wrong_shift' ? { color: '#f59e0b', background: 'rgba(245,158,11,0.15)' }
+                                  : { color: '#3b82f6', background: 'rgba(59,130,246,0.15)' })
+                              }}
+                                title={
+                                  cellStatus === 'matched' ? 'ลงชื่อตรงกับตาราง'
+                                  : cellStatus === 'absent' ? 'ไม่มาลงชื่อ (ขาดงาน)'
+                                  : cellStatus === 'wrong_shift' ? 'ลงชื่อแต่กะไม่ตรง'
+                                  : 'มาลงชื่อแต่ไม่มีตาราง'
+                                }
+                              >
+                                {cellStatus === 'matched' ? '✅' 
+                                  : cellStatus === 'absent' ? '❌ ขาด'
+                                  : cellStatus === 'wrong_shift' ? '⚠️ กะผิด'
+                                  : '📋 ไม่มีกะ'}
+                              </div>
+                            )}
+
                             {/* Add button: always visible for managers */}
                             {isManager && (
                                 <div 
@@ -1447,8 +1905,34 @@ function EmployeeSchedulesTab() {
         )}
       </div>
 
-      {/* Summary Stats */}
-      {!loading && schedules.length > 0 && (
+      {/* Attendance Check Summary Stats */}
+      {showAttendanceCheck && !loading && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 16 }}>
+          <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 12, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 20 }}>✅</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#22c55e' }}>{mismatchStats.matched}</div>
+            <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600 }}>ตรง</div>
+          </div>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 12, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 20 }}>❌</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>{mismatchStats.absent}</div>
+            <div style={{ fontSize: 11, color: '#f87171', fontWeight: 600 }}>ขาดงาน</div>
+          </div>
+          <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 12, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 20 }}>⚠️</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#f59e0b' }}>{mismatchStats.wrongShift}</div>
+            <div style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>กะไม่ตรง</div>
+          </div>
+          <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 12, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 20 }}>📋</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#3b82f6' }}>{mismatchStats.unscheduled}</div>
+            <div style={{ fontSize: 11, color: '#60a5fa', fontWeight: 600 }}>ไม่มีตาราง</div>
+          </div>
+        </div>
+      )}
+
+      {/* Shift Summary Stats (when not in check mode) */}
+      {!showAttendanceCheck && !loading && schedules.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginTop: 16 }}>
           {Object.entries(SHIFT_CONFIG).map(([key, cfg]) => {
             const count = schedules.filter(s => s.shift_type === key).length;

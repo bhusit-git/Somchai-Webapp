@@ -170,6 +170,12 @@ export default function SmartInsights() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Month picker state — default to current month
+  const now0 = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, '0')}`
+  );
+
   const [healthScore, setHealthScore] = useState(0);
   const [rings, setRings]             = useState({ salesTarget: 0, fc: 0, compliance: 0 });
   const [heatmap, setHeatmap]         = useState([]);
@@ -178,16 +184,21 @@ export default function SmartInsights() {
   const [bottomSellers, setBottomSellers] = useState([]);
   const [lowStockItems, setLowStockItems] = useState([]);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [selectedMonth]);
 
   async function loadData(isRefresh = false) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
       const now = new Date();
-      const year = now.getFullYear(), month = now.getMonth();
+      // Parse selectedMonth ("YYYY-MM") to derive range
+      const [selYear, selMon] = selectedMonth.split('-').map(Number);
+      const year = selYear;
+      const month = selMon - 1; // 0-indexed
       const daysInMonth = new Date(year, month + 1, 0).getDate();
-      const todayDay = now.getDate();
-      const monthStr = `${year}-${String(month + 1).padStart(2, '0')}`;
+      // If the selected month is the current month, todayDay = current date; otherwise full month
+      const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+      const todayDay = isCurrentMonth ? now.getDate() : daysInMonth;
+      const monthStr = selectedMonth;
       const monthStart = `${monthStr}-01T00:00:00`;
       const monthEnd = `${monthStr}-${String(daysInMonth).padStart(2, '0')}T23:59:59`;
 
@@ -207,10 +218,10 @@ export default function SmartInsights() {
       const [
         txRes, txItemsRes, lmTxRes, productsRes, expensesRes, fixedRes, invRes, userRes, bomRes
       ] = await Promise.all([
-        supabase.from('transactions').select('id, total, created_at, status').gte('created_at', monthStart).lte('created_at', monthEnd).eq('status', 'completed'),
+        supabase.from('transactions').select('id, total, created_at, status').gte('created_at', monthStart).lte('created_at', monthEnd),
         supabase.from('transaction_items').select('product_id, product_name, quantity, unit_price, total_price, transactions!inner(created_at, status)').gte('transactions.created_at', monthStart).lte('transactions.created_at', monthEnd).eq('transactions.status', 'completed'),
-        supabase.from('transactions').select('total').gte('created_at', lmStart).lte('created_at', lmEnd).eq('status', 'completed'),
-        supabase.from('products').select('id, name, price, cost').eq('is_available', true),
+        supabase.from('transactions').select('total, status').gte('created_at', lmStart).lte('created_at', lmEnd),
+        supabase.from('products').select('id, name, price, cost, is_available'),
         supabase.from('expenses').select('amount, category, created_at, status, payment_method').gte('created_at', monthStart).lte('created_at', monthEnd),
         supabase.from('expense_categories').select('name, is_fixed_cost').eq('is_active', true),
         supabase.from('inventory_items').select('id, name, current_stock, reorder_point, par_level, cost_per_stock_unit').eq('is_active', true),
@@ -232,8 +243,18 @@ export default function SmartInsights() {
       const fixedCostCatNames = fixedCostsRaw.filter(c => c.is_fixed_cost).map(c => c.name);
 
       // ═══ Computed Metrics ═══
-      const totalRevenue = txData.reduce((s, t) => s + Number(t.total), 0);
-      const lmRevenue = lmTxData.reduce((s, t) => s + Number(t.total), 0);
+      let totalRevenue = 0;
+      txData.forEach(t => {
+        const amt = Number(t.total);
+        if (amt < 0) totalRevenue += amt;
+        else if (t.status === 'completed') totalRevenue += amt;
+      });
+      let lmRevenue = 0;
+      lmTxData.forEach(t => {
+        const amt = Number(t.total);
+        if (amt < 0) lmRevenue += amt;
+        else if (t.status === 'completed') lmRevenue += amt;
+      });
       const revenueGrowth = lmRevenue > 0 ? ((totalRevenue - lmRevenue) / lmRevenue) * 100 : 0;
       const avgDailyRev = todayDay > 0 ? totalRevenue / todayDay : 0;
       const projectedMonthly = avgDailyRev * daysInMonth;
@@ -243,8 +264,10 @@ export default function SmartInsights() {
       // Daily revenue map for heatmap
       const dailyMap = {};
       txData.forEach(tx => {
+        const amt = Number(tx.total);
+        if (amt >= 0 && tx.status !== 'completed') return; // ignore positive non-completed
         const day = new Date(tx.created_at).getDate();
-        dailyMap[day] = (dailyMap[day] || 0) + Number(tx.total);
+        dailyMap[day] = (dailyMap[day] || 0) + amt;
       });
       const heatmapData = Array.from({ length: daysInMonth }, (_, i) => ({
         day: i + 1,
@@ -464,9 +487,18 @@ export default function SmartInsights() {
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Smart Insights Dashboard</h3>
           <p className="text-sm text-muted">M12: ภาพรวมสุขภาพร้าน — Rule-Engine แนะนำอัจฉริยะ</p>
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={() => loadData(true)} disabled={refreshing || loading}>
-          <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> รีเฟรช
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={e => setSelectedMonth(e.target.value)}
+            className="input"
+            style={{ fontSize: '13px', padding: '6px 12px', minWidth: '160px' }}
+          />
+          <button className="btn btn-sm btn-ghost" onClick={() => loadData(true)} disabled={refreshing || loading}>
+            <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} /> รีเฟรช
+          </button>
+        </div>
       </div>
 
       {loading ? (

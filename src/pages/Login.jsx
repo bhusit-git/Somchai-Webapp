@@ -255,7 +255,7 @@ export default function Login() {
                   >
                     <div className="user-avatar-placeholder" style={{
                       width: '40px', height: '40px', borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                      background: 'linear-gradient(135deg, #FBBF24, #F5A623)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }}>
                       <User size={20} color="white" />
