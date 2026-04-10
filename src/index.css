@@ -964,6 +964,10 @@ tbody tr:hover td {
 @media (max-width: 1024px) {
   .pos-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+  .pos-cart {
+    max-height: 45vh;
   }
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);

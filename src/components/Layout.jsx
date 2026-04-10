@@ -58,18 +58,18 @@ export default function Layout() {
             <h2 className="truncate max-w-[150px] sm:max-w-none">{title}</h2>
           </div>
           <div className="main-header-right">
-            <button className="btn-icon" title="ค้นหา">
+            <button className="btn-icon hidden sm:flex" title="ค้นหา">
               <Search size={18} />
             </button>
             <button className="btn-icon" title="สลับธีม มืด/สว่าง" onClick={toggleTheme}>
               {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
             </button>
-            <button className="btn-icon" title="แจ้งเตือน">
+            <button className="btn-icon hidden sm:flex" title="แจ้งเตือน">
               <Bell size={18} />
             </button>
-            <span className="bg-violet-500/10 text-violet-400 border border-violet-500/20 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-sm shadow-violet-900/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse"></span>
-              {user?.branch_name || 'ไม่ระบุสาขา'}
+            <span className="bg-violet-500/10 text-violet-400 border border-violet-500/20 px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 shadow-sm shadow-violet-900/20 max-w-[120px] sm:max-w-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse shrink-0"></span>
+              <span className="truncate">{user?.branch_name || 'ไม่ระบุสาขา'}</span>
             </span>
           </div>
         </header>
