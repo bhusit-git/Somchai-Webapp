@@ -1,8 +1,9 @@
 import { Outlet, useLocation } from 'react-router-dom';
-import { Bell, Search, Sun, Moon } from 'lucide-react';
+import { Bell, Search, Sun, Moon, Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useState, useEffect } from 'react';
 
 const pageTitles = {
   '/': 'แดชบอร์ด',
@@ -23,18 +24,38 @@ const pageTitles = {
   '/settings': 'ตั้งค่าระบบ',
 };
 export default function Layout() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const title = pageTitles[location.pathname] || 'Somchai App';
 
+  // Close sidebar on mobile when navigating
+  useEffect(() => {
+    setIsSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
     <div className="app-layout">
-      <Sidebar />
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-[150] md:hidden backdrop-blur-sm" 
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <main className="main-content">
         <header className="main-header">
           <div className="main-header-left">
-            <h2>{title}</h2>
+            <button 
+              className="btn-icon md:hidden mr-2 flex-shrink-0" 
+              onClick={() => setIsSidebarOpen(true)}
+              title="เปิดเมนู"
+            >
+              <Menu size={20} />
+            </button>
+            <h2 className="truncate max-w-[150px] sm:max-w-none">{title}</h2>
           </div>
           <div className="main-header-right">
             <button className="btn-icon" title="ค้นหา">

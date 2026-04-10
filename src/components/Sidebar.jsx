@@ -47,16 +47,16 @@ const ICON_MAP = {
   ClipboardCheck,
 };
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
       <div className="sidebar-header">
         <div className="sidebar-logo">S</div>
-        <div className="sidebar-brand">
+        <div className="sidebar-brand flex-1">
           <h1>Somchai</h1>
           <span>Restaurant CashSync ERP</span>
         </div>
