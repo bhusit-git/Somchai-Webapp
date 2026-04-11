@@ -12,7 +12,7 @@ export default function Expenses() {
   const [filter, setFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [paymentFilter, setPaymentFilter] = useState('all');
-  const [filterType, setFilterType] = useState('recent');
+  const [filterType, setFilterType] = useState('month');
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({
@@ -35,7 +35,9 @@ export default function Expenses() {
   const [authorizer, setAuthorizer] = useState('');
   const { user } = useAuth();
 
-  const managerUsers = users.filter(u => ['store_manager', 'area_manager', 'owner', 'admin'].includes(u.role));
+  const isManager = ['store_manager', 'area_manager', 'manager', 'owner', 'admin'].includes(user?.role);
+  const isHighLevelManager = ['area_manager', 'owner', 'admin'].includes(user?.role);
+  const managerUsers = users.filter(u => ['store_manager', 'area_manager', 'manager', 'owner', 'admin'].includes(u.role));
 
   useEffect(() => {
     if (user?.branch_id) loadData();
@@ -49,21 +51,23 @@ export default function Expenses() {
         .select('*, creator:users!created_by(name, full_name), approver:users!approved_by(name, full_name)')
         .eq('branch_id', user.branch_id);
       
-      if (!['owner', 'manager'].includes(user.role)) {
+      if (!isHighLevelManager) {
         expQuery = expQuery.eq('created_by', user.id);
       }
 
       if (filterType === 'month') {
         if (selectedMonth) {
-          const start = new Date(`${selectedMonth}-01T00:00:00+07:00`).toISOString();
-          const end = new Date(new Date(`${selectedMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${selectedMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
+          const [y, m] = selectedMonth.split('-').map(Number);
+          const daysInMonth = new Date(y, m, 0).getDate();
+          const start = `${selectedMonth}-01T00:00:00+07:00`;
+          const end = `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}T23:59:59+07:00`;
           expQuery = expQuery.gte('created_at', start).lte('created_at', end);
         }
         expQuery = expQuery.order('created_at', { ascending: false });
       } else if (filterType === 'date') {
         if (selectedDate) {
-          const start = new Date(`${selectedDate}T00:00:00+07:00`).toISOString();
-          const end = new Date(`${selectedDate}T23:59:59+07:00`).toISOString();
+          const start = `${selectedDate}T00:00:00+07:00`;
+          const end = `${selectedDate}T23:59:59+07:00`;
           expQuery = expQuery.gte('created_at', start).lte('created_at', end);
         }
         expQuery = expQuery.order('created_at', { ascending: false });
@@ -247,17 +251,17 @@ export default function Expenses() {
         </button>
       </div>
 
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', gap: '8px', padding: '16px', background: 'var(--accent-info-bg)', color: 'var(--accent-info)', borderRadius: 'var(--radius-sm)' }}>
-          <AlertCircle size={20} style={{ flexShrink: 0 }} />
-          <div>
-            <strong>ประกาศสำคัญ:</strong> ห้ามคีย์ค่า "วัตถุดิบ" ในหน้านี้โดยเด็ดขาด! ค่าวัตถุดิบจะถูกบันทึกอัตโนมัติมาจากหน้า <b>สั่งซื้อวัตถุดิบ (Purchase Orders)</b> หน้านี้ใช้สำหรับค่าใช้จ่ายปฏิบัติการ (OPEX) เช่น ค่าเช่า, ค่าน้ำไฟ, เงินเดือน, วัสดุสิ้นเปลือง ฯลฯ เท่านั้น
-          </div>
+      {/* Warning Alert */}
+      <div style={{ marginBottom: '20px', background: 'rgba(30,58,138,0.3)', border: '1px solid rgba(59,130,246,0.3)', color: '#93c5fd', borderRadius: '12px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+        <AlertCircle size={20} style={{ flexShrink: 0, marginTop: '2px', color: '#60a5fa' }} />
+        <div style={{ fontSize: '13px', lineHeight: '1.6' }}>
+          <strong style={{ color: '#93c5fd', fontWeight: 700, display: 'block', marginBottom: '4px' }}>ประกาศสำคัญ: ห้ามคีย์ค่า "วัตถุดิบ" ในหน้านี้โดยเด็ดขาด!</strong>
+          ค่าวัตถุดิบจะถูกบันทึกอัตโนมัติมาจากหน้า สั่งซื้อวัตถุดิบ (Purchase Orders) หน้านี้ใช้สำหรับค่าใช้จ่ายปฏิบัติการ (OPEX) เช่น ค่าเช่า, ค่าน้ำไฟ, เงินเดือน, วัสดุสิ้นเปลือง ฯลฯ เท่านั้น
         </div>
       </div>
 
       {/* Stats */}
-      {['owner', 'manager'].includes(user?.role) && (
+      {isHighLevelManager && (
         <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon orange">
@@ -290,176 +294,194 @@ export default function Expenses() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 mb-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700/50">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-slate-400 w-16">สถานะ:</span>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { val: 'all', label: 'ทั้งหมด' },
-              { val: 'pending', label: '⏳ รออนุมัติ' },
-              { val: 'approved', label: '✅ อนุมัติ' },
-              { val: 'rejected', label: '❌ ไม่อนุมัติ' },
-              { val: 'cancelled', label: '🚫 ยกเลิก' },
-            ].map(f => (
-              <button
-                key={f.val}
-                className={`pos-category-btn text-xs px-3 py-1.5 ${filter === f.val ? 'active' : ''}`}
-                onClick={() => setFilter(f.val)}
-              >
-                {f.label}
-              </button>
-            ))}
+      <div className="card" style={{ marginBottom: '20px', padding: '16px' }}>
+        {/* Status chips – horizontal scroll */}
+        <div style={{ marginBottom: '4px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>สถานะ:</span>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+            <div style={{ display: 'flex', gap: '8px', paddingBottom: '4px', width: 'max-content' }}>
+              {[
+                { val: 'all', label: 'ทั้งหมด' },
+                { val: 'pending', label: '⏳ รออนุมัติ' },
+                { val: 'approved', label: '✅ อนุมัติ' },
+                { val: 'rejected', label: '❌ ไม่อนุมัติ' },
+                { val: 'cancelled', label: '🚫 ยกเลิก' },
+              ].map(f => (
+                <button
+                  key={f.val}
+                  className="pos-category-btn"
+                  style={{
+                    ...(filter === f.val ? {
+                      background: 'var(--accent-primary)',
+                      borderColor: 'var(--accent-primary)',
+                      color: '#000',
+                      fontWeight: 600,
+                    } : {}),
+                  }}
+                  onClick={() => setFilter(f.val)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        
-        <div className="flex flex-wrap items-center gap-6 pt-3 border-t border-slate-700/50">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-400">แสดงผล:</span>
-            <select 
-              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
-              value={filterType}
-              onChange={e => setFilterType(e.target.value)}
-            >
-              <option value="recent">50 ล่าสุด</option>
-              <option value="date">รายวัน</option>
-              <option value="month">รายเดือน</option>
-            </select>
+
+        {/* Dropdown filters – 2-column grid */}
+        <div style={{ borderTop: '1px solid var(--border-secondary)', paddingTop: '12px', marginTop: '8px' }}>
+          <div className="grid-2" style={{ gap: '12px', gridTemplateColumns: '1fr 1fr' }}>
+            <div>
+              <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>หมวดหมู่</label>
+              <select className="form-select" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                <option value="all">ทั้งหมด</option>
+                <option value="วัตถุดิบ (Raw Materials)">วัตถุดิบ (Raw Materials)</option>
+                {categories
+                  .filter(c => user?.role !== 'staff' || !c.is_admin_only)
+                  .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('Raw Material'))
+                  .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>ช่องทาง</label>
+              <select className="form-select" value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)}>
+                <option value="all">ทั้งหมด</option>
+                <option value="cash">เงินสด</option>
+                <option value="transfer">เงินโอน</option>
+              </select>
+            </div>
           </div>
 
-          {filterType === 'date' && (
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                className="form-input bg-slate-900 border-slate-700 text-sm py-1.5 px-3 rounded-lg text-white"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-              />
+          <div style={{ marginTop: '12px' }}>
+            <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>แสดงผล</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <select className="form-select" style={{ flex: 1 }} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                <option value="recent">50 ล่าสุด</option>
+                <option value="date">รายวัน</option>
+                <option value="month">รายเดือน</option>
+              </select>
+              {filterType === 'date' && (
+                <input type="date" className="form-input" style={{ flex: 1, minWidth: '140px' }} value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+              )}
+              {filterType === 'month' && (
+                <input type="month" className="form-input" style={{ flex: 1, minWidth: '140px' }} value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} />
+              )}
             </div>
-          )}
-
-          {filterType === 'month' && (
-            <div className="flex items-center gap-2">
-              <input
-                type="month"
-                className="form-input bg-slate-900 border-slate-700 text-sm py-1.5 px-3 rounded-lg text-white"
-                value={selectedMonth}
-                onChange={e => setSelectedMonth(e.target.value)}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-400">หมวดหมู่:</span>
-            <select 
-              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-            >
-              <option value="all">ทั้งหมด</option>
-              <option value="วัตถุดิบ (Raw Materials)">วัตถุดิบ (Raw Materials)</option>
-              {categories
-                .filter(c => user?.role !== 'staff' || !c.is_admin_only)
-                .filter(c => !c.name.includes('วัตถุดิบ') && !c.name.includes('Raw Material'))
-                .map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-400">ช่องทาง:</span>
-            <select 
-              className="form-select bg-slate-900 border-slate-700 text-sm py-1.5 pr-8 pl-3 rounded-lg"
-              value={paymentFilter}
-              onChange={e => setPaymentFilter(e.target.value)}
-            >
-              <option value="all">ทั้งหมด</option>
-              <option value="cash">เงินสด</option>
-              <option value="transfer">เงินโอน</option>
-            </select>
           </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card">
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>หมวด</th>
-                <th>รายละเอียด</th>
-                <th>จำนวน</th>
-                <th>ช่องทาง</th>
-                <th>ผู้บันทึก</th>
-                <th>สถานะ</th>
-                <th>วันที่</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan="9"><div className="empty-state"><Receipt size={48} /><h3>ยังไม่มีรายจ่าย</h3><p>กดปุ่ม "เพิ่มค่าใช้จ่าย"</p></div></td></tr>
-              ) : (
-                filtered.map(exp => (
-                  <tr key={exp.id}>
-                    <td><span className="badge badge-purple">{exp.category}</span></td>
-                    <td style={{ color: 'var(--text-primary)', fontWeight: 500, maxWidth: '200px' }}>
+      {/* Expense List Header */}
+      <div className="flex items-center justify-between" style={{ marginBottom: '12px', marginTop: '24px' }}>
+        <h3 style={{ fontWeight: 600, fontSize: '16px' }}>รายการค่าใช้จ่าย</h3>
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>พบ {filtered.length} รายการ</span>
+      </div>
+
+      {/* Expense Cards */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center' }}>
+            <span className="animate-pulse" style={{ color: 'var(--text-muted)' }}>กำลังโหลด...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            <Receipt size={48} />
+            <h3>ยังไม่มีรายจ่าย</h3>
+            <p>กดปุ่ม "เพิ่มค่าใช้จ่าย" เพื่อบันทึกข้อมูล</p>
+          </div>
+        ) : (
+          filtered.map(exp => (
+            <div key={exp.id} className="card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
+              {/* Left color bar */}
+              <div style={{
+                position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px',
+                background: exp.status === 'approved' ? '#22c55e' :
+                  exp.status === 'rejected' ? '#ef4444' :
+                  exp.status === 'cancelled' ? '#64748b' : '#f59e0b'
+              }} />
+
+              <div style={{ padding: '16px', paddingLeft: '20px' }}>
+                {/* Top: Category + Description + Amount */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span className="badge badge-purple" style={{ fontSize: '10px', marginBottom: '6px' }}>{exp.category}</span>
+                    <h4 style={{ fontWeight: 600, fontSize: '15px', color: 'var(--text-primary)', wordBreak: 'break-word', marginTop: '4px' }}>
                       {exp.description}
-                      {exp.receipt_url && (
-                        <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 ml-2 bg-blue-500/10 px-2 py-0.5 rounded">
-                          <FileImage size={12} /> ดูสลิป
-                        </a>
-                      )}
-                    </td>
-                    <td style={{ fontWeight: 700, color: 'var(--accent-danger)' }}>฿{Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td>
-                      <span className={`badge ${exp.payment_method === 'cash' ? 'badge-warning' : 'badge-info'}`}>
-                        {exp.payment_method === 'cash' ? '💵 เงินสด' : '🏦 เงินโอน'}
-                      </span>
-                    </td>
-                    <td>{exp.creator?.name || '—'}</td>
-                    <td>
-                      <span className={`badge ${exp.status === 'approved' ? 'badge-success' : exp.status === 'rejected' ? 'badge-danger' : exp.status === 'cancelled' ? 'badge-secondary' : 'badge-warning'}`}>
-                        {exp.status === 'approved' ? '✅ อนุมัติ' : exp.status === 'rejected' ? '❌ ไม่อนุมัติ' : exp.status === 'cancelled' ? '🚫 ยกเลิก' : '⏳ รอ'}
-                      </span>
-                      {exp.status === 'cancelled' && exp.cancel_reason && (
-                        <div className="text-[10px] text-slate-500 mt-1 flex items-start max-w-xs">
-                          <AlertCircle size={10} className="mr-1 mt-0.5 shrink-0" /> {exp.cancel_reason}
-                        </div>
-                      )}
-                    </td>
-                    <td>{new Date(exp.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}</td>
-                    <td>
-                      <div className="flex gap-2">
-                        {exp.status === 'pending' && ['owner', 'manager'].includes(user?.role) && (
-                          <>
-                            <button className="btn btn-sm btn-success" onClick={() => handleApprove(exp)} title="อนุมัติ">
-                              <CheckCircle size={14} />
-                            </button>
-                            <button className="btn btn-sm btn-danger" onClick={() => handleReject(exp)} title="ไม่อนุมัติ">
-                              <XCircle size={14} />
-                            </button>
-                          </>
-                        )}
-                        {exp.status !== 'cancelled' && !(user?.role === 'staff' && exp.status === 'approved') && (
-                          <>
-                            <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-blue-400 hover:border-blue-500 bg-transparent py-1 px-2" onClick={() => openEditModal(exp)} title="แก้ไข">
-                              <Edit2 size={14} />
-                            </button>
-                            <button className="btn btn-sm border border-slate-600 text-slate-300 hover:text-red-400 hover:border-red-500 bg-transparent py-1 px-2" onClick={() => openCancelPrompt(exp)} title="ยกเลิกรายการ">
-                              <Trash2 size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    </h4>
+                    {exp.receipt_url && (
+                      <a href={exp.receipt_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#60a5fa', background: 'rgba(59,130,246,0.1)', padding: '3px 8px', borderRadius: '4px', marginTop: '6px', textDecoration: 'none' }}>
+                        <FileImage size={12} /> ดูสลิป
+                      </a>
+                    )}
+                  </div>
+                  <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: 700, fontSize: '18px', color: '#ef4444' }}>
+                      ฿{Number(exp.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bottom: Meta info grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', fontSize: '12px', marginTop: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+                    <Clock size={14} style={{ flexShrink: 0, opacity: 0.6 }} />
+                    <span>{new Date(exp.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+                    <Edit2 size={14} style={{ flexShrink: 0, opacity: 0.6 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.creator?.name || '—'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)' }}>
+                    <CreditCard size={14} style={{ flexShrink: 0, opacity: 0.6 }} />
+                    <span>{exp.payment_method === 'cash' ? 'เงินสด' : 'โอนเงิน'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span className={`badge ${
+                      exp.status === 'approved' ? 'badge-success' :
+                      exp.status === 'rejected' ? 'badge-danger' :
+                      exp.status === 'cancelled' ? 'badge-ghost' : 'badge-warning'
+                    }`} style={{ fontSize: '11px', padding: '2px 8px' }}>
+                      {exp.status === 'approved' ? <><CheckCircle size={10} /> อนุมัติ</> :
+                       exp.status === 'rejected' ? <><XCircle size={10} /> ไม่อนุมัติ</> :
+                       exp.status === 'cancelled' ? <><AlertCircle size={10} /> ยกเลิก</> :
+                       <><Clock size={10} /> รออนุมัติ</>}
+                    </span>
+                  </div>
+                </div>
+
+                {exp.status === 'cancelled' && exp.cancel_reason && (
+                  <div style={{ marginTop: '10px', padding: '8px', background: 'var(--bg-tertiary)', borderRadius: '6px', display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <AlertCircle size={12} style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <span>{exp.cancel_reason}</span>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-secondary)', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  {exp.status === 'pending' && isManager && (
+                    <>
+                      <button className="btn btn-sm btn-success" onClick={() => handleApprove(exp)}>
+                        <CheckCircle size={14} /> อนุมัติ
+                      </button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleReject(exp)}>
+                        <XCircle size={14} /> ไม่อนุมัติ
+                      </button>
+                    </>
+                  )}
+                  {exp.status !== 'cancelled' && !(user?.role === 'staff' && exp.status === 'approved') && (
+                    <>
+                      <button className="btn-icon" onClick={() => openEditModal(exp)} title="แก้ไข" style={{ width: '32px', height: '32px' }}>
+                        <Edit2 size={14} />
+                      </button>
+                      <button className="btn-icon" onClick={() => openCancelPrompt(exp)} title="ยกเลิกรายการ" style={{ width: '32px', height: '32px' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Add Expense Modal */}
@@ -472,7 +494,7 @@ export default function Expenses() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                {['area_manager', 'owner', 'admin'].includes(user?.role) && (
+                {isHighLevelManager && (
                   <div className="form-group">
                     <label className="form-label text-amber-500">ผู้ทำรายการ (ระบุแทนพนักงาน)</label>
                     <select className="form-select border-amber-500/30 bg-amber-500/5 focus:border-amber-500" value={form.created_by || ''} onChange={e => setForm({ ...form, created_by: e.target.value })}>
@@ -575,7 +597,7 @@ export default function Expenses() {
                     <label className="form-label text-blue-400">ผู้อนุมัติการแก้ไข (ผจก.เขตขึ้นไป) *</label>
                     <select className="form-select border-blue-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                      {users.filter(u => ['manager', 'owner'].includes(u.role)).map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
                     </select>
                   </div>
                   <div className="form-group mb-0">
@@ -688,7 +710,7 @@ export default function Expenses() {
                     <label className="form-label text-red-400">ผู้อนุมัติยกเลิก (ผจก.เขตขึ้นไป) *</label>
                     <select className="form-select border-red-500/30" value={authorizer} onChange={e => setAuthorizer(e.target.value)} required>
                       <option value="">-- เลือกผู้อนุมัติ --</option>
-                      {users.filter(u => ['manager', 'owner'].includes(u.role)).map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
+                      {managerUsers.map(u => <option key={u.id} value={u.id}>[{u.role}] {u.full_name || u.name}</option>)}
                     </select>
                   </div>
                   <div className="form-group mb-0">

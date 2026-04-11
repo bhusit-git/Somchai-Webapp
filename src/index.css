@@ -810,6 +810,10 @@ tbody tr:hover td {
   overflow: hidden;
 }
 
+.pos-cart-mobile-handle {
+  display: none;
+}
+
 .pos-cart-header {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-primary);
@@ -964,10 +968,40 @@ tbody tr:hover td {
 @media (max-width: 1024px) {
   .pos-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
+  }
+  .pos-products-grid {
+    padding-bottom: 140px;
   }
   .pos-cart {
-    max-height: 45vh;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    border-radius: 20px 20px 0 0;
+    background: var(--bg-card);
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.6);
+    border-top: 1px solid var(--border-primary);
+    max-height: 85vh;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .pos-cart-header { display: none !important; }
+  .pos-cart-mobile-handle {
+    display: block;
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border-radius: 20px 20px 0 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .pos-cart-body.mobile-closed {
+    display: none !important;
+  }
+  .pos-cart.mobile-open {
+    height: 85vh;
   }
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -991,5 +1025,14 @@ tbody tr:hover td {
   }
   .grid-2 {
     grid-template-columns: 1fr;
+  }
+  .desktop-only {
+    display: none !important;
+  }
+}
+
+@media (min-width: 769px) {
+  .mobile-only {
+    display: none !important;
   }
 }

@@ -117,35 +117,35 @@ export default function SalesHistory() {
       let offset = 0;
       const limit = 1000;
 
+      // Pre-compute date boundaries once
+      const startTime = timeFilter.isAllDay ? '00:00' : timeFilter.start;
+      const endTime = timeFilter.isAllDay ? '23:59' : timeFilter.end;
+
+      let parsedEndDate = dateFilterEnd;
+      if (endTime < startTime) {
+        const [y, m, d] = dateFilterEnd.split('-').map(Number);
+        const endD = new Date(y, m - 1, d + 1);
+        parsedEndDate = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`;
+      }
+
+      const startTimestamp = `${dateFilterStart}T${startTime}:00+07:00`;
+      const endTimestamp = `${parsedEndDate}T${endTime}:59+07:00`;
+
+      console.log('[SalesHistory] Query range:', startTimestamp, '→', endTimestamp, '| branch:', user?.branch_id);
+
       while (hasMore) {
+        // Build query with filters FIRST, then order and paginate
         let query = supabase
           .from('transactions')
           .select(`
             *,
             users:created_by (name)
           `)
+          .eq('branch_id', user.branch_id)
+          .gte('created_at', startTimestamp)
+          .lte('created_at', endTimestamp)
           .order('created_at', { ascending: false })
           .range(offset, offset + limit - 1);
-
-        if (user?.branch_id) {
-          query = query.eq('branch_id', user.branch_id);
-        }
-
-        // Date and Time filter
-        if (dateFilterStart && dateFilterEnd) {
-          const startTime = timeFilter.isAllDay ? '00:00' : timeFilter.start;
-          const endTime = timeFilter.isAllDay ? '23:59' : timeFilter.end;
-          
-          let endD = new Date(dateFilterEnd);
-          if (endTime < startTime) {
-            endD.setDate(endD.getDate() + 1); // time bounds cross midnight!
-          }
-          const parsedEndDate = endD.toISOString().split('T')[0];
-
-          const startTimestamp = `${dateFilterStart}T${startTime}:00+07:00`;
-          const endTimestamp = `${parsedEndDate}T${endTime}:59+07:00`;
-          query = query.gte('created_at', startTimestamp).lte('created_at', endTimestamp);
-        }
 
         const { data, error } = await query;
 
@@ -154,6 +154,8 @@ export default function SalesHistory() {
           if (offset === 0) setTransactions([]);
           break;
         }
+
+        console.log('[SalesHistory] Fetched batch:', data?.length, 'rows at offset', offset);
 
         if (data && data.length > 0) {
           allData = [...allData, ...data];
@@ -166,6 +168,7 @@ export default function SalesHistory() {
         }
       }
 
+      console.log('[SalesHistory] Total loaded:', allData.length, 'transactions');
       setTransactions(allData);
     } catch (err) {
       console.error('[SalesHistory] Unexpected error:', err);
@@ -451,7 +454,7 @@ export default function SalesHistory() {
           </div>
           <p className="text-sm text-muted">เลือกประเภทรายงานและตรวจสอบรายการขายจาก POS</p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="desktop-only" style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-ghost" onClick={exportToCSV} disabled={loading || filteredTx.length === 0}>
             <Download size={16} /> ส่งออก CSV
           </button>
@@ -463,57 +466,59 @@ export default function SalesHistory() {
 
       {activeTab === 'summary' ? (
         <>
-          {/* Stats */}
-          <div className="stats-grid">
-            {/* 1. ยอดขาย (Gross Sales) */}
-            <div className="stat-card">
-              <div className="stat-icon gray">
-                <DollarSign size={22} />
+          {/* Stats Re-designed (Hero + Grid) */}
+          <div className="flex flex-col gap-4 mb-6">
+            
+            {/* Hero Card: ยอดขายสุทธิ (Net Sales) */}
+            <div className="stat-card" style={{ padding: '24px', border: '1px solid var(--accent-success)', background: 'linear-gradient(135deg, rgba(20,83,45,0.4), rgba(34,197,94,0.05))', position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', right: '-10%', bottom: '-20%', opacity: 0.1 }}>
+                <Wallet size={160} />
               </div>
-              <div className="stat-info">
-                <h3>฿{totalGrossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-                <p>ยอดขาย</p>
-              </div>
-            </div>
-
-            {/* 2. คืนเงิน / ยกเลิก (Void/Refund) */}
-            <div className="stat-card">
-              <div className="stat-icon red">
-                <XCircle size={22} />
-              </div>
-              <div className="stat-info">
-                <h3 style={{ color: totalVoidedAmount > 0 ? 'var(--accent-danger)' : undefined }}>
-                  {totalVoidedAmount > 0 ? '-' : ''}฿{totalVoidedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </h3>
-                <p>คืนเงิน</p>
-              </div>
-            </div>
-
-            {/* 3. ส่วนลด (Discount) */}
-            <div className="stat-card">
-              <div className="stat-icon orange">
-                <ShoppingCart size={22} />
-              </div>
-              <div className="stat-info">
-                <h3 style={{ color: totalDiscount > 0 ? 'var(--accent-warning)' : undefined }}>
-                  {totalDiscount > 0 ? '-' : ''}฿{totalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </h3>
-                <p>ส่วนลด</p>
-              </div>
-            </div>
-
-            {/* 4. ยอดขายสุทธิ (Net Sales) */}
-            <div className="stat-card" style={{ border: '1px solid var(--accent-success)' }}>
-              <div className="stat-icon" style={{ background: 'var(--accent-success-bg)', color: 'var(--accent-success)' }}>
-                <Wallet size={22} />
-              </div>
-              <div className="stat-info">
-                <h3 style={{ color: 'var(--accent-success)' }}>
+              <div className="flex flex-col gap-2" style={{ position: 'relative', zIndex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-success)', fontWeight: 600 }}>
+                  <div style={{ background: 'var(--accent-success-bg)', padding: '6px', borderRadius: '8px' }}><Wallet size={20} /></div>
+                  ยอดขายสุทธิ
+                </div>
+                <h3 style={{ fontSize: '36px', fontWeight: 800, color: '#fff', marginTop: '4px' }}>
                   ฿{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h3>
-                <p>ยอดขายสุทธิ</p>
               </div>
             </div>
+
+            {/* 2-Column Grid: ยอดขาย (Gross Sales) & ส่วนลด (Discount) */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600 }}>
+                  <div style={{ background: 'var(--bg-tertiary)', padding: '6px', borderRadius: '8px' }}><DollarSign size={16} /></div>
+                  ยอดขาย
+                </div>
+                <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  ฿{totalGrossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+              </div>
+
+              <div className="stat-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600 }}>
+                  <div style={{ background: 'var(--accent-warning-bg)', padding: '6px', borderRadius: '8px', color: 'var(--accent-warning)' }}><ShoppingCart size={16} /></div>
+                  ส่วนลด
+                </div>
+                <h3 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {totalDiscount > 0 ? '-' : ''}฿{totalDiscount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h3>
+              </div>
+            </div>
+
+            {/* Full Width Row: คืนเงิน (Refund) */}
+            <div className="stat-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '14px', fontWeight: 600 }}>
+                <div style={{ background: 'var(--accent-danger-bg)', padding: '6px', borderRadius: '8px', color: 'var(--accent-danger)' }}><XCircle size={16} /></div>
+                คืนเงิน
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: totalVoidedAmount > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                {totalVoidedAmount > 0 ? '-' : ''}฿{totalVoidedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+            </div>
+
           </div>
 
           {/* Filters */}
@@ -567,179 +572,143 @@ export default function SalesHistory() {
               </div>
             </div>
 
-            {/* Table */}
-            <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ width: '40px' }}></th>
-                    <th>เลขบิล</th>
-                    <th>เวลา</th>
-                    <th>พนักงาน</th>
-                    <th>ช่องทางชำระ</th>
-                    <th>ยอดรวม</th>
-                    {isManager && <th>GP</th>}
-                    <th>สถานะ</th>
-                    {isManager && <th>จัดการ</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={isManager ? 9 : 7} style={{ textAlign: 'center', padding: '40px' }}>
-                        <span className="animate-pulse">กำลังโหลด...</span>
-                      </td>
-                    </tr>
-                  ) : filteredTx.length === 0 ? (
-                    <tr>
-                      <td colSpan={isManager ? 9 : 7}>
-                        <div className="empty-state">
-                          <Receipt size={48} />
-                          <h3>ไม่มีรายการขาย</h3>
-                          <p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTx.map((tx) => {
-                      const pmDef = paymentMethods.find(m => m.value === tx.payment_method);
-                      const pm = pmDef 
-                        ? { label: pmDef.label, icon: PM_ICON_MAP[pmDef.icon] || DollarSign, color: 'var(--text-primary)' }
-                        : { label: tx.payment_method, icon: DollarSign, color: 'var(--text-muted)' };
-                      const PayIcon = pm.icon;
-                      const statusInfo = STATUS_LABELS[tx.status] || { label: tx.status, class: 'badge-ghost' };
-                      const isExpanded = expandedRow === tx.id;
-                      const createdAt = new Date(tx.created_at);
+            {/* Transaction List (Card View) */}
+            <div className="flex flex-col gap-3">
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '40px' }}>
+                  <span className="animate-pulse">กำลังโหลด...</span>
+                </div>
+              ) : filteredTx.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-primary)' }}>
+                  <Receipt size={48} />
+                  <h3 style={{ marginTop: '16px' }}>ไม่มีรายการขาย</h3>
+                  <p>ไม่พบรายการที่ตรงกับเงื่อนไขการค้นหา</p>
+                </div>
+              ) : (
+                filteredTx.map((tx) => {
+                  const pmDef = paymentMethods.find(m => m.value === tx.payment_method);
+                  const pm = pmDef 
+                    ? { label: pmDef.label, icon: PM_ICON_MAP[pmDef.icon] || DollarSign, color: 'var(--text-primary)' }
+                    : { label: tx.payment_method, icon: DollarSign, color: 'var(--text-muted)' };
+                  const PayIcon = pm.icon;
+                  const statusInfo = STATUS_LABELS[tx.status] || { label: tx.status, class: 'badge-ghost' };
+                  const isExpanded = expandedRow === tx.id;
+                  const createdAt = new Date(tx.created_at);
 
-                      return (
-                        <React.Fragment key={tx.id}>
-                          <tr style={{ cursor: 'pointer', opacity: tx.status === 'voided' ? 0.6 : 1 }} onClick={() => loadTransactionItems(tx.id)}>
-                            <td>
-                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </td>
-                            <td style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '13px' }}>
+                  return (
+                    <div key={tx.id} style={{ background: 'var(--bg-card)', borderRadius: '16px', border: '1px solid var(--border-primary)', overflow: 'hidden', opacity: tx.status === 'voided' ? 0.6 : 1 }}>
+                      <div 
+                        style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: '16px', cursor: 'pointer' }}
+                        onClick={() => loadTransactionItems(tx.id)}
+                      >
+                        {/* Left Icon */}
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Receipt size={24} style={{ color: 'var(--text-muted)' }} />
+                        </div>
+                        
+                        {/* Middle Info */}
+                        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
                               {tx.order_number}
-                            </td>
-                            <td style={{ fontSize: '13px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <Clock size={14} style={{ color: 'var(--text-muted)' }} />
-                                {createdAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                            </td>
-                            <td style={{ fontSize: '13px' }}>
-                              {tx.users?.name || '-'}
-                            </td>
-                            <td>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                                <PayIcon size={14} style={{ color: pm.color }} />
-                                {pm.label}
-                              </span>
-                            </td>
-                            <td style={{ fontWeight: 700, color: tx.status === 'voided' ? 'var(--accent-danger)' : 'var(--text-primary)', fontSize: '14px' }}>
-                              {tx.status === 'voided' && <span style={{ textDecoration: 'line-through' }}>฿{Number(tx.total).toLocaleString()}</span>}
-                              {tx.status !== 'voided' && `฿${Number(tx.total).toLocaleString()}`}
-                            </td>
-                            {isManager && (
-                              <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                {Number(tx.gp_percent || 0) > 0
-                                  ? `${tx.gp_percent}% (฿${Number(tx.gp_amount || 0).toLocaleString()})`
-                                  : '-'}
-                              </td>
-                            )}
-                            <td>
-                              <span className={`badge ${statusInfo.class}`}>{statusInfo.label}</span>
-                            </td>
-                            {isManager && (
-                              <td>
-                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                  {tx.status === 'completed' && (
-                                    <button
-                                      className="btn btn-sm btn-outline text-info"
-                                      onClick={(e) => { e.stopPropagation(); openEditPaymentModal(tx); }}
-                                      style={{ padding: '4px 10px', fontSize: '12px' }}
-                                      title="แก้ไขช่องทางชำระ"
-                                    >
-                                      <Edit size={14} /> แก้ไข
-                                    </button>
-                                  )}
-                                  {tx.payment_method === 'credit' && tx.status === 'completed' && (
-                                    <button
-                                      className="btn btn-sm"
-                                      onClick={(e) => { e.stopPropagation(); openLinkArModal(tx); }}
-                                      style={{ padding: '4px 10px', fontSize: '12px', background: 'var(--accent-primary)', color: '#fff', border: 'none' }}
-                                      title="ระบุลูกหนี้"
-                                    >
-                                      <UserPlus size={14} /> ระบุลูกหนี้
-                                    </button>
-                                  )}
-                                  {tx.status === 'completed' && (
-                                    <button
-                                      className="btn btn-sm btn-danger"
-                                      onClick={(e) => { e.stopPropagation(); openVoidModal(tx); }}
-                                      style={{ padding: '4px 10px', fontSize: '12px' }}
-                                    >
-                                      <XCircle size={14} /> ยกเลิก
-                                    </button>
-                                  )}
-                                  {tx.status === 'voided' && (
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ยกเลิกแล้ว</span>
-                                  )}
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                          {/* Expanded row: transaction items */}
-                          {isExpanded && (
-                            <tr key={`${tx.id}-items`}>
-                              <td colSpan={isManager ? 9 : 7} style={{ padding: 0, background: 'var(--bg-tertiary)' }}>
-                                <div style={{ padding: '16px 24px', borderLeft: '3px solid var(--accent-primary)' }}>
-                                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' }}>
-                                    📦 รายการสินค้าในบิล {tx.order_number}
-                                  </div>
-                                  {loadingItems ? (
-                                    <span className="animate-pulse" style={{ fontSize: '13px' }}>กำลังโหลด...</span>
-                                  ) : expandedItems.length === 0 ? (
-                                    <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>ไม่พบรายการสินค้า</span>
-                                  ) : (
-                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                      <thead>
-                                        <tr>
-                                          <th style={{ background: 'transparent', padding: '6px 12px', fontSize: '11px', textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>#</th>
-                                          <th style={{ background: 'transparent', padding: '6px 12px', fontSize: '11px', textAlign: 'left', borderBottom: '1px solid var(--border-primary)' }}>สินค้า</th>
-                                          <th style={{ background: 'transparent', padding: '6px 12px', fontSize: '11px', textAlign: 'center', borderBottom: '1px solid var(--border-primary)' }}>จำนวน</th>
-                                          <th style={{ background: 'transparent', padding: '6px 12px', fontSize: '11px', textAlign: 'right', borderBottom: '1px solid var(--border-primary)' }}>ราคา/ชิ้น</th>
-                                          <th style={{ background: 'transparent', padding: '6px 12px', fontSize: '11px', textAlign: 'right', borderBottom: '1px solid var(--border-primary)' }}>รวม</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {expandedItems.map((item, i) => (
-                                          <tr key={item.id}>
-                                            <td style={{ padding: '6px 12px', fontSize: '12px', color: 'var(--text-muted)' }}>{i + 1}</td>
-                                            <td style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{item.product_name}</td>
-                                            <td style={{ padding: '6px 12px', fontSize: '13px', textAlign: 'center', fontWeight: 600 }}>{item.quantity}</td>
-                                            <td style={{ padding: '6px 12px', fontSize: '13px', textAlign: 'right' }}>฿{Number(item.unit_price).toLocaleString()}</td>
-                                            <td style={{ padding: '6px 12px', fontSize: '13px', textAlign: 'right', fontWeight: 600, color: 'var(--accent-success)' }}>฿{Number(item.total_price).toLocaleString()}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  )}
-                                  {/* Additional info */}
-                                  {tx.delivery_fee > 0 && (
-                                    <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--accent-warning)' }}>
-                                      ⚡ ค่าส่งนอกรอบ: ฿{Number(tx.delivery_fee).toLocaleString()}
+                            </span>
+                            <span style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--bg-tertiary)', borderRadius: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>
+                              {tx.order_type === 'delivery' ? 'Delivery' : 'หน้าร้าน'}
+                            </span>
+                            {tx.status !== 'completed' && <span className={`badge ${statusInfo.class}`} style={{ transform: 'scale(0.8)', transformOrigin: 'left center' }}>{statusInfo.label}</span>}
+                          </div>
+                          <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {createdAt.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} • {tx.users?.name || '-'}
+                          </div>
+                        </div>
+
+                        {/* Right Info */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                          <span style={{ fontSize: '18px', fontWeight: 800, color: tx.status === 'voided' ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
+                            {tx.status === 'voided' && <span style={{ textDecoration: 'line-through', marginRight: '4px', fontSize: '14px', color: 'var(--text-muted)', fontWeight: 600 }}>฿{Number(tx.total).toLocaleString()}</span>}
+                            {tx.status !== 'voided' && `฿${Number(tx.total).toLocaleString(undefined, { minimumFractionDigits: 2 })}`}
+                          </span>
+                          <span style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {pm.label}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expanded View */}
+                      {isExpanded && (
+                        <div style={{ padding: '0 16px 16px', background: 'var(--bg-card)' }}>
+                          <div style={{ borderTop: '1px dashed var(--border-primary)', paddingTop: '16px' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '12px' }}>
+                              📦 รายการสินค้าในบิล {tx.order_number}
+                            </div>
+                            {loadingItems ? (
+                              <span className="animate-pulse" style={{ fontSize: '13px' }}>กำลังโหลด...</span>
+                            ) : expandedItems.length === 0 ? (
+                              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>ไม่พบรายการสินค้า</span>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {expandedItems.map((item, i) => (
+                                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <span style={{ color: 'var(--text-muted)', width: '20px' }}>{i+1}.</span>
+                                      <span style={{ color: 'var(--text-primary)' }}>{item.product_name}</span>
+                                      <span style={{ color: 'var(--text-muted)' }}>x{item.quantity}</span>
                                     </div>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                      ฿{Number(item.total_price).toLocaleString()}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Additional info */}
+                            {tx.delivery_fee > 0 && (
+                              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed var(--border-primary)', fontSize: '13px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                                <span>⚡ ค่าส่ง</span>
+                                <span>฿{Number(tx.delivery_fee).toLocaleString()}</span>
+                              </div>
+                            )}
+                            
+                            {/* Manager Actions */}
+                            {isManager && (
+                              <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px dashed var(--border-primary)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {tx.status === 'completed' && (
+                                  <button
+                                    className="btn btn-sm btn-outline"
+                                    onClick={(e) => { e.stopPropagation(); openEditPaymentModal(tx); }}
+                                    style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '8px' }}
+                                  >
+                                    <Edit size={14} /> แก้ไขช่องทางชำระ
+                                  </button>
+                                )}
+                                {tx.payment_method === 'credit' && tx.status === 'completed' && (
+                                  <button
+                                    className="btn btn-sm"
+                                    onClick={(e) => { e.stopPropagation(); openLinkArModal(tx); }}
+                                    style={{ padding: '6px 12px', fontSize: '12px', background: 'var(--accent-primary)', color: '#fff', border: 'none', borderRadius: '8px' }}
+                                  >
+                                    <UserPlus size={14} /> ระบุลูกหนี้
+                                  </button>
+                                )}
+                                {tx.status === 'completed' && (
+                                  <button
+                                    className="btn btn-sm btn-danger"
+                                    onClick={(e) => { e.stopPropagation(); openVoidModal(tx); }}
+                                    style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '8px' }}
+                                  >
+                                    <XCircle size={14} /> ยกเลิกบิล
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 

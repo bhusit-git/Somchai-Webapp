@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Webcam from 'react-webcam';
-import { Clock, LogIn, LogOut, Camera, UserCheck, Plus, Calendar, X, RefreshCw, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, RotateCcw, Upload, Edit } from 'lucide-react';
+import { Clock, LogIn, LogOut, Camera, UserCheck, Plus, Calendar, X, RefreshCw, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Trash2, RotateCcw, Upload, Edit, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import Papa from 'papaparse';
@@ -129,22 +129,28 @@ function KioskTab() {
     const pad = n => String(n).padStart(2, '0');
     const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-    // Fetch user profile, today schedule, and last attendance record IN PARALLEL
-    const [userRes, schedRes, lastRes] = await Promise.all([
-      supabase.from('users').select('id, name, full_name, employment_type, daily_rate').eq('id', userId).maybeSingle(),
-      supabase.from('employee_schedules').select('*').eq('user_id', userId).eq('schedule_date', today),
-      supabase.from('attendance').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(1).maybeSingle(),
-    ]);
+    try {
+      // Fetch user profile, today schedule, and last attendance record IN PARALLEL
+      const [userRes, schedRes, lastRes] = await Promise.all([
+        supabase.from('users').select('id, name, full_name, employment_type, daily_rate').eq('id', userId).maybeSingle(),
+        supabase.from('employee_schedules').select('*').eq('user_id', userId).eq('schedule_date', today),
+        supabase.from('attendance').select('*').eq('user_id', userId).order('timestamp', { ascending: false }).limit(1).maybeSingle(),
+      ]);
 
-    const userData = userRes.data;
-    if (!userData) return;
+      const userData = userRes.data;
+      if (!userData) {
+        // User not found in DB — use auth context data as fallback
+        setSelectedUser({ id: userId, name: authUser?.name || 'ไม่ทราบชื่อ', full_name: authUser?.name });
+        setStep('confirm');
+        return;
+      }
 
-    setSelectedUser(userData);
-    const sched = schedRes.data && schedRes.data.length > 0 ? schedRes.data[0] : null;
-    setTodaySchedule(sched);
-    setLastRecord(lastRes.data);
-    setClockType(lastRes.data?.type === 'clock_in' ? 'clock_out' : 'clock_in');
-    setStep('confirm');
+      setSelectedUser(userData);
+      const sched = schedRes.data && schedRes.data.length > 0 ? schedRes.data[0] : null;
+      setTodaySchedule(sched);
+      setLastRecord(lastRes.data);
+      setClockType(lastRes.data?.type === 'clock_in' ? 'clock_out' : 'clock_in');
+      setStep('confirm');
 
     // Fetch GPS location immediately
     setLocStatus('fetching');
@@ -163,6 +169,12 @@ function KioskTab() {
       );
     } else {
       setLocStatus('denied');
+    }
+    } catch (err) {
+      console.error('loadUserParallel error:', err);
+      // Fallback so the UI doesn't stay stuck on loading
+      setSelectedUser({ id: userId, name: authUser?.name || 'ไม่ทราบชื่อ', full_name: authUser?.name });
+      setStep('confirm');
     }
   }
 
@@ -622,6 +634,7 @@ function HistoryTab() {
   const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '' });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, recordId: null, reason: '' });
   const [editModal, setEditModal] = useState({ isOpen: false, record: null });
+  const [viewModal, setViewModal] = useState({ isOpen: false, record: null });
   const [previewImage, setPreviewImage] = useState(null);
   const fileInputRef = useRef(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -645,9 +658,12 @@ function HistoryTab() {
 
       query = query.order('timestamp', { ascending: false });
 
+      let userQuery = supabase.from('users').select('id, name, full_name').eq('is_active', true);
+      if (user?.branch_id) userQuery = userQuery.eq('branch_id', user.branch_id);
+
       const [attRes, userRes] = await Promise.all([
         query,
-        isManager ? supabase.from('users').select('id, name, full_name').eq('is_active', true).eq('branch_id', user?.branch_id) : Promise.resolve({ data: [] })
+        isManager ? userQuery : Promise.resolve({ data: [] })
       ]);
       return { records: attRes.data || [], users: userRes.data || [] };
     },
@@ -934,7 +950,7 @@ function HistoryTab() {
             onChange={(e) => setSelectedMonth(e.target.value)}
           />
           {isManager && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 desktop-only">
               <input 
                 type="file" 
                 accept=".csv" 
@@ -1005,7 +1021,7 @@ function HistoryTab() {
             </button>
           )}
         </div>
-        <div className="table-container">
+        <div className="table-container desktop-only">
           <table>
             <thead>
               <tr>
@@ -1124,6 +1140,88 @@ function HistoryTab() {
               )}
             </tbody>
           </table>
+        </div>
+        
+        <div className="mobile-only mt-4 flex flex-col gap-3">
+          {loading ? (
+            <div className="text-center py-8"><span className="animate-pulse text-slate-400">กำลังโหลด...</span></div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="empty-state">
+              <Clock size={48} />
+              <h3>ยังไม่มีข้อมูล</h3>
+              <p>{showIncompleteOnly ? 'ไม่พบรายการที่ไม่สมบูรณ์ในเดือนนี้ 🎉' : 'เริ่มใช้แท็บ "ลงเวลา" เพื่อบันทึก'}</p>
+            </div>
+          ) : (
+            filteredRecords.map((rec) => (
+              <div 
+                key={rec.id} 
+                className="bg-[#1e2330] rounded-2xl p-4 border border-slate-700/50 relative shadow-sm"
+                style={{ opacity: rec.is_deleted ? 0.6 : 1, cursor: 'pointer' }}
+                onClick={() => setViewModal({ isOpen: true, record: rec })}
+              >
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2 text-slate-300 font-medium text-sm">
+                    <Calendar size={16} className="text-purple-400" /> {getDateStr(rec.timestamp)}
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#2a2520] border border-[#3b2a1a]" style={{
+                    background: rec.type === 'clock_in' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(249, 115, 22, 0.1)',
+                    color: rec.type === 'clock_in' ? '#4ade80' : '#fb923c',
+                    borderColor: rec.type === 'clock_in' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(249, 115, 22, 0.2)'
+                  }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+                    {rec.type === 'clock_in' ? 'เข้างาน' : 'ออกงาน'}
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  <div className="relative w-14 h-14 rounded-full bg-slate-800 flex-shrink-0 flex items-center justify-center border border-slate-700">
+                    {rec.selfie_url ? (
+                      <img 
+                        src={rec.selfie_url} 
+                        alt="selfie" 
+                        className="w-full h-full object-cover rounded-full" 
+                        onClick={(e) => { e.stopPropagation(); setPreviewImage(rec.selfie_url); }} 
+                      />
+                    ) : (
+                      <UserCheck size={24} className="text-slate-500" />
+                    )}
+                    {rec.selfie_url && (
+                      <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-1 border-2 border-[#1e2330]">
+                         <Camera size={10} />
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex-1">
+                    <div className="font-bold text-white text-[15px] mb-1">
+                      {rec.users?.full_name || rec.users?.name || '—'}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm mb-0.5" style={{ color: '#94a3b8' }}>
+                      <Clock size={14} className="text-purple-400" /> {getTimeStr(rec.timestamp)}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-sm" style={{ color: '#94a3b8' }}>
+                      <MapPin size={14} className="text-red-400" /> 
+                      {rec.lat && rec.lng ? (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${rec.lat},${rec.lng}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-400"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          แผนที่ ({Number(rec.lat).toFixed(4)}, {Number(rec.lng).toFixed(4)})
+                        </a>
+                      ) : 'ไม่ทราบพิกัด'}
+                    </div>
+                  </div>
+                  
+                  <div className="w-8 h-8 rounded-lg bg-slate-800/50 flex items-center justify-center text-slate-400 shrink-0">
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -1278,6 +1376,86 @@ function HistoryTab() {
           </div>
         </div>
       )}
+
+      {/* Detail View Modal */}
+      {viewModal.isOpen && viewModal.record && (
+        <div className="modal-overlay" onClick={() => setViewModal({ isOpen: false, record: null })}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>รายละเอียดการลงเวลา</h3>
+              <button className="btn-icon" onClick={() => setViewModal({ isOpen: false, record: null })}>✕</button>
+            </div>
+            <div className="modal-body space-y-4">
+              <div className="flex items-center gap-4 border-b border-slate-700/50 pb-4">
+                 <div className="relative w-16 h-16 rounded-full bg-slate-800 flex-shrink-0 flex items-center justify-center border-2 border-slate-700">
+                    {viewModal.record.selfie_url ? (
+                      <img 
+                        src={viewModal.record.selfie_url} 
+                        alt="selfie" 
+                        className="w-full h-full object-cover rounded-full cursor-pointer" 
+                        onClick={() => setPreviewImage(viewModal.record.selfie_url)} 
+                      />
+                    ) : (
+                      <UserCheck size={28} className="text-slate-500" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg">{viewModal.record.users?.full_name || viewModal.record.users?.name || '—'}</div>
+                    <div className="text-slate-400 text-sm">{getDateStr(viewModal.record.timestamp)} เวลา {getTimeStr(viewModal.record.timestamp)} น.</div>
+                  </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                    <div className="text-xs text-slate-400 mb-1">ประเภท</div>
+                    <div className="font-medium flex items-center gap-1.5">
+                       {viewModal.record.type === 'clock_in' ? '🟢 เข้างาน' : '🟡 ออกงาน'}
+                    </div>
+                 </div>
+                 <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                    <div className="text-xs text-slate-400 mb-1">กะทำงาน</div>
+                    <div className="font-medium">
+                       {viewModal.record.shift_type ? getShiftLabel(viewModal.record.shift_type).label : '—'}
+                    </div>
+                 </div>
+              </div>
+
+              <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                 <div className="text-xs text-slate-400 mb-1">พิกัดสถานที่</div>
+                 <div className="font-medium flex items-center gap-2">
+                    <MapPin size={16} className="text-red-400" />
+                    {viewModal.record.lat && viewModal.record.lng ? (
+                      <a href={`https://www.google.com/maps/search/?api=1&query=${viewModal.record.lat},${viewModal.record.lng}`} target="_blank" rel="noreferrer" className="text-blue-400">
+                        ดูแผนที่ ({Number(viewModal.record.lat).toFixed(4)}, {Number(viewModal.record.lng).toFixed(4)})
+                      </a>
+                    ) : <span className="text-slate-400">ไม่ทราบพิกัด</span>}
+                 </div>
+              </div>
+
+              <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+                 <div className="text-xs text-slate-400 mb-1">หมายเหตุ</div>
+                 <div className="font-medium text-sm">{viewModal.record.note || '—'}</div>
+              </div>
+            </div>
+            {canManageData && (
+              <div className="modal-footer" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <button className="btn btn-ghost" style={{ color: '#ef4444', width: '100%', justifyContent: 'center' }} onClick={() => {
+                   setViewModal({ isOpen: false, record: null });
+                   handleDeleteClick(viewModal.record.id);
+                }}>
+                   <Trash2 size={16} /> ลบ
+                </button>
+                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => {
+                   setViewModal({ isOpen: false, record: null });
+                   handleEditClick(viewModal.record);
+                }}>
+                   <Edit size={16} /> แก้ไข
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1335,23 +1513,20 @@ function EmployeeSchedulesTab() {
 
   // Compute days to show
   const gridDays = useMemo(() => {
-    if (viewMode === 'week') {
+    if (viewMode === 'month') {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      return Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
+    } else {
       const mon = getMonday(currentDate);
       return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(mon);
         d.setDate(d.getDate() + i);
         return d;
       });
-    } else {
-      const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-      const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-      const days = [];
-      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        days.push(new Date(d));
-      }
-      return days;
     }
-  }, [viewMode, currentDate]);
+  }, [currentDate, viewMode]);
 
   const startDate = gridDays[0];
   const endDate = gridDays[gridDays.length - 1];
@@ -1363,16 +1538,22 @@ function EmployeeSchedulesTab() {
       const endStr = toDateStr(endDate);
       const queries = [
         supabase.from('employee_schedules')
-          .select('*, users!user_id(name, full_name, employment_type)')
+          .select('*, users!user_id(name, full_name)')
           .eq('branch_id', user?.branch_id)
           .gte('schedule_date', startStr)
           .lte('schedule_date', endStr)
           .order('schedule_date', { ascending: true }),
-        supabase.from('users')
-          .select('id, name, full_name')
-          .eq('is_active', true)
-          .eq('branch_id', user?.branch_id)
-          .order('name', { ascending: true }),
+        (user?.branch_id
+          ? supabase.from('users')
+              .select('id, name, full_name, role')
+              .eq('is_active', true)
+              .eq('branch_id', user.branch_id)
+              .order('name', { ascending: true })
+          : supabase.from('users')
+              .select('id, name, full_name, role')
+              .eq('is_active', true)
+              .order('name', { ascending: true })
+        ),
         supabase.from('branches')
           .select('settings')
           .eq('id', user?.branch_id)
@@ -1402,6 +1583,8 @@ function EmployeeSchedulesTab() {
       return {
         schedules: schedRes.data || [],
         users: userRes.data || [],
+        userError: userRes.error,
+        schedError: schedRes.error,
         branchSettings: branchRes.data?.settings || { shift_times: {}, late_tolerance_minutes: 15 },
         attendance: showAttendanceCheck ? (results[3]?.data || []) : []
       };
@@ -1492,14 +1675,23 @@ function EmployeeSchedulesTab() {
   function navigateTime(dir) {
     setCurrentDate(prev => {
       const d = new Date(prev);
-      if (viewMode === 'week') d.setDate(d.getDate() + dir * 7);
-      else d.setMonth(d.getMonth() + dir);
-      return viewMode === 'week' ? getMonday(d) : d;
+      if (viewMode === 'month') {
+        d.setMonth(d.getMonth() + dir);
+        return new Date(d.getFullYear(), d.getMonth(), 1);
+      } else {
+        d.setDate(d.getDate() + dir * 7);
+        return getMonday(d);
+      }
     });
   }
 
   function goToToday() {
-    setCurrentDate(viewMode === 'week' ? getMonday(new Date()) : new Date());
+    if (viewMode === 'month') {
+      const d = new Date();
+      setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1));
+    } else {
+      setCurrentDate(getMonday(new Date()));
+    }
   }
 
   // Open modal for adding/editing
@@ -1615,7 +1807,7 @@ function EmployeeSchedulesTab() {
   // Custom label
   let dateLabel = '';
   if (viewMode === 'week') {
-    dateLabel = `${gridDays[0].toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} — ${gridDays[6].toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}`;
+    dateLabel = `${gridDays[0].toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} — ${gridDays[gridDays.length - 1].toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}`;
   } else {
     dateLabel = currentDate.toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
   }
@@ -1654,13 +1846,20 @@ function EmployeeSchedulesTab() {
             <div className="bg-slate-800/50 p-1 rounded-lg border border-slate-700 flex">
               <button 
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === 'week' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                onClick={() => setViewMode('week')}
+                onClick={() => {
+                  setViewMode('week');
+                  setCurrentDate(getMonday(currentDate));
+                }}
               >
                 สัปดาห์
               </button>
               <button 
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === 'month' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                onClick={() => setViewMode('month')}
+                onClick={() => {
+                  setViewMode('month');
+                  const d = new Date(currentDate);
+                  setCurrentDate(new Date(d.getFullYear(), d.getMonth(), 1));
+                }}
               >
                 เดือน
               </button>
@@ -1723,12 +1922,6 @@ function EmployeeSchedulesTab() {
           <div style={{ textAlign: 'center', padding: '48px 24px' }}>
             <span className="animate-pulse" style={{ color: 'var(--text-muted)', fontSize: 14 }}>⏳ กำลังโหลดตาราง...</span>
           </div>
-        ) : users.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <Calendar size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-            <h3 style={{ color: 'var(--text-primary)', fontSize: 16, marginBottom: 4 }}>ไม่มีพนักงาน</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>เพิ่มพนักงานในระบบก่อนจัดกะ</p>
-          </div>
         ) : (
           <div style={{ overflowX: 'auto', paddingBottom: '10px' }}>
             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: viewMode === 'week' ? 700 : 1500 }}>
@@ -1778,6 +1971,13 @@ function EmployeeSchedulesTab() {
                 </tr>
               </thead>
               <tbody>
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={gridDays.length + 1} style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--text-muted)' }}>
+                      ไม่มีพนักงานในสาขานี้ กรุณาเพิ่มพนักงานในระบบก่อน
+                    </td>
+                  </tr>
+                )}
                 {users.map((emp) => (
                   <tr key={emp.id} style={{ borderBottom: '1px solid var(--border)' }}>
                     {/* Employee name (sticky left) */}

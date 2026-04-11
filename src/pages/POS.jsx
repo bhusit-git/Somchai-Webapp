@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Tag, Percent, X } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Tag, Percent, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -147,6 +147,7 @@ export default function POS() {
   // ── Manual Discount state ──
   const [itemDiscounts, setItemDiscounts] = useState({}); // { product_id: { type: 'percent'|'amount', value: N } }
   const [billDiscount, setBillDiscount] = useState(null); // { type: 'percent'|'amount', value: N }
+  const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
   const [showItemDiscountModal, setShowItemDiscountModal] = useState(null); // product_id
   const [showBillDiscountModal, setShowBillDiscountModal] = useState(false);
   const [discountInput, setDiscountInput] = useState({ type: 'amount', value: '' });
@@ -568,12 +569,37 @@ export default function POS() {
       </div>
 
       {/* Right: Cart */}
-      <div className="pos-cart">
+      <div className={`pos-cart ${isMobileCartOpen ? 'mobile-open' : ''}`}>
+        
+        {/* Mobile Handle (Only visible on small screens CSS) */}
+        <div className="pos-cart-mobile-handle" onClick={() => setIsMobileCartOpen(!isMobileCartOpen)}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+               <ShoppingCart size={18} /> ตะกร้า
+             </div>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+               <span style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>฿{total.toLocaleString()}</span>
+               <div className="badge badge-ghost" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                 {cart.length} รายการ {isMobileCartOpen ? <ChevronDown size={14}/> : <ChevronUp size={14}/>}
+               </div>
+             </div>
+           </div>
+           {!isMobileCartOpen && (
+             <div style={{ marginTop: '12px' }}>
+                <button className="btn btn-success" style={{ width: '100%', justifyContent: 'center' }} disabled={cart.length === 0} onClick={(e) => { e.stopPropagation(); setShowPayment(true); }}>
+                  <CreditCard size={16} /> ชำระเงิน
+                </button>
+             </div>
+           )}
+        </div>
+
+        {/* Desktop Header */}
         <div className="pos-cart-header">
           <h3>🛒 ตะกร้า</h3>
           <span className="badge badge-info">{cart.length} รายการ</span>
         </div>
 
+        <div className={`pos-cart-body ${!isMobileCartOpen ? 'mobile-closed' : ''}`} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {/* Active Promo Badge */}
         {hasAutoPromo && cart.length > 0 && (
           <div style={{ padding: '8px 12px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(59,130,246,0.1))', borderRadius: '10px', margin: '0 0 8px 0', border: '1px solid rgba(16,185,129,0.3)' }}>
@@ -672,6 +698,7 @@ export default function POS() {
               <CreditCard size={16} /> ชำระเงิน
             </button>
           </div>
+        </div>
         </div>
       </div>
 
