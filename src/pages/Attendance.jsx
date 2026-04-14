@@ -86,6 +86,7 @@ export default function Attendance() {
 // ============================================================
 function KioskTab() {
   const { user: authUser } = useAuth();
+  const queryClient = useQueryClient();
   const [now, setNow] = useState(new Date());
   const [selectedUser, setSelectedUser] = useState(null);
   const [todaySchedule, setTodaySchedule] = useState(null);
@@ -222,17 +223,15 @@ function KioskTab() {
 
       // Geofence check
       const gf = branchSettings?.geofence;
+      let finalNote = note.trim();
       if (gf?.enabled && gf.lat && gf.lng) {
         if (!location) {
           // location unavailable — allow but will mark as no-location
         } else {
           const dist = haversineMeters(location.lat, location.lng, gf.lat, gf.lng);
           if (dist > (gf.radius_m || 50)) {
-            setSubmitting(false);
-            setResult({ success: false, message: `⚠️ อยู่นอกพื้นที่ร้าน (ห่าง ${Math.round(dist)} เมตร)` });
-            setStep('done');
-            setTimeout(() => { setStep('confirm'); setResult(null); }, 4000);
-            return;
+            const outOfBoundMsg = `[อยู่นอกพื้นที่ร้าน ห่าง ${Math.round(dist)} เมตร]`;
+            finalNote = finalNote ? `${finalNote} ${outOfBoundMsg}` : outOfBoundMsg;
           }
         }
       }
@@ -257,7 +256,7 @@ function KioskTab() {
         selfie_url,
         is_late,
         shift_type: todaySchedule?.shift_type || null,
-        note: note.trim() || null,
+        note: finalNote || null,
         timestamp: new Date().toISOString(),
         lat: location?.lat ?? null,
         lng: location?.lng ?? null,
@@ -265,15 +264,14 @@ function KioskTab() {
 
       if (error) throw error;
 
+      queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] });
+
       setResult({ success: true, message: clockType === 'clock_in' ? '✅ เข้างานสำเร็จ!' : '✅ ออกงานสำเร็จ!' });
       setStep('done');
 
       // Auto-reset after 4 seconds
       setTimeout(() => {
-        setStep('select_user');
-        setSelectedUser(null);
-        setCapturedImage(null);
-        setResult(null);
+        reset();
       }, 4000);
     } catch (err) {
       setResult({ success: false, message: 'เกิดข้อผิดพลาด: ' + err.message });
