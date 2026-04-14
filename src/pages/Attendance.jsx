@@ -126,6 +126,32 @@ function KioskTab() {
   }, [authUser]);
 
   async function loadUserParallel(userId) {
+    // Fetch GPS location immediately and unconditionally
+    setLocStatus('fetching');
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(coords);
+          setLocStatus('ok');
+        },
+        (err) => {
+          console.warn('Geolocation error:', err.message, 'Code:', err.code);
+          if (err.code === 3) {
+            setLocStatus('timeout');
+          } else if (err.code === 2) {
+            setLocStatus('unavailable');
+          } else {
+            setLocStatus('denied');
+          }
+          setLocation(null);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      setLocStatus('denied');
+    }
+
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
     const today = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -152,32 +178,6 @@ function KioskTab() {
       setLastRecord(lastRes.data);
       setClockType(lastRes.data?.type === 'clock_in' ? 'clock_out' : 'clock_in');
       setStep('confirm');
-
-    // Fetch GPS location immediately
-    setLocStatus('fetching');
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setLocation(coords);
-          setLocStatus('ok');
-        },
-        (err) => {
-          console.warn('Geolocation error:', err.message, 'Code:', err.code);
-          if (err.code === 3) {
-            setLocStatus('timeout');
-          } else if (err.code === 2) {
-            setLocStatus('unavailable');
-          } else {
-            setLocStatus('denied');
-          }
-          setLocation(null);
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    } else {
-      setLocStatus('denied');
-    }
     } catch (err) {
       console.error('loadUserParallel error:', err);
       // Fallback so the UI doesn't stay stuck on loading
