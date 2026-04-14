@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   Users,
+  Search,
+  X,
   FileText,
   Calendar,
   CheckCircle,
@@ -30,7 +32,7 @@ import jsPDF from 'jspdf';
 // ────────────────────── SUB-COMPONENTS ──────────────────────
 
 const TAB_STYLES = {
-  container: { display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid var(--border)', paddingBottom: '0' },
+  container: { display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '2px solid var(--border-primary)', paddingBottom: '0' },
   tab: (active) => ({
     padding: '10px 20px',
     borderRadius: 'var(--radius-sm) var(--radius-sm) 0 0',
@@ -91,13 +93,18 @@ function generatePayPeriods(count = 12) {
 
     if (isEnd) {
       // End-of-month: 16th to last day
+      // Use proper Date arithmetic for month rollover (fixes December → January bug)
+      const nextMonthDate = new Date(y, m + 1, 1);
+      const nextYear = nextMonthDate.getFullYear();
+      const nextMonthStr = String(nextMonthDate.getMonth() + 1).padStart(2, '0');
+
       periods.push({
         value: `${y}-${monthStr}-end`,
         label: `รอบสิ้นเดือน ${thaiLabel} (16-${daysInMonth})`,
         startISO: `${y}-${monthStr}-16T00:00:00.000Z`,
-        endISO: `${y}-${String(m + 2).padStart(2, '0')}-01T00:00:00.000Z`.replace(/-(13)-/, (_, n) => `-01-`).replace(`${y}-13-01T`, `${y+1}-01-01T`),
+        endISO: `${nextYear}-${nextMonthStr}-01T00:00:00.000Z`,
         isMid: false,
-        payDate: `${y}-${String(m + 2).padStart(2, '0')}-05`.replace(/-(13)-/, (_) => `-01-`).replace(`${y}-13-05`, `${y+1}-01-05`),
+        payDate: `${nextYear}-${nextMonthStr}-05`,
         monthKey: `${y}-${monthStr}`,
       });
     } else {
@@ -135,16 +142,16 @@ function PayslipPrintView({ payslip, employee }) {
   const netPay = totalIncome - totalDeductions;
   const cashPaid = payslip.cashPaid || 0;
   const clockInCount = payslip.clockInCount || 0;
-  const bankTransfer = Math.max(0, netPay);
+  const bankTransfer = Math.max(0, netPay - cashPaid);
 
   const printStyle = {
     background: '#ffffff',
     color: '#000000',
     fontFamily: 'Arial, sans-serif',
     padding: '32px',
-    borderRadius: 'var(--radius)',
-    border: '1px solid var(--border)',
-    maxWidth: '720px',
+    borderRadius: '0',
+    border: 'none',
+    maxWidth: '800px',
     margin: '0 auto',
   };
 
@@ -152,7 +159,7 @@ function PayslipPrintView({ payslip, employee }) {
     <>
       <style>{`
         @media print {
-          @page { size: A5 landscape; margin: 10mm; }
+          @page { size: A4 portrait; margin: 12mm; }
           body * { visibility: hidden; }
           #payslip-print-area, #payslip-print-area * { visibility: visible; }
           #payslip-print-area {
@@ -160,9 +167,11 @@ function PayslipPrintView({ payslip, employee }) {
             left: 0;
             top: 0;
             width: 100%;
+            max-width: 100% !important;
             margin: 0;
-            padding: 0;
+            padding: 20px;
             border: none !important;
+            font-size: 12px;
           }
           .app-container, .sidebar { display: none !important; }
         }
@@ -204,7 +213,7 @@ function PayslipPrintView({ payslip, employee }) {
             </>
           )}
           <div style={{ fontSize: '12px', color: '#777', marginTop: '4px' }}>เลขที่บัญชี</div>
-          <div style={{ fontSize: '13px' }}>{employee.bankAccount} ({employee.name.split(' ')[1]})<br />{employee.bankName}</div>
+          <div style={{ fontSize: '13px' }}>{employee.bankAccount} {employee.name?.split(' ')?.[1] ? `(${employee.name.split(' ')[1]})` : ''}<br />{employee.bankName}</div>
         </div>
       </div>
 
@@ -231,17 +240,17 @@ function PayslipPrintView({ payslip, employee }) {
       {/* Main Table */}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', marginBottom: '16px' }}>
         <thead>
-          <tr style={{ background: '#f0f0f0' }}>
-            <th colSpan={2} style={{ border: '1px solid #ccc', padding: '8px 12px', textAlign: 'center', fontWeight: '700' }}>เงินได้</th>
-            <th colSpan={2} style={{ border: '1px solid #ccc', padding: '8px 12px', textAlign: 'center', fontWeight: '700' }}>รายการหัก</th>
-            <th colSpan={2} style={{ border: '1px solid #ccc', padding: '8px 12px', textAlign: 'center', fontWeight: '700' }}>หมายเหตุ</th>
+          <tr style={{ background: '#1c1c1f', color: '#fff' }}>
+            <th colSpan={2} style={{ border: '1px solid #444', padding: '8px 12px', textAlign: 'center', fontWeight: '600' }}>เงินได้</th>
+            <th colSpan={2} style={{ border: '1px solid #444', padding: '8px 12px', textAlign: 'center', fontWeight: '600' }}>รายการหัก</th>
+            <th colSpan={2} style={{ border: '1px solid #444', padding: '8px 12px', textAlign: 'center', fontWeight: '600' }}>หมายเหตุ</th>
           </tr>
           <tr>
-            <th style={{ border: '1px solid #ccc', padding: '6px 12px', fontWeight: '700', background: '#f9f9f9' }}>รายการ</th>
-            <th style={{ border: '1px solid #ccc', padding: '6px 12px', textAlign: 'right', fontWeight: '700', background: '#f9f9f9' }}>จำนวนเงิน</th>
-            <th style={{ border: '1px solid #ccc', padding: '6px 12px', fontWeight: '700', background: '#f9f9f9' }}>รายการ</th>
-            <th style={{ border: '1px solid #ccc', padding: '6px 12px', textAlign: 'right', fontWeight: '700', background: '#f9f9f9' }}>จำนวนเงิน</th>
-            <th colSpan={2} style={{ border: '1px solid #ccc', padding: '6px 12px', background: '#f9f9f9' }}></th>
+            <th style={{ border: '1px solid #ccc', padding: '6px 12px', fontWeight: '600', color: '#555', background: '#fff' }}>รายการ</th>
+            <th style={{ border: '1px solid #ccc', padding: '6px 12px', textAlign: 'right', fontWeight: '600', color: '#555', background: '#fff' }}>จำนวนเงิน</th>
+            <th style={{ border: '1px solid #ccc', padding: '6px 12px', fontWeight: '600', color: '#555', background: '#fff' }}>รายการ</th>
+            <th style={{ border: '1px solid #ccc', padding: '6px 12px', textAlign: 'right', fontWeight: '600', color: '#555', background: '#fff' }}>จำนวนเงิน</th>
+            <th colSpan={2} style={{ border: '1px solid #ccc', padding: '6px 12px', background: '#fff' }}></th>
           </tr>
         </thead>
         <tbody>
@@ -250,25 +259,25 @@ function PayslipPrintView({ payslip, employee }) {
             const ded = payslip.deductions[i] || { label: '', amount: 0 };
             let remarkLabel = '';
             let remarkValue = '';
-            if (i === 2) { remarkLabel = 'รายได้สะสม'; remarkValue = payslip.cumulativeIncome.toLocaleString(); }
-            if (i === 3) { remarkLabel = 'รวมเงินได้'; remarkValue = totalIncome.toLocaleString(); }
-            if (i === 4) { remarkLabel = 'รวมรายการหัก'; remarkValue = totalDeductions.toLocaleString(); }
+            if (i === 2) { remarkLabel = 'สรุป'; remarkValue = Number(netPay).toLocaleString(); }
+            if (i === 3) { remarkLabel = 'รวมเงินได้'; remarkValue = Number(totalIncome).toLocaleString(); }
+            if (i === 4) { remarkLabel = 'รวมรายการหัก'; remarkValue = Number(totalDeductions).toLocaleString(); }
 
             return (
               <tr key={i}>
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px' }}>{inc.label}</td>
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right' }}>
-                  {inc.amount > 0 ? inc.amount.toLocaleString() : ''}
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px', color: '#555' }}>{inc.label}</td>
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right', color: '#555' }}>
+                  {Number(inc.amount) > 0 ? Number(inc.amount).toLocaleString() : ''}
                 </td>
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px' }}>{ded.label}</td>
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right' }}>
-                  {ded.amount > 0 ? ded.amount.toLocaleString() : ''}
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px', color: '#555' }}>{ded.label}</td>
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right', color: '#555' }}>
+                  {Number(ded.amount) > 0 ? Number(ded.amount).toLocaleString() : ''}
                 </td>
-                {i === 2
-                  ? <td style={{ border: '1px solid #ccc', padding: '7px 12px', fontWeight: '700', textAlign: 'center', background: '#f9f9f9' }}>สรุป</td>
-                  : <td style={{ border: '1px solid #ccc', padding: '7px 12px' }}>{remarkLabel}</td>
+                {i === 2 && remarkLabel
+                  ? <td style={{ border: '1px solid #ccc', padding: '7px 12px', fontWeight: '700', textAlign: 'center', color: '#777' }}>{remarkLabel}</td>
+                  : <td style={{ border: '1px solid #ccc', padding: '7px 12px', color: '#777', fontWeight: remarkLabel ? '700' : '400', textAlign: remarkLabel ? 'center' : 'left' }}>{remarkLabel}</td>
                 }
-                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right', fontWeight: remarkLabel ? '700' : '400' }}>
+                <td style={{ border: '1px solid #ccc', padding: '7px 12px', textAlign: 'right', fontWeight: remarkLabel ? '700' : '400', color: '#777' }}>
                   {remarkValue}
                 </td>
               </tr>
@@ -314,163 +323,178 @@ function PayslipPrintView({ payslip, employee }) {
   );
 }
 
-/* ── TAB 1: E-PAYSLIP ── */
+/* ── TAB 1: E-PAYSLIP (REDESIGNED) ── */
+
+function PayslipDetailPanel({ payslip, onClose, onApprove, onDownload, downloading, onPrint }) {
+  if (!payslip) return null;
+
+  const { employee } = payslip;
+  const isApproved = payslip.status === 'approved' || payslip.status === 'paid';
+
+  return (
+    <div style={{
+      position: 'fixed', top: 0, right: 0, bottom: 0, width: '450px',
+      background: 'var(--bg-primary)', boxShadow: '-4px 0 24px rgba(0,0,0,0.2)',
+      zIndex: 1000, display: 'flex', flexDirection: 'column',
+      transform: 'translateX(0)', transition: 'transform 0.3s ease-in-out',
+      borderLeft: '1px solid var(--border-primary)'
+    }}>
+      {/* Header */}
+      <div style={{ padding: '20px', borderBottom: '1px solid var(--border-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--accent-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '18px' }}>
+            {employee?.name?.charAt(0) || '?'}
+          </div>
+          <div>
+            <div style={{ fontWeight: '800', fontSize: '16px' }}>{employee?.name}</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{employee?.position} · {employee?.branch}</div>
+          </div>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+          <X size={24} />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>สถานะ</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700', fontSize: '14px', color: isApproved ? '#16a34a' : '#f59e0b' }}>
+              {isApproved ? <CheckCircle size={16} /> : <Clock size={16} />}
+              {isApproved ? 'อนุมัติแล้ว' : 'รอดำเนินการ'}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Net Pay</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#16a34a' }}>฿{Number(payslip.net_pay || 0).toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+          {/* Earnings */}
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '800', color: '#1B3A6B', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px solid #ccc' }}>รายรับ (Earnings)</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {payslip.items?.filter(i => i.item_type === 'earning').map(i => (
+                <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                  <span style={{ color: 'var(--text-primary)' }}>{i.description}</span>
+                  <span style={{ fontWeight: '600' }}>{Number(i.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '800', marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #ccc' }}>
+                <span>รวมรายรับ</span>
+                <span style={{ color: '#16a34a' }}>฿{Number(payslip.total_earnings || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Deductions */}
+          <div>
+            <div style={{ fontSize: '14px', fontWeight: '800', color: '#1B3A6B', marginBottom: '12px', paddingBottom: '8px', borderBottom: '2px solid #ccc' }}>รายการหัก (Deductions)</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {payslip.items?.filter(i => i.item_type === 'deduction').map(i => (
+                <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                  <span style={{ color: 'var(--text-primary)' }}>{i.description}</span>
+                  <span style={{ fontWeight: '600', color: '#ef4444' }}>-{Number(i.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              {(payslip.items?.filter(i => i.item_type === 'deduction').length === 0) && (
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>ไม่มีรายการหัก</div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', fontWeight: '800', marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed #ccc' }}>
+                <span>รวมรายการหัก</span>
+                <span style={{ color: '#ef4444' }}>฿{Number(payslip.total_deductions || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Actions */}
+      <div style={{ padding: '20px', borderTop: '1px solid var(--border-primary)', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {!isApproved && (
+          <button onClick={() => onApprove(payslip.id)} style={{ width: '100%', padding: '12px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: '700', fontSize: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <CheckCircle size={18} /> อนุมัติสลิปนี้ (Approve)
+          </button>
+        )}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => onDownload(payslip)} disabled={downloading} style={{ flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', opacity: downloading ? 0.7 : 1 }}>
+            <Download size={16} /> {downloading ? 'กำลังโหลด...' : 'PDF'}
+          </button>
+          <button onClick={onPrint} style={{ flex: 1, padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+            <Printer size={16} /> พิมพ์สลิป
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EPayslipTab({ role }) {
   const { user } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState(PAY_PERIODS[0]);
-  const [selectedEmp, setSelectedEmp] = useState(null);
-  const [selectedPayslip, setSelectedPayslip] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [generatedPayslips, setGeneratedPayslips] = useState([]);
-  const [users, setUsers] = useState([]);
+  const [cycle, setCycle] = useState(null);
+  const [payslips, setPayslips] = useState([]);
+  const [pendingLeavesCount, setPendingLeavesCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPayslip, setSelectedPayslip] = useState(null);
+  const [downloading, setDownloading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const roleLabels = { owner:'เจ้าของ', manager:'Area Mgr', store_manager:'ผจก.ร้าน', cook:'พ่อครัว', staff:'พนักงาน' };
 
-  useEffect(() => { loadPayslips(); }, [selectedPeriod?.value]);
+  useEffect(() => { loadCycleData(); }, [selectedPeriod?.value]);
 
-  async function loadPayslips() {
+  async function loadCycleData() {
     if (!selectedPeriod) return;
     setLoading(true);
     try {
-      let query = supabase.from('users').select('*, branches(name)').eq('is_active', true);
-      if (role !== 'owner') {
-        query = query.eq('id', user?.id);
+      const { startISO, endISO, isMid } = selectedPeriod;
+      
+      // 1. Fetch pending leaves in period (Timezone aware logic from start_date/end_date)
+      const leafStart = startISO.substring(0, 10);
+      const leafEnd = endISO.substring(0, 10);
+      const { count } = await supabase
+        .from('hr_leave_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .gte('start_date', leafStart)
+        .lte('start_date', leafEnd);
+      setPendingLeavesCount(count || 0);
+
+      // 2. Check if cycle exists
+      const { data: cycles } = await supabase
+        .from('payroll_cycles')
+        .select('*')
+        .eq('cycle_name', selectedPeriod.value);
+
+      if (cycles && cycles.length > 0) {
+        const currentCycle = cycles[0];
+
+        if (currentCycle.status === 'draft') {
+          // Draft cycle: delete stale data and regenerate with latest attendance/salary
+          await supabase.from('payslip_items').delete().in(
+            'payslip_id',
+            (await supabase.from('employee_payslips').select('id').eq('cycle_id', currentCycle.id)).data?.map(p => p.id) || []
+          );
+          await supabase.from('employee_payslips').delete().eq('cycle_id', currentCycle.id);
+          await supabase.from('payroll_cycles').delete().eq('id', currentCycle.id);
+          // Regenerate fresh
+          await generateDraftCycle();
+        } else {
+          // Approved/completed cycle: show existing locked data
+          const { data: psData } = await supabase
+            .from('employee_payslips')
+            .select('*, users(id, name, full_name, employee_id, role, employment_type, base_salary, daily_rate, pay_cycle, daily_cash_advance, bank_account, bank_name, branches(name)), payslip_items(*)')
+            .eq('cycle_id', currentCycle.id);
+          setCycle(currentCycle);
+          setPayslips(formatPayslipData(psData || []));
+        }
+      } else {
+        // 3. Auto-generate draft cycle
+        await generateDraftCycle();
       }
-      const { data: usersData } = await query;
-      const userList = usersData || [];
-      setUsers(userList);
-
-      const { startISO, endISO, isMid, payDate, monthKey } = selectedPeriod;
-      // action_date range for salary adjustments (use the half-month window)
-      const adjStart = startISO.substring(0, 10);
-      const adjEnd = endISO.substring(0, 10);
-
-      const [attRes, adjRes] = await Promise.all([
-        supabase.from('attendance')
-          .select('user_id, type, timestamp')
-          .eq('type', 'clock_in')
-          .eq('is_deleted', false)
-          .gte('timestamp', startISO)
-          .lt('timestamp', endISO),
-        supabase.from('hr_salary_adjustments')
-          .select('*')
-          .gte('action_date', adjStart)
-          .lt('action_date', adjEnd)
-      ]);
-
-      const attData = attRes.data || [];
-      const adjData = adjRes.data || [];
-
-      const newPayslips = userList
-        .filter(u => {
-          // Monthly-pay employees only show in end-of-month cycle
-          const payCycle = u.pay_cycle || 'monthly';
-          if (payCycle === 'monthly' && isMid) return false;
-          return true;
-        })
-        .map(u => {
-          const payCycle = u.pay_cycle || 'monthly';
-          const uAttAll = attData.filter(a => a.user_id === u.id);
-          
-          // shiftCount = total clock_ins (each clock_in = 1 shift worked, used for income)
-          const shiftCount = uAttAll.length;
-          
-          // uniqueDayCount = unique calendar days worked (used for cash advance & display label)
-          const uniqueDaysSet = new Set();
-          uAttAll.forEach(att => {
-            uniqueDaysSet.add(new Date(att.timestamp).toDateString());
-          });
-          const uniqueDayCount = uniqueDaysSet.size;
-          
-          const customRates = u.custom_rates || {};
-          const hasCustomRates = Object.keys(customRates).length > 0;
-
-          let basicIncome = 0;
-          let incomeLabel = '';
-          if (u.employment_type === 'daily') {
-            if (hasCustomRates) {
-              // For custom rates, sum the rate for each shift based on the day of week
-              basicIncome = uAttAll.reduce((sum, att) => {
-                const dayOfWeek = new Date(att.timestamp).getDay();
-                const rate = customRates[dayOfWeek] !== undefined
-                  ? Number(customRates[dayOfWeek])
-                  : (u.daily_rate || 0);
-                return sum + rate;
-              }, 0);
-              incomeLabel = 'ค่าจ้างรายวัน';
-            } else {
-              // Each clock_in = 1 shift = daily_rate per shift
-              basicIncome = shiftCount * (u.daily_rate || 0);
-              incomeLabel = 'ค่าจ้างรายวัน';
-            }
-          } else {
-            // Salary employee:
-            //   bimonthly → half per period; monthly → full salary end-of-month only
-            const fullSalary = u.base_salary || 0;
-            if (payCycle === 'bimonthly') {
-              basicIncome = fullSalary / 2;
-              incomeLabel = `เงินเดือน${isMid ? 'รอบกลางเดือน' : 'รอบสิ้นเดือน'} (${fullSalary.toLocaleString()} / 2)`;
-            } else {
-              basicIncome = fullSalary;
-              incomeLabel = 'เงินเดือน (Base Salary)';
-            }
-          }
-          const uAdj = adjData.filter(a => a.user_id === u.id);
-          const incomes = uAdj.filter(a => a.adjust_type === 'income');
-          const deductions = uAdj.filter(a => a.adjust_type === 'deduction');
-
-          const positionAllowance = Number(u.position_allowance) || 0;
-          let allowanceToPay = 0;
-          if (positionAllowance > 0 && !isMid) {
-             allowanceToPay = positionAllowance;
-             
-             if (allowanceToPay > 0) {
-               incomes.unshift({ label: 'ค่าตำแหน่ง', amount: Math.round(allowanceToPay) });
-             }
-          }
-
-
-          let totalCashPaidForPeriod = 0;
-
-          // Cash advance is per CALENDAR DAY (not per shift)
-          if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && uniqueDayCount > 0) {
-            const advanceTotal = uniqueDayCount * u.daily_cash_advance;
-            deductions.push({ label: 'เบิกเงินสดรายวัน', amount: advanceTotal });
-            totalCashPaidForPeriod += advanceTotal;
-          }
-
-          totalCashPaidForPeriod = Math.max(0, totalCashPaidForPeriod);
-
-          const payCycleInfo = PAY_CYCLE_LABELS[payCycle] || PAY_CYCLE_LABELS.monthly;
-
-          return {
-            id: `PS-${selectedPeriod.value}-${u.id.substring(0,8)}`,
-            empId: u.id,
-            payCycle,
-            payCycleLabel: payCycleInfo.label,
-            payCycleColor: payCycleInfo.color,
-            employee: {
-              id: u.employee_id || u.id,
-              name: u.name,
-              position: roleLabels[u.role] || u.role,
-              branch: u.branches?.name || 'ไม่ระบุสาขา',
-              bankAccount: u.bank_account || '-',
-              bankName: u.bank_name || '-'
-            },
-            period: selectedPeriod.label.replace('รอบกลางเดือน ', '').replace('รอบสิ้นเดือน ', ''),
-            issueDate: payDate ? new Date(payDate).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString('th-TH'),
-            income: [
-              { label: incomeLabel, amount: basicIncome },
-              ...incomes.map(i => ({ label: i.label, amount: i.amount }))
-            ],
-            deductions: deductions.map(d => ({ label: d.label, amount: d.amount })),
-            cashPaid: totalCashPaidForPeriod,
-            dailyCashAdvanceRate: u.daily_cash_advance || 0,
-            clockInCount: uniqueDayCount,
-            cumulativeIncome: basicIncome
-          };
-        });
-
-      setGeneratedPayslips(newPayslips);
-      if (!selectedEmp && userList.length > 0) setSelectedEmp(userList[0]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -478,143 +502,433 @@ function EPayslipTab({ role }) {
     }
   }
 
-  const roleLabels = { owner:'เจ้าของ', manager:'Area Mgr', store_manager:'ผจก.ร้าน', cook:'พ่อครัว', staff:'พนักงาน' };
+  function formatPayslipData(rawPayslips) {
+    return rawPayslips.map(ps => ({
+      ...ps,
+      employee: {
+        rawId: ps.users?.id || ps.employee_id,
+        id: ps.users?.employee_id || `EMP${String(ps.users?.id || ps.employee_id).substring(0,4)}`,
+        name: ps.users?.full_name || ps.users?.name || 'Unknown',
+        position: roleLabels[ps.users?.role] || ps.users?.role || '-',
+        branch: ps.users?.branches?.name || '-',
+        bankAccount: ps.users?.bank_account || '-',
+        bankName: ps.users?.bank_name || '-',
+        payCycle: ps.users?.pay_cycle || 'monthly',
+        dailyCashAdvanceRate: ps.users?.daily_cash_advance || 0
+      },
+      items: ps.payslip_items || []
+    }));
+  }
 
-  const empPayslips = generatedPayslips.filter(p => p.empId === selectedEmp?.id);
-  const handlePrint = () => window.print();
+  async function generateDraftCycle() {
+    const { startISO, endISO, isMid } = selectedPeriod;
+    const adjStart = startISO.substring(0, 10);
+    const adjEnd = endISO.substring(0, 10);
 
-  const [downloading, setDownloading] = useState(false);
+    // Fetch users
+    let query = supabase.from('users').select('*, branches(name)').eq('is_active', true);
+    if (role !== 'owner' && role !== 'manager' && role !== 'store_manager') {
+      query = query.eq('id', user?.id);
+    }
+    const { data: usersData } = await query;
+    const userList = usersData || [];
 
-  const handleDownloadPdf = async () => {
-    const element = document.getElementById('payslip-print-area');
-    if (!element) return;
+    // Filter out monthly on mid-cycle (except owner)
+    const validUsers = userList.filter(u => {
+      if (u.role === 'owner') return true;
+      const payCycle = u.pay_cycle || 'monthly';
+      return !(payCycle === 'monthly' && isMid);
+    });
+
+    if (validUsers.length === 0) {
+      setCycle(null);
+      setPayslips([]);
+      return;
+    }
+
+    // Insert cycle
+    const { data: cycleRes, error: cycleErr } = await supabase
+      .from('payroll_cycles')
+      .insert({
+        cycle_name: selectedPeriod.value,
+        start_date: adjStart,
+        end_date: adjEnd,
+        status: 'draft'
+      }).select();
     
-    setDownloading(true);
-    try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
+    if (cycleErr) throw cycleErr;
+    const newCycle = cycleRes[0];
+    setCycle(newCycle);
+
+    // Fetch Attendance & Adjustments
+    const [attRes, adjRes] = await Promise.all([
+      supabase.from('attendance')
+        .select('user_id, type, timestamp')
+        .eq('type', 'clock_in')
+        .eq('is_deleted', false)
+        .gte('timestamp', startISO)
+        .lt('timestamp', endISO),
+      supabase.from('hr_salary_adjustments')
+        .select('*')
+        .gte('action_date', adjStart)
+        .lte('action_date', adjEnd) 
+    ]);
+
+    const attData = attRes.data || [];
+    const adjData = adjRes.data || [];
+
+    const newPayslipsToInsert = [];
+    const newItemsToInsert = [];
+
+    validUsers.forEach(u => {
+      const uAtt = attData.filter(a => a.user_id === u.id);
+      const shiftCount = uAtt.length;
+      const uniqueDays = new Set(uAtt.map(a => new Date(a.timestamp).toDateString())).size;
+      
+      let basicIncome = 0;
+      let incomeLabel = '';
+      if (u.employment_type === 'daily') {
+        const customRates = u.custom_rates || {};
+        if (Object.keys(customRates).length > 0) {
+          basicIncome = uAtt.reduce((sum, att) => {
+            const day = new Date(att.timestamp).getDay();
+            return sum + (customRates[day] !== undefined ? Number(customRates[day]) : (u.daily_rate || 0));
+          }, 0);
+        } else {
+          basicIncome = shiftCount * (u.daily_rate || 0);
+        }
+        incomeLabel = 'ค่าจ้างรายวัน';
+      } else {
+        const fullSalary = u.base_salary || 0;
+        if (u.pay_cycle === 'bimonthly') {
+          basicIncome = fullSalary / 2;
+          incomeLabel = `เงินเดือน${isMid ? 'รอบกลางเดือน' : 'รอบสิ้นเดือน'}`;
+        } else {
+          basicIncome = isMid ? 0 : fullSalary;
+          incomeLabel = isMid ? 'เงินเดือน (รอบสิ้นเดือน)' : 'เงินเดือน (Base Salary)';
+        }
+      }
+
+      const uAdj = adjData.filter(a => a.user_id === u.id);
+      let deductions = uAdj.filter(a => a.adjust_type === 'deduction');
+      let incomes = uAdj.filter(a => a.adjust_type === 'income');
+
+      // Cash advance
+      if (u.employment_type === 'daily' && u.daily_cash_advance > 0 && uniqueDays > 0) {
+        deductions.push({ label: 'เบิกเงินสดรายวัน', amount: uniqueDays * u.daily_cash_advance });
+      }
+
+      // Allowances
+      if (Number(u.position_allowance) > 0 && !isMid) {
+        incomes.unshift({ label: 'ค่าตำแหน่ง', amount: Math.round(Number(u.position_allowance)) });
+      }
+
+      const totalE = basicIncome + incomes.reduce((s, x) => s + Number(x.amount), 0);
+      const totalD = deductions.reduce((s, x) => s + Number(x.amount), 0);
+      const netPay = totalE - totalD;
+
+      // Unique pseudo-random ID for linking items
+      const tempPayslipId = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+      newPayslipsToInsert.push({
+        cycle_id: newCycle.id,
+        employee_id: u.id,
+        base_salary_prorated: basicIncome,
+        total_earnings: totalE,
+        total_deductions: totalD,
+        net_pay: netPay,
+        status: 'draft',
+        _tempId: tempPayslipId // helper — stripped before DB insert
+      });
+
+      // Income Items
+      newItemsToInsert.push({ _tempId: tempPayslipId, item_type: 'earning', item_code: 'BASE', description: incomeLabel, amount: basicIncome });
+      incomes.forEach((inc, idx) => {
+        newItemsToInsert.push({ _tempId: tempPayslipId, item_type: 'earning', item_code: 'ADJ', description: inc.label, amount: inc.amount });
+      });
+      // Deduction Items
+      deductions.forEach((ded, idx) => {
+        newItemsToInsert.push({ _tempId: tempPayslipId, item_type: 'deduction', item_code: 'DED', description: ded.label, amount: ded.amount });
+      });
+    });
+
+    if (newPayslipsToInsert.length > 0) {
+      // Step 1: Insert payslips (strip _tempId helper before sending to DB)
+      const toInsert = newPayslipsToInsert.map(({ _tempId, ...rest }) => rest);
+      const { data: insertedPayslips, error: err1 } = await supabase.from('employee_payslips').insert(toInsert).select();
+      if (err1) throw err1;
+
+      // Map DB UUIDs back to tempItems
+      const insertedItems = [];
+      insertedPayslips.forEach(dbPs => {
+          // find matching employee_id to get tempId
+          const matchingDraft = newPayslipsToInsert.find(p => p.employee_id === dbPs.employee_id);
+          if (matchingDraft) {
+              const matchedItems = newItemsToInsert.filter(i => i._tempId === matchingDraft._tempId);
+              matchedItems.forEach(mi => {
+                  insertedItems.push({
+                      payslip_id: dbPs.id,
+                      item_type: mi.item_type,
+                      item_code: mi.item_code,
+                      description: mi.description,
+                      amount: mi.amount
+                  });
+              });
+          }
       });
       
+      if (insertedItems.length > 0) {
+          const { error: err2 } = await supabase.from('payslip_items').insert(insertedItems);
+          if (err2) throw err2;
+      }
+      
+      // Refetch formatted
+      const { data: psData } = await supabase
+        .from('employee_payslips')
+        .select('*, users(id, name, full_name, employee_id, role, employment_type, base_salary, daily_rate, pay_cycle, daily_cash_advance, bank_account, bank_name, branches(name)), payslip_items(*)')
+        .eq('cycle_id', newCycle.id);
+      
+      setPayslips(formatPayslipData(psData || []));
+    } else {
+      setPayslips([]);
+    }
+  }
+
+  const handleApproveAll = async () => {
+    if (!confirm('ยืนยันที่จะอนุมัติสลิปทั้งหมดในรอบนี้หรือไม่?')) return;
+    const ids = payslips.filter(p => p.status === 'draft').map(p => p.id);
+    if (ids.length === 0) return alert('ไม่มีสลิปที่รออนุมัติ');
+    
+    await supabase.from('employee_payslips').update({ status: 'approved' }).in('id', ids);
+    loadCycleData();
+  };
+
+  const handleApproveSingle = async (payslipId) => {
+    await supabase.from('employee_payslips').update({ status: 'approved' }).eq('id', payslipId);
+    setPayslips(prev => prev.map(p => p.id === payslipId ? { ...p, status: 'approved' } : p));
+    if (selectedPayslip && selectedPayslip.id === payslipId) {
+      setSelectedPayslip(prev => ({ ...prev, status: 'approved' }));
+    }
+  };
+
+  const handleDownloadPdfSingle = async (ps) => {
+    setDownloading(true);
+    try {
+      await new Promise(r => setTimeout(r, 300)); // ensure render
+      const printArea = document.getElementById('payslip-print-area');
+      if (!printArea) return alert('ไม่พบเอกสารสำหรับพิมพ์');
+      
+      // Scroll to print area to ensure it's in the viewport for html2canvas
+      printArea.scrollIntoView({ behavior: 'instant' });
+      await new Promise(r => setTimeout(r, 200));
+      
+      const canvas = await html2canvas(printArea, { 
+        scale: 2, 
+        useCORS: true, 
+        backgroundColor: '#ffffff',
+        scrollY: -window.scrollY,
+        windowHeight: printArea.scrollHeight + 200
+      });
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a5');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // 10mm margin each side
       const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      
-      const fileName = `Payslip_${selectedEmp?.name?.replace(/\s+/g, '_')}_${selectedPeriod.monthKey}.pdf`;
-      pdf.save(fileName);
+      pdf.addImage(imgData, 'PNG', 10, 10, pdfWidth, pdfHeight);
+      pdf.save(`Payslip_${ps.employee?.id || 'unknown'}_${cycle?.cycle_name || 'cycle'}.pdf`);
     } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF');
+      console.error(err);
+      alert('เกิดข้อผิดพลาดในการสร้าง PDF');
     } finally {
       setDownloading(false);
     }
   };
 
+  const handlePrintSingle = () => {
+    setTimeout(() => window.print(), 100);
+  };
+
+  // KPIs
+  const totalPayroll = payslips.reduce((s, p) => s + Number(p.net_pay || 0), 0);
+  const totalDeductions = payslips.reduce((s, p) => s + Number(p.total_deductions || 0), 0);
+  const totalHeadcount = payslips.length;
+  const isAllApproved = payslips.length > 0 && payslips.every(p => p.status === 'approved' || p.status === 'paid');
+
+  const filteredPayslips = payslips.filter(p => {
+    const nameMatch = (p.employee?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const idMatch = (p.employee?.id || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSearch = nameMatch || idMatch;
+    const matchStatus = statusFilter === 'all' ? true : p.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
   return (
     <div>
-      {/* Action Bar */}
+      {/* SECTION 1: Header Dropdown & KPIs */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <label style={{ fontWeight: '600', fontSize: '14px', whiteSpace: 'nowrap' }}>รอบเงินเดือน :</label>
           <select
             value={selectedPeriod?.value || ''}
-            onChange={e => {
-              const p = PAY_PERIODS.find(x => x.value === e.target.value);
-              setSelectedPeriod(p || PAY_PERIODS[0]);
-              setSelectedPayslip(null);
-            }}
-            style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: '14px', minWidth: '280px', cursor: 'pointer' }}
+            onChange={e => setSelectedPeriod(PAY_PERIODS.find(x => x.value === e.target.value) || PAY_PERIODS[0])}
+            style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', fontSize: '14px', cursor: 'pointer', minWidth: '280px' }}
           >
-            {PAY_PERIODS.map(p => (
-              <option key={p.value} value={p.value}>{p.label}</option>
-            ))}
+            {PAY_PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </div>
-
-        {role === 'owner' && !selectedPayslip && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <label style={{ fontWeight: '600', fontSize: '14px', whiteSpace: 'nowrap' }}>เลือกพนักงาน:</label>
-            <div style={{ position: 'relative', minWidth: '240px' }}>
-              <select
-                value={selectedEmp?.id || ''}
-                onChange={e => {
-                  setSelectedEmp(users.find(emp => emp.id === e.target.value) || null);
-                  setSelectedPayslip(null);
-                }}
-                style={{ width: '100%', padding: '8px 36px 8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', fontSize: '14px', appearance: 'none', cursor: 'pointer' }}
-              >
-                {users.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
-                ))}
-              </select>
-            </div>
+        {(role === 'owner' || role === 'manager' || role === 'store_manager') ? (
+          <div style={{ display: 'flex', gap: '10px' }}>
+             <button onClick={handleApproveAll} disabled={isAllApproved || payslips.length === 0} style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: isAllApproved ? 'var(--bg-card)' : '#16a34a', color: isAllApproved ? 'var(--text-muted)' : '#fff', cursor: isAllApproved ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+               <CheckCircle size={15} /> Approve All
+             </button>
+             <button onClick={() => loadCycleData()} disabled={loading} style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: loading ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', opacity: loading ? 0.6 : 1 }}>
+               🔄 คำนวณใหม่
+             </button>
+             <button style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+               <Download size={15} /> ดาวน์โหลดรายงาน
+             </button>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}><span className="animate-pulse">กำลังคำนวณเงินเดือน...</span></div>
-      ) : !selectedPayslip ? (
-        <div>
-          <div style={{ fontWeight: '700', fontSize: '16px', marginBottom: '12px', color: 'var(--text-primary)' }}>
-            สลิปเงินเดือน — {selectedEmp?.name || '-'}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: '600' }}>ยอดจ่ายสุทธิรวม (Net Pay)</div>
+          <div style={{ fontSize: '28px', fontWeight: '900', color: '#16a34a' }}>฿ {totalPayroll.toLocaleString()}</div>
+        </div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: '600' }}>พนักงานทั้งหมด (Headcount)</div>
+          <div style={{ fontSize: '28px', fontWeight: '900', color: 'var(--text-primary)' }}>{totalHeadcount} <span style={{ fontSize: '14px', color: 'var(--text-muted)', fontWeight: 'normal' }}>คน</span></div>
+        </div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: '600' }}>ยอดหักรวม (Deductions)</div>
+          <div style={{ fontSize: '28px', fontWeight: '900', color: '#ef4444' }}>฿ {totalDeductions.toLocaleString()}</div>
+        </div>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: '600' }}>สถานะ (Status)</div>
+          <div style={{ fontSize: '24px', fontWeight: '900', color: isAllApproved ? '#16a34a' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isAllApproved ? 'พร้อมจ่าย (Ready)' : 'รออนุมัติ (Pending)'}
           </div>
-          {empPayslips.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
-              <FileText size={40} style={{ opacity: 0.3, marginBottom: '8px', margin: '0 auto' }} />
-              <div>ยังไม่มีสลิปเงินเดือนในรอบนี้</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {empPayslips.map(ps => {
-                const totalIncome = ps.income.reduce((s, r) => s + r.amount, 0);
-                const totalDeductions = ps.deductions.reduce((s, r) => s + r.amount, 0);
-                const net = totalIncome - totalDeductions;
-                return (
-                  <div key={ps.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+        </div>
+      </div>
+
+      {/* SECTION 2: Pending Alerts & Search */}
+      {pendingLeavesCount > 0 && (
+        <div style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--radius-sm)', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#b45309', fontWeight: '700' }}>
+            <AlertCircle size={20} />
+            มีใบลาพนักงานรออนุมัติ {pendingLeavesCount} รายการ ในรอบเงินเดือนนี้
+          </div>
+          <button style={{ padding: '6px 12px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>
+            Review (ตรวจสอบ)
+          </button>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', background: 'var(--bg-card)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)' }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input 
+            type="text" 
+            placeholder="ค้นหาชื่อพนักงาน หรือ รหัส..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '10px 10px 10px 40px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', boxSizing: 'border-box', fontSize: '14px' }}
+          />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '10px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px' }}>
+          <option value="all">สถานะทั้งหมด</option>
+          <option value="draft">รอดำเนินการ (Draft)</option>
+          <option value="approved">อนุมัติแล้ว (Approved)</option>
+        </select>
+      </div>
+
+      {/* SECTION 3: Data Table */}
+      <div style={{ background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', overflow: 'hidden' }}>
+        <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 10, boxShadow: '0 1px 0 var(--border-primary)' }}>
+              <tr>
+                <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: '600', width: '25%' }}>พนักงาน</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: '600' }}>รายรับรวม</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: '600' }}>หักรวม</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: '600' }}>ยอดสุทธิ (Net Pay)</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '13px', fontWeight: '600', width: '15%' }}>สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}><span className="animate-pulse">กำลังโหลดข้อมูล...</span></td></tr>
+              ) : filteredPayslips.length === 0 ? (
+                <tr><td colSpan={5} style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>ไม่มีข้อมูลพนักงานในรอบนี้</td></tr>
+              ) : (
+                filteredPayslips.map(ps => (
+                  <tr 
+                    key={ps.id} 
                     onClick={() => setSelectedPayslip(ps)}
+                    style={{ borderBottom: '1px solid var(--border-primary)', cursor: 'pointer', transition: 'background 0.2s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-primary)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                   >
-                    <div>
-                      <div style={{ fontWeight: '700', fontSize: '15px' }}>รอบ: {ps.period}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span>ออกสลิป: {ps.issueDate} · #{ps.id}</span>
-                        <span style={{ background: ps.payCycleColor, color: '#fff', borderRadius: '4px', padding: '1px 8px', fontSize: '11px', fontWeight: '700' }}>{ps.payCycleLabel}</span>
+                    <td style={{ padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                           {ps.employee.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: '700', fontSize: '14px' }}>{ps.employee.name}</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{ps.employee.position}</div>
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--accent-success)' }}>฿{net.toLocaleString()}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Net Pay</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                    </td>
+                    <td style={{ padding: '16px', fontSize: '14px' }}>{Number(ps.total_earnings).toLocaleString()}</td>
+                    <td style={{ padding: '16px', fontSize: '14px', color: '#ef4444' }}>{Number(ps.total_deductions > 0 ? ps.total_deductions : 0).toLocaleString()}</td>
+                    <td style={{ padding: '16px', fontSize: '15px', fontWeight: '800', color: '#16a34a' }}>฿{Number(ps.net_pay).toLocaleString()}</td>
+                    <td style={{ padding: '16px' }}>
+                      {ps.status === 'draft' ? (
+                         <span style={{ padding: '6px 10px', borderRadius: '20px', background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', color: 'var(--text-muted)', fontSize: '12px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> รอดำเนินการ</span>
+                      ) : (
+                         <span style={{ padding: '6px 10px', borderRadius: '20px', background: 'rgba(22, 163, 74, 0.1)', border: '1px solid rgba(22, 163, 74, 0.2)', color: '#16a34a', fontSize: '12px', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={12} /> อนุมัติแล้ว</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        <div>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', alignItems: 'center' }}>
-            <button onClick={() => setSelectedPayslip(null)} style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '13px' }}>
-              ← กลับ
-            </button>
-            <button onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>
-              <Printer size={15} /> พิมพ์
-            </button>
-            <button 
-              onClick={handleDownloadPdf}
-              disabled={downloading}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: '600', fontSize: '13px', opacity: downloading ? 0.7 : 1 }}
-            >
-              <Download size={15} /> {downloading ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด PDF'}
-            </button>
-          </div>
-          <PayslipPrintView payslip={selectedPayslip} employee={selectedPayslip.employee} />
-        </div>
+      </div>
+
+      {/* SECTION 4: Slide-out Panel */}
+      <PayslipDetailPanel 
+        payslip={selectedPayslip} 
+        onClose={() => setSelectedPayslip(null)} 
+        onApprove={handleApproveSingle}
+        onDownload={handleDownloadPdfSingle}
+        downloading={downloading}
+        onPrint={handlePrintSingle}
+      />
+      {selectedPayslip && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999 }} onClick={() => setSelectedPayslip(null)} />
+      )}
+
+      {/* Hidden Print View */}
+      {selectedPayslip && (
+        <PayslipPrintView 
+          payslip={{
+            period: selectedPeriod?.label?.split(' ')?.[1] + ' ' + (selectedPeriod?.label?.split(' ')?.[2] || '') + ' ' + (selectedPeriod?.label?.match(/\(.*?\)/)?.[0] || ''), // Extract just name part e.g. "มี.ค. 2026 (16-31)"
+            issueDate: selectedPeriod?.payDate ? new Date(selectedPeriod.payDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) : new Date().toLocaleDateString('th-TH'),
+            payCycleLabel: PAY_CYCLE_LABELS[selectedPayslip.employee?.payCycle]?.label || 'จ่ายสิ้นเดือน',
+            payCycleColor: PAY_CYCLE_LABELS[selectedPayslip.employee?.payCycle]?.color || '#3b82f6',
+            income: selectedPayslip.items?.filter(i => i.item_type === 'earning').map(i => ({ label: i.description, amount: i.amount })) || [],
+            deductions: selectedPayslip.items?.filter(i => i.item_type === 'deduction').map(i => ({ label: i.description, amount: i.amount })) || [],
+            cumulativeIncome: selectedPayslip.total_earnings || 0,
+            cashPaid: selectedPayslip.items?.filter(i => i.item_code === 'DED' && i.description.includes('เบิกเงินสด')).reduce((s, x) => s + x.amount, 0) || 0,
+            dailyCashAdvanceRate: selectedPayslip.employee?.dailyCashAdvanceRate || 0
+          }} 
+          employee={{
+            ...selectedPayslip.employee
+          }} 
+        />
       )}
     </div>
   );
@@ -711,7 +1025,7 @@ function LeaveManagementTab({ role }) {
       {/* Leave Balances */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '24px' }}>
         {leaveStats.map(lb => (
-          <div key={lb.type} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '16px' }}>
+          <div key={lb.type} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', padding: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
               <span style={{ fontWeight: '700', fontSize: '14px' }}>{lb.type}</span>
               <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>จำนวนที่ใช้แล้ว</span>
@@ -731,14 +1045,14 @@ function LeaveManagementTab({ role }) {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
+        <form onSubmit={handleSubmit} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
           <div style={{ fontWeight: '700', fontSize: '15px', marginBottom: '16px' }}>ยื่นใบลาใหม่</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             {role === 'owner' && (
               <div>
                 <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>พนักงาน</label>
                 <select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px' }}>
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px' }}>
                   {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </div>
@@ -746,29 +1060,29 @@ function LeaveManagementTab({ role }) {
             <div>
               <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>ประเภทการลา</label>
               <select value={form.leave_type} onChange={e => setForm({ ...form, leave_type: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px' }}>
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px' }}>
                 {['ลาป่วย', 'ลากิจ', 'ลาพักร้อน', 'อื่นๆ'].map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
               <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>วันเริ่มลา</label>
               <input type="date" required value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
             </div>
             <div>
               <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>วันสิ้นสุด</label>
               <input type="date" required value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
             </div>
             <div style={{ gridColumn: role === 'owner' ? '1 / -1' : 'auto' }}>
               <label style={{ fontSize: '13px', fontWeight: '600', display: 'block', marginBottom: '4px' }}>เหตุผล</label>
               <input type="text" placeholder="ระบุเหตุผล..." value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' }} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
-            <button type="submit" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600' }}>ยืนยันส่งคำขอ</button>
-            <button type="button" onClick={() => setShowForm(false)} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
+            <button type="submit" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: '600' }}>ยืนยันส่งคำขอ</button>
+            <button type="button" onClick={() => setShowForm(false)} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
           </div>
         </form>
       )}
@@ -809,7 +1123,7 @@ function LeaveManagementTab({ role }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {requests.map(r => (
-              <div key={r.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div key={r.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ fontSize: '13px', fontWeight: '700' }}>{r.users?.name || '—'}</div>
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -955,7 +1269,7 @@ function SalaryAdjTab({ user: currentUser }) {
     }
   };
 
-  const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' };
+  const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '14px', boxSizing: 'border-box' };
 
   return (
     <div>
@@ -967,7 +1281,7 @@ function SalaryAdjTab({ user: currentUser }) {
       </div>
 
       {showForm && (
-        <form onSubmit={handleAdd} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
+        <form onSubmit={handleAdd} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', padding: '20px', marginBottom: '20px' }}>
           <div style={{ fontWeight: '700', fontSize: '14px', marginBottom: '14px' }}>{editingId ? 'แก้ไขรายการ' : 'เพิ่มรายการบวก/หัก'}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
@@ -1005,7 +1319,7 @@ function SalaryAdjTab({ user: currentUser }) {
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
             <button type="submit" style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--accent-primary)', color: '#fff', cursor: 'pointer', fontWeight: '600' }}>บันทึก</button>
-            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm(f => ({ ...f, amount: '', note: '', action_date: getTodayStr() })); }} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
+            <button type="button" onClick={() => { setShowForm(false); setEditingId(null); setForm(f => ({ ...f, amount: '', note: '', action_date: getTodayStr() })); }} style={{ padding: '8px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>ยกเลิก</button>
           </div>
         </form>
       )}
@@ -1015,7 +1329,7 @@ function SalaryAdjTab({ user: currentUser }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {adjustments.map(adj => (
-            <div key={adj.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderLeft: `4px solid ${adj.adjust_type === 'income' ? '#16a34a' : '#ef4444'}` }}>
+            <div key={adj.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-sm)', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderLeft: `4px solid ${adj.adjust_type === 'income' ? '#16a34a' : '#ef4444'}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {adj.adjust_type === 'income'
                   ? <TrendingUp size={20} style={{ color: '#16a34a' }} />

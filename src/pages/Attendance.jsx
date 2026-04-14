@@ -17,7 +17,7 @@ function getDateStr(ts) {
 }
 function getShiftLabel(type) {
   const map = {
-    morning: { label: 'กะเช้า', color: '#f59e0b', icon: '🌅' },
+    morning: { label: 'กะเช้า', color: '#f59e0b', icon: '🌞' },
     afternoon: { label: 'กะบ่าย', color: '#f97316', icon: '☀️' },
     evening: { label: 'กะเย็น', color: '#ec4899', icon: '🌆' },
     night: { label: 'กะดึก', color: '#8b5cf6', icon: '🌙' },
@@ -646,7 +646,7 @@ function HistoryTab() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '' });
+  const [form, setForm] = useState({ user_id: '', type: 'clock_in', note: '', dateStr: '', timeStr: '' });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, recordId: null, reason: '' });
   const [editModal, setEditModal] = useState({ isOpen: false, record: null });
   const [viewModal, setViewModal] = useState({ isOpen: false, record: null });
@@ -871,16 +871,25 @@ function HistoryTab() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.user_id) return alert('กรุณาเลือกพนักงาน');
+    if (!form.dateStr || !form.timeStr) return alert('กรุณาระบุวันที่และเวลา');
     const branch_id = user?.branch_id;
     if (!branch_id) return alert('ไม่พบสาขา กรุณาเข้าสู่ระบบใหม่');
+    
+    let timestampToSave = new Date().toISOString();
+    try {
+      timestampToSave = new Date(`${form.dateStr}T${form.timeStr}:00`).toISOString();
+    } catch (err) {
+      return alert('รูปแบบวันที่หรือเวลาไม่ถูกต้อง');
+    }
+
     const { error } = await supabase.from('attendance').insert({
       user_id: form.user_id, branch_id, type: form.type, note: form.note || null,
-      timestamp: new Date().toISOString(),
+      timestamp: timestampToSave,
     });
     if (error) alert('เกิดข้อผิดพลาด: ' + error.message);
     else { 
       setShowModal(false); 
-      setForm({ user_id: '', type: 'clock_in', note: '' }); 
+      setForm({ user_id: '', type: 'clock_in', note: '', dateStr: '', timeStr: '' }); 
       await queryClient.invalidateQueries({ queryKey: ['attendanceHistory'] }); 
     }
   }
@@ -982,7 +991,15 @@ function HistoryTab() {
                 {isImporting ? <RefreshCw size={18} className="animate-spin" /> : <Upload size={18} />} 
                 {isImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
               </button>
-              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              <button className="btn btn-primary" onClick={() => {
+                const now = new Date();
+                setForm({
+                  ...form,
+                  dateStr: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+                  timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+                });
+                setShowModal(true);
+              }}>
                 <Plus size={18} /> ลงเวลาด้วยตนเอง
               </button>
             </div>
@@ -1256,6 +1273,20 @@ function HistoryTab() {
                     {users.map((u) => (<option key={u.id} value={u.id}>{u.full_name || u.name}</option>))}
                   </select>
                 </div>
+                <div className="form-group grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label className="form-label">วันที่ *</label>
+                    <input type="date" className="form-input" 
+                      value={form.dateStr} 
+                      onChange={(e) => setForm({ ...form, dateStr: e.target.value })} required />
+                  </div>
+                  <div>
+                    <label className="form-label">เวลา *</label>
+                    <input type="time" className="form-input" 
+                      value={form.timeStr} 
+                      onChange={(e) => setForm({ ...form, timeStr: e.target.value })} required />
+                  </div>
+                </div>
                 <div className="form-group">
                   <label className="form-label">ประเภท *</label>
                   <select className="form-select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
@@ -1309,9 +1340,9 @@ function HistoryTab() {
                   <label className="form-label">ประเภทกะ *</label>
                   <select className="form-select" value={editModal.record.shift_type || 'morning'} 
                     onChange={(e) => setEditModal({ ...editModal, record: { ...editModal.record, shift_type: e.target.value } })}>
-                    <option value="morning">🌅 กะเช้า</option>
+                    <option value="morning">🌞 กะเช้า</option>
                     <option value="afternoon">☀️ กะบ่าย</option>
-                    <option value="evening">🌇 กะเย็น</option>
+                    <option value="evening">🌆 กะเย็น</option>
                     <option value="night">🌙 กะดึก</option>
                   </select>
                 </div>
@@ -1496,7 +1527,7 @@ function toDateStr(d) {
 }
 
 const SHIFT_CONFIG = {
-  morning:   { label: 'เช้า',    icon: '🌅', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', color: '#f59e0b' },
+  morning:   { label: 'เช้า',    icon: '🌞', bg: 'rgba(245,158,11,0.15)', border: 'rgba(245,158,11,0.4)', color: '#f59e0b' },
   afternoon: { label: 'บ่าย',    icon: '☀️', bg: 'rgba(249,115,22,0.15)', border: 'rgba(249,115,22,0.4)', color: '#f97316' },
   evening:   { label: 'เย็น',    icon: '🌆', bg: 'rgba(236,72,153,0.15)', border: 'rgba(236,72,153,0.4)', color: '#ec4899' },
   night:     { label: 'ดึก',     icon: '🌙', bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.4)', color: '#8b5cf6' },
@@ -2013,7 +2044,9 @@ function EmployeeSchedulesTab() {
                     {gridDays.map((day, i) => {
                       const dateStr = toDateStr(day);
                       const key = `${emp.id}_${dateStr}`;
-                      const daySchedules = scheduleLookup[key] || [];
+                      const rawDaySchedules = scheduleLookup[key] || [];
+                      const SHIFT_ORDER = { morning: 1, afternoon: 2, evening: 3, night: 4, fullday: 5 };
+                      const daySchedules = [...rawDaySchedules].sort((a, b) => (SHIFT_ORDER[a.shift_type] || 99) - (SHIFT_ORDER[b.shift_type] || 99));
                       const isToday = dateStr === todayStr;
                       const cellStatus = getCellStatus(emp.id, dateStr);
 
@@ -2053,17 +2086,13 @@ function EmployeeSchedulesTab() {
                                   title={`${shift?.label} — กดเพื่อแก้ไข`}
                                 >
                                   <span style={{ fontSize: viewMode==='week' ? 16 : 14, lineHeight: 1 }}>{shift?.icon}</span>
-                                  {viewMode === 'week' && (
-                                    <>
-                                      <span style={{ fontSize: 10, fontWeight: 700, color: shift?.color, lineHeight: 1.2, marginTop: 2 }}>
-                                        {shift?.label}
-                                      </span>
-                                      {schedule.notes && (
-                                        <span style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.1, maxWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {schedule.notes}
-                                        </span>
-                                      )}
-                                    </>
+                                  <span style={{ fontSize: viewMode==='week' ? 10 : 9, fontWeight: 700, color: shift?.color, lineHeight: 1.2, marginTop: 2 }}>
+                                    {shift?.label}
+                                  </span>
+                                  {viewMode === 'week' && schedule.notes && (
+                                    <span style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.1, maxWidth: 60, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {schedule.notes}
+                                    </span>
                                   )}
                                 </div>
                               );

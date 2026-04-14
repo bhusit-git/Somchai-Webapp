@@ -1,14 +1,19 @@
 -- =========================================================================================
--- RESTAURANT CASH-SYNC ERP - SUPABASE SCHEMA (v2 — Complete)
+-- SOMCHAI ERP — FULL DATABASE INSTALL (v3 — Clean Single-File)
 -- =========================================================================================
--- Matches ALL frontend queries across Dashboard, POS, Expenses, Attendance,
--- Shifts, CashLedger, ARManagement, ProfitDashboard, StockReceiving, Inventory,
--- Settings, HRPayroll.
+-- วิธีใช้: ก็อปปี้ทั้งไฟล์ไปวางใน Supabase SQL Editor แล้วกด Run
+-- ⚠️ WARNING: ไฟล์นี้จะล้างข้อมูลทั้งหมดเพื่อสร้างฐานข้อมูลใหม่จากศูนย์
 -- =========================================================================================
 
--- !!! WARNING !!!
--- This will DROP existing tables (and data) to ensure a clean Dev Database setup.
--- Remove these lines if you want to keep existing data.
+
+-- =========================================================
+-- STEP 0: DROP ตารางเก่าทั้งหมด (รวมตารางใหม่ด้วย)
+-- =========================================================
+DROP TABLE IF EXISTS public.payslip_items CASCADE;
+DROP TABLE IF EXISTS public.employee_payslips CASCADE;
+DROP TABLE IF EXISTS public.payroll_cycles CASCADE;
+DROP TABLE IF EXISTS public.menu_item_ingredients CASCADE;
+DROP TABLE IF EXISTS public.promotions CASCADE;
 DROP TABLE IF EXISTS public.grn_items CASCADE;
 DROP TABLE IF EXISTS public.grn_headers CASCADE;
 DROP TABLE IF EXISTS public.ar_payments CASCADE;
@@ -37,32 +42,38 @@ DROP TABLE IF EXISTS public.categories CASCADE;
 DROP TABLE IF EXISTS public.users CASCADE;
 DROP TABLE IF EXISTS public.branches CASCADE;
 
+
 -- =========================================================
--- 1. Branches
+-- 1. Branches (สาขา)
 -- =========================================================
 CREATE TABLE public.branches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     address TEXT,
+    code TEXT,
+    settings JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- =========================================================
--- 2. Users (Employees)
+-- 2. Users (พนักงาน)
 -- =========================================================
 CREATE TABLE public.users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     branch_id UUID REFERENCES public.branches(id),
     name TEXT NOT NULL,
-    full_name TEXT,  -- alias used by Attendance, Shifts, Expenses, StockReceiving
+    full_name TEXT,
+    employee_id TEXT,
     pin_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'store_manager', 'cook', 'staff')),
+    role TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'store_manager', 'cook', 'staff', 'trainee')),
     is_active BOOLEAN DEFAULT TRUE,
     employment_type TEXT DEFAULT 'monthly',
     pay_cycle TEXT DEFAULT 'monthly' CHECK (pay_cycle IN ('daily', 'bimonthly', 'monthly')),
     base_salary NUMERIC(10, 2) DEFAULT 0,
     daily_rate NUMERIC(10, 2) DEFAULT 0,
     daily_cash_advance NUMERIC(10, 2) DEFAULT 0,
+    position_allowance NUMERIC(10, 2) DEFAULT 0,
+    custom_rates JSONB DEFAULT NULL,
     tax_id TEXT,
     sso_id TEXT,
     bank_account TEXT,
@@ -73,7 +84,7 @@ CREATE TABLE public.users (
 );
 
 -- =========================================================
--- 3. Categories (POS / Menu)
+-- 3. Categories (หมวดหมู่สินค้า POS)
 -- =========================================================
 CREATE TABLE public.categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,7 +95,7 @@ CREATE TABLE public.categories (
 );
 
 -- =========================================================
--- 4. Menu Items (for Menu Engineering / COGS)
+-- 4. Menu Items (สูตรอาหาร / COGS)
 -- =========================================================
 CREATE TABLE public.menu_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -98,7 +109,7 @@ CREATE TABLE public.menu_items (
 );
 
 -- =========================================================
--- 5. Products (POS queries this table)
+-- 5. Products (สินค้า POS)
 -- =========================================================
 CREATE TABLE public.products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -113,7 +124,7 @@ CREATE TABLE public.products (
 );
 
 -- =========================================================
--- 6. Shifts (M2)
+-- 6. Shifts (กะงาน)
 -- =========================================================
 CREATE TABLE public.shifts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -129,11 +140,12 @@ CREATE TABLE public.shifts (
     cash_difference NUMERIC(10, 2) DEFAULT 0,
     discrepancy NUMERIC(10, 2) DEFAULT 0,
     shift_date TEXT,
-    notes TEXT
+    notes TEXT,
+    stock_count_data JSONB
 );
 
 -- =========================================================
--- 7. Transactions (POS orders — Dashboard & POS.jsx)
+-- 7. Transactions (ออเดอร์ POS)
 -- =========================================================
 CREATE TABLE public.transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -147,6 +159,8 @@ CREATE TABLE public.transactions (
     payment_method TEXT NOT NULL,
     cash_received NUMERIC(10, 2),
     change_amount NUMERIC(10, 2),
+    gp_percent DECIMAL(5,2) DEFAULT 0,
+    gp_amount DECIMAL(10,2) DEFAULT 0,
     status TEXT DEFAULT 'completed',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -162,7 +176,7 @@ CREATE TABLE public.transaction_items (
 );
 
 -- =========================================================
--- 8. Legacy POS Orders (keep for backward compat)
+-- 8. Legacy POS Orders
 -- =========================================================
 CREATE TABLE public.pos_orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -185,7 +199,7 @@ CREATE TABLE public.pos_order_items (
 );
 
 -- =========================================================
--- 9A. Expense Categories
+-- 9. Expense Categories (หมวดหมู่รายจ่าย)
 -- =========================================================
 CREATE TABLE public.expense_categories (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -194,11 +208,12 @@ CREATE TABLE public.expense_categories (
     is_active BOOLEAN DEFAULT TRUE,
     sort_order INTEGER DEFAULT 0,
     is_admin_only BOOLEAN DEFAULT FALSE,
+    is_fixed_cost BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- =========================================================
--- 9. Expenses (M3B)
+-- 10. Expenses (รายจ่าย)
 -- =========================================================
 CREATE TABLE public.expenses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -210,7 +225,7 @@ CREATE TABLE public.expenses (
     category TEXT NOT NULL,
     description TEXT NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
-    payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'transfer')) DEFAULT 'cash',
+    payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method IN ('cash', 'transfer')),
     expense_type TEXT DEFAULT 'planned' CHECK (expense_type IN ('planned', 'emergency')),
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
     notes TEXT,
@@ -221,7 +236,7 @@ CREATE TABLE public.expenses (
 );
 
 -- =========================================================
--- 10. Attendance (M1)
+-- 11. Attendance (บันทึกเวลาเข้า-ออก)
 -- =========================================================
 CREATE TABLE public.attendance (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -234,11 +249,15 @@ CREATE TABLE public.attendance (
     selfie_url TEXT,
     lat NUMERIC,
     lng NUMERIC,
+    is_late BOOLEAN DEFAULT FALSE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    delete_reason TEXT,
+    deleted_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- =========================================================
--- 10B. Employee Schedules — กะตารางงาน (M1B)
+-- 12. Employee Schedules (กะตารางงาน)
 -- =========================================================
 CREATE TABLE public.employee_schedules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -253,7 +272,7 @@ CREATE TABLE public.employee_schedules (
 );
 
 -- =========================================================
--- 11. Cross-Shift Ledgers (M4 — CashLedger.jsx)
+-- 13. Cross-Shift Ledgers (บัญชีข้ามกะ)
 -- =========================================================
 CREATE TABLE public.cross_shift_ledgers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -269,7 +288,7 @@ CREATE TABLE public.cross_shift_ledgers (
 );
 
 -- =========================================================
--- 11B. Customers (Credit Customers)
+-- 14. Customers (ลูกค้าเครดิต)
 -- =========================================================
 CREATE TABLE public.customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -283,7 +302,7 @@ CREATE TABLE public.customers (
 );
 
 -- =========================================================
--- 12. Accounts Receivable (M5 — ARManagement.jsx)
+-- 15. Accounts Receivable (ลูกหนี้)
 -- =========================================================
 CREATE TABLE public.accounts_receivable (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -294,6 +313,7 @@ CREATE TABLE public.accounts_receivable (
     paid_amount NUMERIC(10, 2) DEFAULT 0,
     due_date DATE,
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'partial', 'paid', 'overdue')),
+    transaction_id UUID REFERENCES public.transactions(id) ON DELETE SET NULL,
     created_by UUID REFERENCES public.users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -308,7 +328,7 @@ CREATE TABLE public.ar_payments (
 );
 
 -- =========================================================
--- 13. Manager Safe & Profit Dashboard (M6)
+-- 16. Manager Safe & Profit Dashboard
 -- =========================================================
 CREATE TABLE public.manager_safes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -331,7 +351,7 @@ CREATE TABLE public.safe_transactions (
 CREATE TABLE public.fixed_costs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     branch_id UUID REFERENCES public.branches(id),
-    period_month TEXT NOT NULL,  -- 'YYYY-MM'
+    period_month TEXT NOT NULL,
     type TEXT NOT NULL,
     amount NUMERIC(10, 2) NOT NULL,
     description TEXT,
@@ -340,20 +360,20 @@ CREATE TABLE public.fixed_costs (
 );
 
 -- =========================================================
--- 14. Inventory & Stock (M7A & M7B)
+-- 17. Inventory & Stock
 -- =========================================================
 CREATE TABLE public.inventory_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
-    purchase_unit TEXT NOT NULL DEFAULT '',   -- หน่วยซื้อ เช่น ลัง, ถุง, แพ็ค
-    stock_unit TEXT NOT NULL DEFAULT '',      -- หน่วยสต๊อก เช่น ไม้, ชิ้น, กรัม
-    conversion_factor NUMERIC DEFAULT 1,      -- 1 purchase_unit = N stock_units
-    yield_pct NUMERIC DEFAULT 100,            -- % ที่ใช้ได้จริงหลังตัดแต่ง
-    reorder_point NUMERIC DEFAULT 0,          -- จุดสั่งซื้อ (แจ้งเตือน)
-    par_level NUMERIC DEFAULT 0,              -- สต๊อกที่ควรมีติดร้าน
-    lead_time_days INTEGER DEFAULT 1,         -- ระยะเวลารอของ (วัน)
-    cost_per_stock_unit NUMERIC DEFAULT 0,    -- ต้นทุนต่อหน่วยสต๊อก
+    purchase_unit TEXT NOT NULL DEFAULT '',
+    stock_unit TEXT NOT NULL DEFAULT '',
+    conversion_factor NUMERIC NOT NULL DEFAULT 1,
+    yield_pct NUMERIC DEFAULT 100,
+    reorder_point NUMERIC DEFAULT 0,
+    par_level NUMERIC DEFAULT 0,
+    lead_time_days INTEGER DEFAULT 1,
+    cost_per_stock_unit NUMERIC DEFAULT 0,
     current_stock NUMERIC DEFAULT 0,
     is_active BOOLEAN DEFAULT TRUE,
     sku TEXT,
@@ -372,18 +392,21 @@ CREATE TABLE public.stock_transactions (
 );
 
 -- =========================================================
--- 15. GRN — Goods Received Notes (M7B — StockReceiving.jsx)
+-- 18. GRN — Goods Received Notes
 -- =========================================================
 CREATE TABLE public.grn_headers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     branch_id UUID REFERENCES public.branches(id),
     grn_number TEXT NOT NULL,
     supplier_name TEXT,
+    invoice_ref TEXT,
     received_by UUID REFERENCES public.users(id),
     total_amount NUMERIC(10, 2) DEFAULT 0,
-    status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'completed', 'cancelled')),
+    total_value NUMERIC DEFAULT 0,
+    status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'confirmed', 'completed', 'cancelled')),
     notes TEXT,
     received_date DATE DEFAULT CURRENT_DATE,
+    received_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -391,12 +414,11 @@ CREATE TABLE public.grn_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     grn_id UUID REFERENCES public.grn_headers(id) ON DELETE CASCADE,
     inventory_item_id UUID REFERENCES public.inventory_items(id),
-    qty_purchase NUMERIC(10, 2) NOT NULL,
-    qty_stock NUMERIC(10, 2) NOT NULL,
+    qty_purchase NUMERIC(10, 2),
+    qty_stock NUMERIC(10, 2),
     unit_cost NUMERIC(10, 2) DEFAULT 0,
     lot_id UUID DEFAULT gen_random_uuid(),
     expiry_date DATE,
-    -- คอลัมน์เก่าเผื่อมีระบบที่ยังเรียกใช้ แล้วค่อยไปลบทีหลังด้วย all_updates.sql
     quantity NUMERIC(10, 2),
     unit TEXT,
     cost_per_unit NUMERIC(10, 2),
@@ -405,7 +427,7 @@ CREATE TABLE public.grn_items (
 );
 
 -- =========================================================
--- 16. HR & Payroll (M13)
+-- 19. HR & Payroll
 -- =========================================================
 CREATE TABLE public.hr_leave_requests (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -465,12 +487,42 @@ CREATE TABLE public.payslip_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- =========================================================
+-- 20. Menu Item Ingredients (สูตรอาหาร BOM)
+-- =========================================================
+CREATE TABLE public.menu_item_ingredients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    menu_item_id UUID NOT NULL,
+    inventory_item_id UUID REFERENCES public.inventory_items(id) ON DELETE CASCADE,
+    qty_required NUMERIC NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- =========================================================
+-- 21. Promotions (โปรโมชั่น)
+-- =========================================================
+CREATE TABLE public.promotions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    branch_id UUID REFERENCES public.branches(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    discount_type TEXT NOT NULL CHECK (discount_type IN ('PERCENTAGE', 'FIXED_AMOUNT', 'FIXED_PRICE')),
+    discount_value NUMERIC NOT NULL DEFAULT 0,
+    apply_to TEXT NOT NULL CHECK (apply_to IN ('ENTIRE_BILL', 'SPECIFIC_ITEM', 'CATEGORY')),
+    target_ids JSONB DEFAULT NULL,
+    start_date DATE,
+    end_date DATE,
+    happy_hour_start TIME,
+    happy_hour_end TIME,
+    applicable_channels JSONB DEFAULT '[]'::JSONB,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 -- =========================================================================================
--- ENABLE ROW LEVEL SECURITY (Open for rapid prototyping)
+-- ENABLE ROW LEVEL SECURITY (ทุกตาราง)
 -- =========================================================================================
-
--- Enable RLS on all tables
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
@@ -501,13 +553,39 @@ ALTER TABLE public.payroll_cycles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employee_payslips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payslip_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.menu_item_ingredients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.promotions ENABLE ROW LEVEL SECURITY;
+
 
 -- =========================================================================================
--- RLS POLICIES — Full access for development (tighten in production)
+-- RLS POLICIES — Full access for development
+-- ใช้ DO block เพื่อ DROP ก่อน CREATE ป้องกัน "already exists"
 -- =========================================================================================
-
--- Helper: create SELECT/INSERT/UPDATE/DELETE policies for a table
--- We do this for every table.
+DO $$
+DECLARE
+    tbl TEXT;
+    pol TEXT;
+BEGIN
+    FOR tbl IN VALUES
+        ('branches'), ('users'), ('categories'), ('menu_items'), ('products'),
+        ('shifts'), ('transactions'), ('transaction_items'),
+        ('pos_orders'), ('pos_order_items'),
+        ('expense_categories'), ('expenses'), ('attendance'),
+        ('cross_shift_ledgers'), ('accounts_receivable'), ('ar_payments'),
+        ('manager_safes'), ('safe_transactions'), ('fixed_costs'),
+        ('inventory_items'), ('stock_transactions'),
+        ('grn_headers'), ('grn_items'),
+        ('employee_schedules'),
+        ('hr_leave_requests'), ('hr_salary_adjustments'),
+        ('payroll_cycles'), ('employee_payslips'), ('payslip_items'),
+        ('customers'), ('menu_item_ingredients'), ('promotions')
+    LOOP
+        FOR pol IN VALUES ('select'), ('insert'), ('update'), ('delete')
+        LOOP
+            EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', tbl || '_' || pol, tbl);
+        END LOOP;
+    END LOOP;
+END $$;
 
 -- branches
 CREATE POLICY "branches_select" ON public.branches FOR SELECT USING (true);
@@ -689,9 +767,21 @@ CREATE POLICY "customers_insert" ON public.customers FOR INSERT WITH CHECK (true
 CREATE POLICY "customers_update" ON public.customers FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "customers_delete" ON public.customers FOR DELETE USING (true);
 
+-- menu_item_ingredients
+CREATE POLICY "menu_item_ingredients_select" ON public.menu_item_ingredients FOR SELECT USING (true);
+CREATE POLICY "menu_item_ingredients_insert" ON public.menu_item_ingredients FOR INSERT WITH CHECK (true);
+CREATE POLICY "menu_item_ingredients_update" ON public.menu_item_ingredients FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "menu_item_ingredients_delete" ON public.menu_item_ingredients FOR DELETE USING (true);
+
+-- promotions
+CREATE POLICY "promotions_select" ON public.promotions FOR SELECT USING (true);
+CREATE POLICY "promotions_insert" ON public.promotions FOR INSERT WITH CHECK (true);
+CREATE POLICY "promotions_update" ON public.promotions FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "promotions_delete" ON public.promotions FOR DELETE USING (true);
+
 
 -- =========================================================================================
--- TRIGGER: Auto-populate full_name from name on users table
+-- TRIGGER: Auto-populate full_name from name
 -- =========================================================================================
 CREATE OR REPLACE FUNCTION public.sync_full_name()
 RETURNS TRIGGER AS $$
@@ -703,166 +793,63 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_sync_full_name ON public.users;
 CREATE TRIGGER trigger_sync_full_name
     BEFORE INSERT OR UPDATE ON public.users
     FOR EACH ROW
     EXECUTE FUNCTION public.sync_full_name();
 
+
 -- =========================================================================================
--- STORAGE: Selfie bucket for Attendance photos (Camera Integration — M1)
--- Run this ONCE in Supabase Dashboard → SQL Editor
+-- INDEXES
+-- =========================================================================================
+CREATE INDEX IF NOT EXISTS idx_promotions_active ON public.promotions (is_active, start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_promotions_branch ON public.promotions (branch_id);
+
+
+-- =========================================================================================
+-- STORAGE BUCKETS
 -- =========================================================================================
 
--- Create the selfies bucket (public read so selfie_url links work in the table)
+-- Selfie bucket
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('selfies', 'selfies', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Allow anyone to upload selfies (tighten with auth in production)
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "selfies_insert" ON storage.objects;
+    DROP POLICY IF EXISTS "selfies_select" ON storage.objects;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
+
 CREATE POLICY "selfies_insert" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'selfies');
-
--- Allow public read of selfie images
 CREATE POLICY "selfies_select" ON storage.objects
   FOR SELECT USING (bucket_id = 'selfies');
 
+-- Menu images bucket
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('menu-images', 'menu-images', true)
+ON CONFLICT (id) DO NOTHING;
 
--- =========================================================================================
--- PRODUCTION RLS POLICIES — Role-Based (activate after migrating to Supabase Auth)
--- =========================================================================================
--- ⚠ Prerequisites:
---   1. Migrate login from PIN-based → supabase.auth.signInWithPassword()
---   2. Store role in auth.users.raw_user_meta_data.role
---   3. DROP all existing "USING (true)" policies above before applying these
---
--- Helper expression:  (auth.jwt()->'user_metadata'->>'role')
--- =========================================================================================
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "menu_images_select" ON storage.objects;
+    DROP POLICY IF EXISTS "menu_images_insert" ON storage.objects;
+    DROP POLICY IF EXISTS "menu_images_delete" ON storage.objects;
+EXCEPTION WHEN undefined_table THEN NULL;
+END $$;
 
-/*
--- ── branches: all authenticated users can read ──
-CREATE POLICY "branches_select_rbac" ON public.branches
-  FOR SELECT USING (auth.role() = 'authenticated');
-CREATE POLICY "branches_manage_rbac" ON public.branches
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner'));
-
--- ── users: mgmt can manage, staff/cook can read own ──
-CREATE POLICY "users_select_rbac" ON public.users
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR id = auth.uid()
-  );
-CREATE POLICY "users_manage_rbac" ON public.users
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── shifts: mgmt only ──
-CREATE POLICY "shifts_select_rbac" ON public.shifts
-  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-CREATE POLICY "shifts_manage_rbac" ON public.shifts
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','store_manager'));
-
--- ── transactions: staff sees own, mgmt sees all ──
-CREATE POLICY "transactions_select_rbac" ON public.transactions
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR created_by = auth.uid()
-  );
-CREATE POLICY "transactions_insert_rbac" ON public.transactions
-  FOR INSERT WITH CHECK (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','staff')
-  );
-
--- ── expenses: staff creates own, mgmt manages ──
-CREATE POLICY "expenses_select_rbac" ON public.expenses
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR created_by = auth.uid()
-  );
-CREATE POLICY "expenses_insert_rbac" ON public.expenses
-  FOR INSERT WITH CHECK (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','staff')
-  );
-CREATE POLICY "expenses_update_rbac" ON public.expenses
-  FOR UPDATE USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── attendance: staff/cook sees own, mgmt sees all ──
-CREATE POLICY "attendance_select_rbac" ON public.attendance
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR user_id = auth.uid()
-  );
-CREATE POLICY "attendance_insert_rbac" ON public.attendance
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- ── manager_safes / safe_transactions: mgmt only ──
-CREATE POLICY "manager_safes_select_rbac" ON public.manager_safes
-  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-CREATE POLICY "safe_transactions_select_rbac" ON public.safe_transactions
-  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── inventory_items: cook + mgmt ──
-CREATE POLICY "inventory_items_select_rbac" ON public.inventory_items
-  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager','cook'));
-CREATE POLICY "inventory_items_manage_rbac" ON public.inventory_items
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── hr_leave_requests: own + mgmt ──
-CREATE POLICY "hr_leave_requests_select_rbac" ON public.hr_leave_requests
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR user_id = auth.uid()
-  );
-CREATE POLICY "hr_leave_requests_insert_rbac" ON public.hr_leave_requests
-  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- ── hr_salary_adjustments: own + mgmt ──
-CREATE POLICY "hr_salary_adjustments_select_rbac" ON public.hr_salary_adjustments
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR user_id = auth.uid()
-  );
-CREATE POLICY "hr_salary_adjustments_manage_rbac" ON public.hr_salary_adjustments
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── payroll_cycles: mgmt only ──
-CREATE POLICY "payroll_cycles_select_rbac" ON public.payroll_cycles
-  FOR SELECT USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-CREATE POLICY "payroll_cycles_manage_rbac" ON public.payroll_cycles
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager'));
-
--- ── employee_payslips: own + mgmt ──
-CREATE POLICY "employee_payslips_select_rbac" ON public.employee_payslips
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR employee_id = auth.uid()
-  );
-CREATE POLICY "employee_payslips_manage_rbac" ON public.employee_payslips
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-
--- ── payslip_items: own + mgmt (via employee_payslips relation check) ──
-CREATE POLICY "payslip_items_select_rbac" ON public.payslip_items
-  FOR SELECT USING (
-    (auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager')
-    OR payslip_id IN (SELECT id FROM public.employee_payslips WHERE employee_id = auth.uid())
-  );
-CREATE POLICY "payslip_items_manage_rbac" ON public.payslip_items
-  FOR ALL USING ((auth.jwt()->'user_metadata'->>'role') IN ('owner','manager','store_manager'));
-*/
+CREATE POLICY "menu_images_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'menu-images');
+CREATE POLICY "menu_images_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'menu-images');
+CREATE POLICY "menu_images_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'menu-images');
 
 
 -- =========================================================================================
--- MIGRATION: ถ้าตาราง inventory_items มีอยู่แล้ว (ไม่ต้องการ DROP ข้อมูลเดิม)
--- คัดลอก block นี้ไปรันใน Supabase SQL Editor แยกต่างหาก
+-- RELOAD SCHEMA CACHE
 -- =========================================================================================
-/*
-ALTER TABLE public.inventory_items
-    ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
-    ADD COLUMN IF NOT EXISTS purchase_unit TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS stock_unit TEXT NOT NULL DEFAULT '',
-    ADD COLUMN IF NOT EXISTS conversion_factor NUMERIC DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS yield_pct NUMERIC DEFAULT 100,
-    ADD COLUMN IF NOT EXISTS reorder_point NUMERIC DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS par_level NUMERIC DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS lead_time_days INTEGER DEFAULT 1,
-    ADD COLUMN IF NOT EXISTS cost_per_stock_unit NUMERIC DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS sku TEXT;
-*/
+NOTIFY pgrst, 'reload schema';
