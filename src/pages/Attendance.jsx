@@ -162,8 +162,15 @@ function KioskTab() {
           setLocation(coords);
           setLocStatus('ok');
         },
-        () => {
-          setLocStatus('denied');
+        (err) => {
+          console.warn('Geolocation error:', err.message, 'Code:', err.code);
+          if (err.code === 3) {
+            setLocStatus('timeout');
+          } else if (err.code === 2) {
+            setLocStatus('unavailable');
+          } else {
+            setLocStatus('denied');
+          }
           setLocation(null);
         },
         { enableHighAccuracy: true, timeout: 10000 }
@@ -477,7 +484,17 @@ function KioskTab() {
               );
               if (locStatus === 'denied') return (
                 <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', fontSize: 13, color: '#9ca3af' }}>
-                  📵 ไม่ทราบพิกัด (Location ถูกปฐิเสธหรือไม่รองรับ)
+                  📵 ไม่ทราบพิกัด (ถูกปฏิเสธการเข้าถึง Location)
+                </div>
+              );
+              if (locStatus === 'timeout') return (
+                <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 13, color: '#fcd34d' }}>
+                  ⏱️ ดึงพิกัดไม่สำเร็จ (ใช้เวลานานเกินไป)
+                </div>
+              );
+              if (locStatus === 'unavailable') return (
+                <div style={{ marginBottom: 16, padding: '8px 14px', borderRadius: 10, background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', fontSize: 13, color: '#9ca3af' }}>
+                  📡 อุปกรณ์ไม่สามารถระบุตำแหน่งเบาะแสได้
                 </div>
               );
               if (locStatus === 'ok' && gfActive && distanceM !== null) {
