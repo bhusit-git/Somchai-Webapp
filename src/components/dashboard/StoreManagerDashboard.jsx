@@ -131,7 +131,7 @@ export default function StoreManagerDashboard() {
         }
       });
       const tExpenses = (todayExp || []).reduce((sum, e) => sum + Number(e.amount), 0);
-      const startingCash = activeShift?.[0]?.starting_cash || 500;
+      const startingCash = activeShift?.length > 0 ? Number(activeShift[0].starting_cash || 0) : 0;
       const cashDrawer = startingCash + tSales - tExpenses; // simplified
 
       // Real COGS calculation
@@ -224,7 +224,6 @@ export default function StoreManagerDashboard() {
 
   // Formatting helpers
   const salesPct = Math.min(100, (stats.todaySales / (kpiTargets.dailySalesTarget || 1)) * 100);
-  const gpPct = Math.min(100, (stats.grossProfit / (kpiTargets.targetGpPercent || 1)) * 100);
   const hasAlerts = alerts.lowStockItems.length > 0 || alerts.openShifts === 0;
 
   // Chart Config
@@ -331,36 +330,6 @@ export default function StoreManagerDashboard() {
               </div>
             </div>
 
-            {/* Food Cost */}
-            {isManager && (
-            <div className="card">
-              <div className="card-title">Food Cost %</div>
-              <div className={`card-val ${stats.foodCost > kpiTargets.targetFcPercent ? 'val-red' : 'val-green'}`}>
-                {stats.foodCost.toFixed(1)}%
-              </div>
-              <div className={`card-sub ${stats.foodCost > kpiTargets.targetFcPercent ? 'val-red' : ''}`}>
-                เป้า &le; {kpiTargets.targetFcPercent}%  {stats.foodCost > kpiTargets.targetFcPercent ? '↑ สูงกว่าเป้า' : 'อยู่ในเกณฑ์'}
-              </div>
-              <div className="bar-track">
-                <div className={`bar-fill ${stats.foodCost > kpiTargets.targetFcPercent ? 'red' : 'green'}`} style={{ width: '100%' }}></div>
-              </div>
-            </div>
-            )}
-
-            {/* Gross Profit */}
-            {isManager && (
-            <div className="card">
-              <div className="card-title">Gross Profit</div>
-              <div className="card-val val-green">฿{(stats.todaySales - (stats.todaySales * (stats.foodCost/100))).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-              <div className="card-sub">GP% = {stats.grossProfit.toFixed(1)}%</div>
-              <div className="bar-track">
-                <div className="bar-fill green" style={{ width: `${gpPct}%` }}></div>
-              </div>
-              <div style={{ fontSize: '10px', color: '#3B6D11', textAlign: 'right', marginTop: '3px' }}>
-                {gpPct.toFixed(0)}%
-              </div>
-            </div>
-            )}
           </div>
 
           {/* Zone 2b: Checklist + Cash Drawer */}
@@ -415,28 +384,7 @@ export default function StoreManagerDashboard() {
                 </div>
               </div>
 
-              {/* Zone 5: Top Items */}
-              <div className="card">
-                <div className="section-header">
-                  <span className="section-title">เมนูขายดีวันนี้ (Top 5)</span>
-                </div>
-                <table className="items-table">
-                  <tbody>
-                    {topItems.length > 0 ? topItems.map((item, idx) => (
-                      <tr key={idx}>
-                        <td>#{idx + 1}</td>
-                        <td>{item.name}</td>
-                        <td>{item.qty} จาน</td>
-                        <td>฿{item.price.toLocaleString()}</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan="4" style={{ textAlign: 'center', color: '#888' }}>ยังไม่มีการขายวันนี้</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+
             </>
           )}
 
