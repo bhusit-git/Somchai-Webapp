@@ -26,6 +26,43 @@ function getShiftLabel(type) {
   return map[type] || { label: type, color: '#8b5cf6', icon: '📋' };
 }
 
+function isExternalDriveUrl(url) {
+  if (!url) return false;
+  return url.includes('drive.google.com');
+}
+
+// Renders selfie: if it's a Google Drive link, show a clickable icon; otherwise show an inline image.
+function SelfieThumb({ url, size = 36, onClickPreview }) {
+  if (!url) return <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>;
+  if (isExternalDriveUrl(url)) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title="เปิดรูปหลักฐานใน Google Drive"
+        style={{
+          width: size, height: size, borderRadius: '50%',
+          background: 'rgba(99,102,241,0.15)', border: '2px solid rgba(99,102,241,0.4)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: '#818cf8', textDecoration: 'none', flexShrink: 0,
+        }}
+      >
+        <Camera size={size * 0.45} />
+      </a>
+    );
+  }
+  return (
+    <button 
+      onClick={(e) => { e.stopPropagation(); onClickPreview?.(url); }}
+      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0 }}
+    >
+      <img src={url} alt="selfie" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
+    </button>
+  );
+}
+
 // Haversine formula: returns distance in meters between two lat/lng points
 function haversineMeters(lat1, lng1, lat2, lng2) {
   const R = 6371000;
@@ -662,7 +699,7 @@ function HistoryTab() {
       const localEnd = new Date(Number(yearStr), Number(monthStr), 1, 0, 0, 0);
 
       let query = supabase.from('attendance')
-          .select('*, users(name, full_name, employment_type, daily_rate)')
+          .select('*, users(name, full_name, role, employment_type, daily_rate)')
           .eq('branch_id', user?.branch_id)
           .gte('timestamp', localStart.toISOString())
           .lt('timestamp', localEnd.toISOString());
@@ -673,14 +710,29 @@ function HistoryTab() {
 
       query = query.order('timestamp', { ascending: false });
 
-      let userQuery = supabase.from('users').select('id, name, full_name').eq('is_active', true);
+      let userQuery = supabase.from('users').select('id, name, full_name, role').eq('is_active', true);
       if (user?.branch_id) userQuery = userQuery.eq('branch_id', user.branch_id);
 
       const [attRes, userRes] = await Promise.all([
         query,
         isManager ? userQuery : Promise.resolve({ data: [] })
       ]);
-      return { records: attRes.data || [], users: userRes.data || [] };
+      
+      let fetchedRecords = attRes.data || [];
+      let fetchedUsers = userRes.data || [];
+      
+      if (user?.role === 'store_manager') {
+        fetchedRecords = fetchedRecords.filter(r => 
+           r.user_id === user.id || 
+           !['owner', 'manager'].includes(r.users?.role)
+        );
+        fetchedUsers = fetchedUsers.filter(u => 
+           u.id === user.id || 
+           !['owner', 'manager'].includes(u.role)
+        );
+      }
+
+      return { records: fetchedRecords, users: fetchedUsers };
     },
     enabled: !!user?.branch_id,
   });
@@ -757,35 +809,44 @@ function HistoryTab() {
           
           let headerIdx = -1;
           for (let i = 0; i < allRows.length; i++) {
-            if (allRows[i].some(col => col && (col.includes('Timestamp') || col.includes('รหัสพนักงาน')))) {
+            const rowStr = allRows[i].join(' ').toLowerCase();
+            // Automatically detect header row by searching for key words (including 'date' or 'ภาพหลักฐาน')
+            if (rowStr.includes('timestamp') || rowStr.includes('รหัสพนักงาน') || rowStr.includes('date') || rowStr.includes('ภาพหลักฐาน')) {
                 headerIdx = i;
                 break;
             }
           }
 
-          if (headerIdx === -1) {
-              alert('ไม่พบหัวตาราง (Timestamp / รหัสพนักงาน) ในไฟล์ CSV กรุณาตรวจสอบไฟล์');
-              setIsImporting(false);
-              if (e.target) e.target.value = null;
-              return;
+          let headers = [];
+          let dataRows = [];
+          
+          if (headerIdx !== -1) {
+              headers = allRows[headerIdx];
+              dataRows = allRows.slice(headerIdx + 1);
+          } else {
+              // If no explicit header row, just assume it starts at row 0 (maybe it was skipped or the file structure is implicit)
+              dataRows = allRows;
           }
 
-          const headers = allRows[headerIdx];
-          const dataRows = allRows.slice(headerIdx + 1);
           const payloads = [];
 
           for (let i = 0; i < dataRows.length; i++) {
             const rowArray = dataRows[i];
+            
+            // Helper to get by string header
             const getKey = (keyName) => {
-              const colIdx = headers.findIndex(h => typeof h === 'string' && h.trim() === keyName);
+              const colIdx = headers.findIndex(h => typeof h === 'string' && h.trim().toLowerCase() === keyName.toLowerCase());
               return colIdx !== -1 ? rowArray[colIdx] : null;
             };
 
-            const timestampRaw = getKey('Timestamp') || '';
-            const empRaw = getKey('รหัสพนักงาน') || '';
-            const branchRaw = getKey('สาขา') || '';
-            const clockRaw = getKey('ประเภทการลงเวลา') || '';
-            const shiftRaw = getKey('รอบเวลาทำงาน') || '';
+            // Flexible column resolution supporting both explicit headers and index fallbacks
+            const timestampRaw = getKey('Timestamp') || getKey('Date') || rowArray[0] || '';
+            const empRaw = getKey('รหัสพนักงาน') || getKey('Employee Name') || rowArray[1] || '';
+            const branchRaw = getKey('สาขา') || getKey('Branch/Zone') || rowArray[2] || '';
+            const clockRaw = getKey('ประเภทการลงเวลา') || getKey('Action') || rowArray[3] || '';
+            const shiftRaw = getKey('รอบเวลาทำงาน') || getKey('Shift') || rowArray[4] || '';
+            const evidenceUrlRaw = getKey('ภาพหลักฐาน') || getKey('Image Link') || rowArray[5] || '';
+            
             const noteRaw = getKey('หมายเหตุ') || '';
             const ownerRemark = getKey('Remark by Owner') || '';
 
@@ -800,27 +861,55 @@ function HistoryTab() {
             if (foundUser) userId = foundUser.id;
 
             let branchId = dbBranches[0]?.id || user.branch_id;
-            const foundBranch = dbBranches.find((b) => branchRaw.includes(b.code) || branchRaw.includes(b.name));
+            const foundBranch = dbBranches.find((b) => branchRaw && (branchRaw.includes(b.code) || branchRaw.includes(b.name)));
             if (foundBranch) branchId = foundBranch.id;
 
-            const clockType = clockRaw.includes('ออกงาน') ? 'clock_out' : 'clock_in';
+            const clockType = (clockRaw && (clockRaw.includes('ออกงาน') || clockRaw.includes('Out'))) ? 'clock_out' : 'clock_in';
 
             let shiftType = 'morning';
-            if (shiftRaw === 'ช่วงบ่าย') shiftType = 'afternoon';
-            else if (shiftRaw === 'ช่วงเย็น') shiftType = 'evening';
-            else if (shiftRaw.includes('ดึก')) shiftType = 'night';
+            if (shiftRaw === 'ช่วงบ่าย' || (shiftRaw && shiftRaw.includes('บ่าย'))) shiftType = 'afternoon';
+            else if (shiftRaw === 'ช่วงเย็น' || (shiftRaw && shiftRaw.includes('เย็น'))) shiftType = 'evening';
+            else if (shiftRaw && shiftRaw.includes('ดึก')) shiftType = 'night';
 
             const finalNote = [noteRaw, ownerRemark].filter(Boolean).join(' | ');
+            const finalSelfieUrl = evidenceUrlRaw && evidenceUrlRaw.includes('http') ? evidenceUrlRaw : null;
 
             let finalTimestampIso = new Date().toISOString();
             if (timestampRaw) {
               const datePart = timestampRaw.split(' ')[0];
-              const parts = datePart.split('/');
-              if (parts.length >= 3) {
-                const [d, m, y] = parts;
+              let y, m, d;
+              
+              if (datePart.includes('/')) {
+                const parts = datePart.split('/');
+                if (parts.length >= 3) {
+                  let p1 = parseInt(parts[0]), p2 = parseInt(parts[1]), p3 = parseInt(parts[2]);
+                  if (p1 > 12) {
+                     // DD/MM/YYYY
+                     d = String(p1).padStart(2, '0');
+                     m = String(p2).padStart(2, '0');
+                     y = String(p3);
+                  } else {
+                     // MM/DD/YYYY
+                     m = String(p1).padStart(2, '0');
+                     d = String(p2).padStart(2, '0');
+                     y = String(p3);
+                  }
+                }
+              } else if (datePart.includes('-')) {
+                 const parts = datePart.split('-');
+                 if (parts.length >= 3) {
+                    if (parts[0].length === 4) {
+                       y = parts[0]; m = parts[1]; d = parts[2];
+                    } else {
+                       d = parts[0]; m = parts[1]; y = parts[2];
+                    }
+                 }
+              }
+
+              if (y && m && d) {
                 let timePart = timestampRaw.split(' ')[1];
-                if (!timePart) timePart = getFakeTime(clockType, shiftRaw);
-                const isoStr = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T${timePart}+07:00`;
+                if (!timePart) timePart = getFakeTime(clockType, shiftRaw || 'ช่วงเช้า');
+                const isoStr = `${y}-${m}-${d}T${timePart}+07:00`;
                 try {
                   const parsedDate = new Date(isoStr);
                   if (!isNaN(parsedDate.getTime())) finalTimestampIso = parsedDate.toISOString();
@@ -840,7 +929,7 @@ function HistoryTab() {
               shift_type: shiftType,
               note: finalNote || null,
               timestamp: finalTimestampIso,
-              selfie_url: null,
+              selfie_url: finalSelfieUrl,
               is_late: false,
               lat: null,
               lng: null,
@@ -1102,16 +1191,7 @@ function HistoryTab() {
                     <td>{getDateStr(rec.timestamp)}</td>
                     <td style={{ fontWeight: 600 }}>{getTimeStr(rec.timestamp)}</td>
                     <td>
-                      {rec.selfie_url ? (
-                        <button 
-                          onClick={() => setPreviewImage(rec.selfie_url)}
-                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-                        >
-                          <img src={rec.selfie_url} alt="selfie" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }} />
-                        </button>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
-                      )}
+                      <SelfieThumb url={rec.selfie_url} size={36} onClickPreview={setPreviewImage} />
                     </td>
                     <td>{rec.note || '—'}</td>
                     <td>
@@ -1208,12 +1288,26 @@ function HistoryTab() {
                 <div className="flex items-center gap-4">
                   <div className="relative w-14 h-14 rounded-full bg-slate-800 flex-shrink-0 flex items-center justify-center border border-slate-700">
                     {rec.selfie_url ? (
-                      <img 
-                        src={rec.selfie_url} 
-                        alt="selfie" 
-                        className="w-full h-full object-cover rounded-full" 
-                        onClick={(e) => { e.stopPropagation(); setPreviewImage(rec.selfie_url); }} 
-                      />
+                      isExternalDriveUrl(rec.selfie_url) ? (
+                        <a
+                          href={rec.selfie_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="เปิดรูปหลักฐาน"
+                          className="w-full h-full rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8', textDecoration: 'none' }}
+                        >
+                          <Camera size={22} />
+                        </a>
+                      ) : (
+                        <img 
+                          src={rec.selfie_url} 
+                          alt="selfie" 
+                          className="w-full h-full object-cover rounded-full" 
+                          onClick={(e) => { e.stopPropagation(); setPreviewImage(rec.selfie_url); }} 
+                        />
+                      )
                     ) : (
                       <UserCheck size={24} className="text-slate-500" />
                     )}
@@ -1413,11 +1507,27 @@ function HistoryTab() {
               >
                 ✕
               </button>
-              <img 
-                src={previewImage} 
-                alt="selfie full" 
-                style={{ width: '100%', borderRadius: 16, border: '4px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
-              />
+              {isExternalDriveUrl(previewImage) ? (
+                <div style={{ textAlign: 'center', padding: '40px', background: 'var(--bg-card)', borderRadius: 16, border: '4px solid var(--border)' }}>
+                  <Camera size={48} style={{ color: '#818cf8', margin: '0 auto 16px' }} />
+                  <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 16 }}>รูปภาพนี้อยู่บน Google Drive</p>
+                  <a
+                    href={previewImage}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-primary"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none', padding: '10px 20px', borderRadius: 10 }}
+                  >
+                    <Camera size={16} /> เปิดดูรูปภาพ
+                  </a>
+                </div>
+              ) : (
+                <img 
+                  src={previewImage} 
+                  alt="selfie full" 
+                  style={{ width: '100%', borderRadius: 16, border: '4px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} 
+                />
+              )}
             </div>
           </div>
         </div>
@@ -1435,12 +1545,25 @@ function HistoryTab() {
               <div className="flex items-center gap-4 border-b border-slate-700/50 pb-4">
                  <div className="relative w-16 h-16 rounded-full bg-slate-800 flex-shrink-0 flex items-center justify-center border-2 border-slate-700">
                     {viewModal.record.selfie_url ? (
-                      <img 
-                        src={viewModal.record.selfie_url} 
-                        alt="selfie" 
-                        className="w-full h-full object-cover rounded-full cursor-pointer" 
-                        onClick={() => setPreviewImage(viewModal.record.selfie_url)} 
-                      />
+                      isExternalDriveUrl(viewModal.record.selfie_url) ? (
+                        <a
+                          href={viewModal.record.selfie_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="เปิดรูปหลักฐาน"
+                          className="w-full h-full rounded-full flex items-center justify-center"
+                          style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8', textDecoration: 'none' }}
+                        >
+                          <Camera size={26} />
+                        </a>
+                      ) : (
+                        <img 
+                          src={viewModal.record.selfie_url} 
+                          alt="selfie" 
+                          className="w-full h-full object-cover rounded-full cursor-pointer" 
+                          onClick={() => setPreviewImage(viewModal.record.selfie_url)} 
+                        />
+                      )
                     ) : (
                       <UserCheck size={28} className="text-slate-500" />
                     )}

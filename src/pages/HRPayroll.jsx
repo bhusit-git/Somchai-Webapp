@@ -325,7 +325,7 @@ function PayslipPrintView({ payslip, employee }) {
 
 /* ── TAB 1: E-PAYSLIP (REDESIGNED) ── */
 
-function PayslipDetailPanel({ payslip, onClose, onApprove, onDownload, downloading, onPrint }) {
+function PayslipDetailPanel({ payslip, onClose, onApprove, onDownload, downloading, onPrint, role }) {
   if (!payslip) return null;
 
   const { employee } = payslip;
@@ -370,6 +370,19 @@ function PayslipDetailPanel({ payslip, onClose, onApprove, onDownload, downloadi
             <div style={{ fontSize: '24px', fontWeight: '900', color: '#16a34a' }}>฿{Number(payslip.net_pay || 0).toLocaleString()}</div>
           </div>
         </div>
+
+        {role === 'owner' && (
+          <div style={{ padding: '12px 16px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', marginBottom: '24px', display: 'flex', gap: '32px' }}>
+            <div>
+               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>จำนวนวันที่มาทำงาน</div>
+               <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-primary)' }}>{payslip.uniqueDays || 0} วัน</div>
+            </div>
+            <div>
+               <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>จำนวนกะทั้งหมด</div>
+               <div style={{ fontSize: '16px', fontWeight: '800', color: 'var(--text-primary)' }}>{payslip.shiftCount || 0} กะ</div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           {/* Earnings */}
@@ -488,8 +501,24 @@ function EPayslipTab({ role }) {
             .from('employee_payslips')
             .select('*, users(id, name, full_name, employee_id, role, employment_type, base_salary, daily_rate, pay_cycle, daily_cash_advance, bank_account, bank_name, branches(name)), payslip_items(*)')
             .eq('cycle_id', currentCycle.id);
+
+          const { data: attData } = await supabase
+            .from('attendance')
+            .select('user_id, timestamp')
+            .eq('type', 'clock_in')
+            .eq('is_deleted', false)
+            .gte('timestamp', selectedPeriod.startISO)
+            .lt('timestamp', selectedPeriod.endISO);
+
+          const formattedPslips = formatPayslipData(psData || []);
+          formattedPslips.forEach(ps => {
+             const uAtt = (attData || []).filter(a => a.user_id === ps.employee.rawId);
+             ps.shiftCount = uAtt.length;
+             ps.uniqueDays = new Set(uAtt.map(a => new Date(a.timestamp).toDateString())).size;
+          });
+
           setCycle(currentCycle);
-          setPayslips(formatPayslipData(psData || []));
+          setPayslips(formattedPslips);
         }
       } else {
         // 3. Auto-generate draft cycle
@@ -688,7 +717,14 @@ function EPayslipTab({ role }) {
         .select('*, users(id, name, full_name, employee_id, role, employment_type, base_salary, daily_rate, pay_cycle, daily_cash_advance, bank_account, bank_name, branches(name)), payslip_items(*)')
         .eq('cycle_id', newCycle.id);
       
-      setPayslips(formatPayslipData(psData || []));
+      const formattedPslips = formatPayslipData(psData || []);
+      formattedPslips.forEach(ps => {
+         const uAtt = attData.filter(a => a.user_id === ps.employee.rawId);
+         ps.shiftCount = uAtt.length;
+         ps.uniqueDays = new Set(uAtt.map(a => new Date(a.timestamp).toDateString())).size;
+      });
+      
+      setPayslips(formattedPslips);
     } else {
       setPayslips([]);
     }
@@ -906,6 +942,7 @@ function EPayslipTab({ role }) {
         onDownload={handleDownloadPdfSingle}
         downloading={downloading}
         onPrint={handlePrintSingle}
+        role={role}
       />
       {selectedPayslip && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999 }} onClick={() => setSelectedPayslip(null)} />
