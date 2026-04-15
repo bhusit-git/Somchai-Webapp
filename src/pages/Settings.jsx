@@ -6,7 +6,8 @@ import {
   Upload, Save, RefreshCw, Trash2, Edit2, Check, X, Key,
   Phone, MapPin, FileText, Percent, Bell, Tags, Briefcase, UtensilsCrossed,
   Banknote, QrCode, CreditCard, Truck, Wallet, Smartphone, CircleDollarSign, HandCoins, ListTodo,
-  Gift, Calendar, Clock, ToggleLeft, ToggleRight, Shield, Layers, FileUp, Download, CheckSquare, Square, Search, AlertTriangle
+  Gift, Calendar, Clock, ToggleLeft, ToggleRight, Shield, Layers, FileUp, Download, CheckSquare, Square, Search, AlertTriangle,
+  ChevronUp, ChevronDown
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
@@ -202,7 +203,7 @@ export default function Settings() {
           {visitedTabs['branches'] && <BranchesTab />}
         </div>
         <div style={{ display: activeTab === 'products' ? 'block' : 'none' }}>
-          {visitedTabs['products'] && <CombinedMenuTab />}
+          {visitedTabs['products'] && <ProductsTab />}
         </div>
         <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
           {visitedTabs['customers'] && <CustomersTab />}
@@ -558,7 +559,7 @@ function UsersTab() {
 
       {/* Edit User Form/Modal */}
       {editUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 z-50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl">
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลผู้ใช้งาน</h3>
             
@@ -937,7 +938,7 @@ function BranchesTab() {
 
       {/* Edit Branch Form/Modal */}
       {editBranch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลสาขา</h3>
             
@@ -2167,7 +2168,7 @@ function ExpenseCategoriesTab() {
 
       {/* Edit Category Modal */}
       {editCat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl">
             <h3 className="text-white font-medium text-lg">แก้ไขหมวดหมู่รายจ่าย</h3>
             
@@ -2442,7 +2443,7 @@ function CustomersTab() {
 
       {/* Edit Customer Modal */}
       {editCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl">
             <h3 className="text-white font-medium text-lg">แก้ไขข้อมูลลูกค้า</h3>
             
@@ -2564,40 +2565,8 @@ function CustomersTab() {
 // TAB 7: Combined Menu & Channels
 // ============================================================
 
-function CombinedMenuTab() {
-  const [subTab, setSubTab] = useState('main'); // 'main' | 'channel'
-  
-  return (
-    <div className="space-y-4">
-      {/* Sub Tabs Toggle for Menu Layout */}
-      <div className="flex gap-2 bg-slate-900/50 p-1.5 rounded-xl border border-slate-700/50 w-full overflow-x-auto">
-        <button
-          onClick={() => setSubTab('main')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-            subTab === 'main' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <UtensilsCrossed className="w-4 h-4" /> 📋 เมนูและหมวดหมู่หลัก
-        </button>
-        <button
-          onClick={() => setSubTab('channel')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-            subTab === 'channel' ? 'bg-amber-500 text-black shadow-lg shadow-amber-900/20' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4" /> 📱 ตั้งราคาพิเศษรายช่องทาง
-        </button>
-      </div>
-
-      <div className="pt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {subTab === 'main' ? <ProductsTab /> : <ChannelMenuTab />}
-      </div>
-    </div>
-  );
-}
-
 // ============================================================
-// SUB-TAB: Products & Categories (เมนูขายหลัก)
+// TAB 3: Products & Categories (เมนูขายหลัก)
 // ============================================================
 
 function ProductsTab() {
@@ -2622,6 +2591,9 @@ function ProductsTab() {
   const [imgFile, setImgFile]         = useState(null);
   const [editImgFile, setEditImgFile] = useState(null);
   const [editImgPreview, setEditImgPreview] = useState(null);
+
+  const [showAddChannels, setShowAddChannels] = useState(false);
+  const [showEditChannels, setShowEditChannels] = useState(false);
 
   // Reload channels if Settings page is visited
   useEffect(() => { setSalesChannels(getSalesChannels()); }, []);
@@ -2828,8 +2800,8 @@ function ProductsTab() {
       </div>
 
       {/* ═══ Section: Categories ═══ */}
-      <div className="bg-[#1f2937] border border-slate-700/50 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-[#1f2937]">
+      <div className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-slate-800">
           <h3 className="text-white font-medium text-sm">หมวดหมู่ ({categories.length})</h3>
           <button onClick={() => setShowAddCat(!showAddCat)}
             className="flex items-center justify-center bg-[#3b82f6] hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors">
@@ -2871,8 +2843,8 @@ function ProductsTab() {
       </div>
 
       {/* ═══ Section: Products ═══ */}
-      <div className="bg-[#1f2937] border border-slate-700/50 rounded-xl overflow-hidden mt-6 shadow-md">
-        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-[#1f2937]">
+      <div className="bg-slate-800 border border-slate-700/50 rounded-xl overflow-hidden mt-6 shadow-md">
+        <div className="flex items-center justify-between p-4 border-b border-slate-700/50 bg-slate-800">
           <h3 className="text-white font-medium text-base">รายการเมนู ({products.length})</h3>
           <button onClick={() => setShowAddProd(!showAddProd)}
             className="flex items-center justify-center bg-[#3b82f6] hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors shadow-sm">
@@ -2882,64 +2854,138 @@ function ProductsTab() {
 
         <div className="p-4 bg-[#111827]">
           {showAddProd && (
-            <div className="bg-slate-800 border border-blue-500/30 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
-              <h4 className="text-white font-medium mb-2 border-b border-slate-700 pb-2">เพิ่มเมนูขาย</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="md:col-span-2">
-                  <label className="text-slate-400 text-xs mb-1.5 block">ชื่อเมนู *</label>
-                  <input className={inputCls} placeholder="เช่น หมูปิ้ง 5 ไม้" value={newProd.name}
-                    onChange={e => setNewProd({ ...newProd, name: e.target.value })} />
+            <div className="bg-slate-800 border border-blue-500/30 rounded-xl p-5 mb-6 space-y-4 shadow-inner overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-700 pb-2 mb-2">
+                <h4 className="text-white font-medium">เพิ่มเมนูขาย</h4>
+              </div>
+              
+              <div className="space-y-4">
+                {/* General Info Block */}
+                <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+                  <h5 className="text-white font-semibold mb-4 block">ข้อมูลเมนู (General Info)</h5>
+                  <div className="flex flex-col gap-4">
+                    {/* Upload Box */}
+                    <label className="shrink-0 bg-slate-900 border-2 border-dashed border-slate-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:text-blue-400 transition-colors relative overflow-hidden mx-auto" style={{ width: '120px', height: '120px' }}>
+                       <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, false)} />
+                       {imgPreview ? (
+                          <img src={imgPreview} className="w-full h-full object-cover" alt="preview" />
+                       ) : (
+                          <>
+                             <Upload className="w-6 h-6 mb-2 text-slate-400" />
+                             <span className="text-xs text-slate-400">เพิ่มรูปภาพ</span>
+                          </>
+                       )}
+                    </label>
+                    
+                    {/* Fields */}
+                    <div className="grid grid-cols-2 gap-4 w-full">
+                      <div style={{ gridColumn: 'span 2' }}>
+                         <label className="form-label">ชื่อเมนู <span className="text-red-500">*</span></label>
+                         <input className="form-input" placeholder="เช่น หมูปิ้งติดมัน_ไม้ใหญ่" value={newProd.name} onChange={e => setNewProd({ ...newProd, name: e.target.value })} />
+                      </div>
+                      <div>
+                         <label className="form-label">หมวดหมู่ <span className="text-red-500">*</span></label>
+                         <select className="form-input" value={newProd.category_id} onChange={e => setNewProd({ ...newProd, category_id: e.target.value })}>
+                           <option value="">-- ไม่ระบุ --</option>
+                           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                         </select>
+                      </div>
+                      <div>
+                         <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
+                         <input type="number" className="form-input" placeholder="เช่น 1, 2, 3..." value={newProd.sort_order} onChange={e => setNewProd({ ...newProd, sort_order: e.target.value })} />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
-                  <label className="text-slate-400 text-xs mb-1.5 block">ราคาขาย (บาท) *</label>
-                  <input type="number" min="0" step="0.01" className={inputCls} placeholder="0.00"
-                    value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} />
+
+                {/* Pricing Block */}
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700/50">
+                  <h5 className="form-label" style={{ fontSize: '15px', color: '#fff', marginBottom: '16px' }}>ตั้งราคา</h5>
+                  
+                  {/* Main Price Box */}
+                  <div className="flex items-center gap-4 border border-slate-700 rounded-xl p-3 bg-slate-900 justify-between">
+                     <div className="text-white font-medium" style={{ width: '90px', flexShrink: 0 }}>หน้าร้าน</div>
+                     <div className="flex-1 relative">
+                        <span className="absolute left-3 top-1/2" style={{ transform: 'translateY(-50%)', color: '#9ca3af' }}>฿</span>
+                        <input type="number" min="0" step="0.01" className="form-input" style={{ paddingLeft: '30px' }} placeholder="0.00" value={newProd.price} onChange={e => setNewProd({ ...newProd, price: e.target.value })} />
+                     </div>
+                     <div className="flex items-center gap-2" style={{ width: '80px', flexShrink: 0 }}>
+                        <button onClick={() => setNewProd({...newProd, is_available: !newProd.is_available})} className={`relative inline-flex items-center rounded-full transition-colors ${newProd.is_available ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: '40px', height: '22px' }}>
+                          <span className={`inline-block rounded-full bg-white transition-transform ${newProd.is_available ? 'translate-x-[18px]' : 'translate-x-1'}`} style={{ width: '14px', height: '14px' }} />
+                        </button>
+                     </div>
+                  </div>
+
+                  {/* Channel Collapsible Section */}
+                  <div className="mt-3">
+                     <button onClick={() => setShowAddChannels(!showAddChannels)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm w-full py-2">
+                        {showAddChannels ? '▲' : '▼'}
+                        ตั้งค่าราคาแยกตามช่องทางพิเศษ
+                     </button>
+                     {showAddChannels && (
+                        <div className="mt-3 space-y-3 pl-3 border-l-2 border-slate-700">
+                           {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
+                              const mp = newProd.menu_prices?.[ch.id] || { price: '', is_available: true };
+                              return (
+                                 <div key={ch.id} className="flex items-center gap-3 border border-slate-700 rounded-xl p-2 bg-slate-900/50 justify-between">
+                                    <div className="flex items-center gap-2" style={{ width: '80px', flexShrink: 0 }}>
+                                       <span className="text-lg">{ch.emoji}</span>
+                                       <span className="text-white text-xs font-medium truncate">{ch.label}</span>
+                                    </div>
+                                    <div className="flex-1 relative">
+                                       <span className="absolute left-2 top-1/2" style={{ transform: 'translateY(-50%)', color: '#9ca3af' }}>฿</span>
+                                       <input type="number" className="form-input" style={{ paddingLeft: '24px', paddingRight: '8px', fontSize: '13px' }} placeholder={`อิงหน้าร้าน`} value={mp.price} onChange={e => {
+                                          setNewProd(prev => ({
+                                             ...prev,
+                                             menu_prices: {
+                                                ...prev.menu_prices,
+                                                [ch.id]: { ...mp, price: e.target.value }
+                                             }
+                                          }));
+                                       }} />
+                                    </div>
+                                    <div className="flex items-center gap-2" style={{ width: '40px', flexShrink: 0 }}>
+                                       <button onClick={(e) => {
+                                           e.preventDefault();
+                                           setNewProd(prev => ({
+                                              ...prev,
+                                              menu_prices: {
+                                                 ...prev.menu_prices,
+                                                 [ch.id]: { ...mp, is_available: !mp.is_available }
+                                              }
+                                           }));
+                                       }} className={`relative inline-flex items-center rounded-full transition-colors ${mp.is_available ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: '36px', height: '20px' }}>
+                                         <span className={`inline-block rounded-full bg-white transition-transform ${mp.is_available ? 'translate-x-[20px]' : 'translate-x-1'}`} style={{ width: '12px', height: '12px' }} />
+                                       </button>
+                                    </div>
+                                 </div>
+                              );
+                           })}
+                        </div>
+                     )}
+                  </div>
                 </div>
-                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
-                  <label className="text-slate-400 text-xs mb-1.5 block">หมวดหมู่</label>
-                  <select className={inputCls} value={newProd.category_id}
-                    onChange={e => setNewProd({ ...newProd, category_id: e.target.value })}>
-                    <option value="">-- ไม่ระบุ --</option>
-                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
-                  <label className="text-slate-400 text-xs mb-1.5 block">ลำดับ</label>
-                  <input type="number" className={inputCls} placeholder="0"
-                    value={newProd.sort_order} onChange={e => setNewProd({ ...newProd, sort_order: e.target.value })} />
-                </div>
-                <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
-                  <label className="text-slate-400 text-xs mb-1.5 block">รูปภาพเมนู</label>
-                  <label className="flex items-center justify-center gap-2 cursor-pointer w-full bg-slate-800 border-2 border-dashed border-slate-600 rounded-lg p-3 text-slate-400 text-sm hover:border-blue-500 hover:text-blue-400 transition-colors">
-                    <Upload className="w-5 h-5 shrink-0" />
-                    <span className="truncate max-w-[150px]">{imgFile ? imgFile.name : 'อัปโหลดรูปภาพ...'}</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, false)} />
-                  </label>
-                  {imgPreview && <div className="mt-3 flex justify-center"><img src={imgPreview} className="w-24 h-24 object-cover rounded-xl border border-blue-500/40 shadow-sm" alt="preview" /></div>}
-                </div>
-                <div className="flex items-center gap-2 md:col-span-2 mt-2 bg-slate-900/40 p-3 rounded-lg border border-slate-700/50">
-                  <input type="checkbox" id="avail_new" checked={newProd.is_available}
-                    onChange={e => setNewProd({ ...newProd, is_available: e.target.checked })} className="w-4 h-4 rounded" />
-                  <label htmlFor="avail_new" className="text-slate-300 text-sm cursor-pointer select-none">สวิตช์เปิด/ปิดขาย (ให้แสดงใน POS)</label>
-                </div>
+
                 {/* Misc Costs */}
-                <div className="md:col-span-2 bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mt-2">
-                  <p className="text-amber-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                <div className="bg-slate-800 border border-amber-500/30 rounded-xl p-4">
+                  <p className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: '#fbbf24' }}>
                     ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
                   </p>
-                  <div className="flex items-center gap-3">
-                    <select className={inputCls} style={{ width: '160px' }} value={newProd.misc_cost_type || 'PERCENT'} onChange={e => setNewProd({ ...newProd, misc_cost_type: e.target.value })}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <select className="form-input" value={newProd.misc_cost_type || 'PERCENT'} onChange={e => setNewProd({ ...newProd, misc_cost_type: e.target.value })}>
                       <option value="PERCENT">% จากต้นทุนรวม</option>
                       <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
                     </select>
-                    <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={newProd.misc_cost_value ?? 0} onChange={e => setNewProd({ ...newProd, misc_cost_value: e.target.value })} />
+                    <input type="number" min="0" step="0.01" className="form-input" placeholder="ระบุตัวเลข" value={newProd.misc_cost_value ?? 0} onChange={e => setNewProd({ ...newProd, misc_cost_value: e.target.value })} />
                   </div>
                 </div>
               </div>
+
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300 mt-4">
                 💡 <strong>เคล็ดลับ:</strong> ต้นทุนจะคำนวณอัตโนมัติจากตาราง BOM+WAC — หากต้องการตั้งต้นทุนให้ไปตั้งสูตรที่หน้า <strong>สูตรอาหาร (M7C)</strong>
               </div>
-              <div className="flex gap-3 mt-4 justify-end pt-2 border-t border-slate-700/50">
+              
+              <div className="flex gap-3 mt-4 justify-end pt-4 border-t border-slate-700/50">
                 <button onClick={() => { setShowAddProd(false); setImgFile(null); setImgPreview(null); }}
                   className="text-slate-400 hover:text-white px-5 py-2.5 rounded-lg text-sm border border-slate-600 transition-colors">ยกเลิก</button>
                 <button onClick={handleAddProd} disabled={uploadingImg}
@@ -2952,7 +2998,7 @@ function ProductsTab() {
 
           {newlyCreatedProd && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className="bg-[#1f2937] border border-slate-700/50 rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl relative">
+              <div className="bg-slate-800 border border-slate-700/50 rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl relative">
                 <button onClick={() => setNewlyCreatedProd(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
                   <X className="w-5 h-5" />
                 </button>
@@ -3032,80 +3078,147 @@ function ProductsTab() {
 
       {/* Edit Product Modal */}
       {editProd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-white font-semibold text-lg">แก้ไขเมนู</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className="text-slate-400 text-xs mb-1 block">ชื่อเมนู *</label>
-                <input className={inputCls} value={editProd.name} onChange={e => setEditProd({ ...editProd, name: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ราคาขาย (บาท) *</label>
-                <input type="number" min="0" step="0.01" className={inputCls} value={editProd.price}
-                  onChange={e => setEditProd({ ...editProd, price: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">หมวดหมู่</label>
-                <select className={inputCls} value={editProd.category_id || ''}
-                  onChange={e => setEditProd({ ...editProd, category_id: e.target.value })}>
-                  <option value="">-- ไม่ระบุ --</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ลำดับ (sort)</label>
-                <input type="number" className={inputCls} value={editProd.sort_order ?? 0}
-                  onChange={e => setEditProd({ ...editProd, sort_order: e.target.value })} />
-              </div>
-              {/* Cost (read-only) */}
-              <div>
-                <label className="text-slate-400 text-xs mb-1 block">ต้นทุน (จาก BOM+WAC)</label>
-                <div className={`${inputCls} bg-slate-900/30 text-amber-400 cursor-default`}>
-                  {bomCosts[editProd.id] !== undefined
-                    ? `฿${bomCosts[editProd.id].toFixed(2)} (คำนวณอัตโนมัติ)`
-                    : 'ยังไม่ได้ตั้ง BOM → ไปหน้า สูตรอาหาร (M7C)'
-                  }
-                </div>
-              </div>
-              {/* Image Upload */}
-              <div className="md:col-span-2">
-                <label className="text-slate-400 text-xs mb-2 block">รูปภาพเมนู</label>
-                <div className="flex items-center gap-4">
-                  {(editImgPreview || editProd.image_url) && (
-                    <img src={editImgPreview || editProd.image_url} className="w-16 h-16 rounded-xl object-cover border border-slate-600" alt="preview" />
-                  )}
-                  <label className="flex items-center gap-2 cursor-pointer bg-slate-900/60 border border-slate-600 rounded-lg px-4 py-2.5 text-slate-400 text-sm hover:border-violet-500 transition-colors">
-                    <Upload className="w-4 h-4" />
-                    {editImgFile ? editImgFile.name : 'เปลี่ยนรูป...'}
-                    <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, true)} />
-                  </label>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 md:col-span-2">
-                <input type="checkbox" id="avail_edit" checked={editProd.is_available}
-                  onChange={e => setEditProd({ ...editProd, is_available: e.target.checked })} className="w-4 h-4" />
-                <label htmlFor="avail_edit" className="text-slate-300 text-sm">เปิดขาย (แสดงใน POS)</label>
-              </div>
-              {/* Misc Costs Edit */}
-              <div className="md:col-span-2 bg-amber-900/20 border border-amber-500/30 rounded-xl p-4 mt-2">
-                <p className="text-amber-400 text-xs font-semibold mb-3 flex items-center gap-1.5">
-                  ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
-                </p>
-                <div className="flex items-center gap-3">
-                  <select className={inputCls} style={{ width: '160px' }} value={editProd.misc_cost_type || 'PERCENT'} onChange={e => setEditProd({ ...editProd, misc_cost_type: e.target.value })}>
-                    <option value="PERCENT">% จากต้นทุนรวม</option>
-                    <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
-                  </select>
-                  <input type="number" min="0" step="0.01" className={inputCls} style={{ width: '120px' }} placeholder="ระบุตัวเลข" value={editProd.misc_cost_value ?? 0} onChange={e => setEditProd({ ...editProd, misc_cost_value: e.target.value })} />
-                </div>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" style={{ overflowY: 'auto' }}>
+          <div className="bg-slate-800 rounded-xl p-5 w-full max-w-lg border border-slate-700 mx-auto" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="flex items-center justify-between mb-4 border-b border-slate-700 pb-2">
+              <h3 className="text-white font-semibold text-lg">แก้ไขเมนู</h3>
+              <button onClick={() => { setEditProd(null); setEditImgFile(null); setEditImgPreview(null); }} className="text-slate-400 hover:text-white">
+                 <X className="w-5 h-5"/>
+              </button>
             </div>
-            <div className="flex gap-3 justify-end pt-2">
+            
+            <div className="space-y-4">
+                {/* General Info Block */}
+                <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-4">
+                  <h5 className="text-white font-semibold mb-4 block">ข้อมูลเมนู (General Info)</h5>
+                  <div className="flex flex-col gap-4">
+                    {/* Upload Box */}
+                    <label className="shrink-0 bg-slate-900 border-2 border-dashed border-slate-600 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-blue-500 hover:text-blue-400 transition-colors relative overflow-hidden mx-auto" style={{ width: '120px', height: '120px' }}>
+                       <input type="file" accept="image/*" className="hidden" onChange={e => onImgChange(e, true)} />
+                       {(editImgPreview || editProd.image_url) ? (
+                          <img src={editImgPreview || editProd.image_url} className="w-full h-full object-cover" alt="preview" />
+                       ) : (
+                          <>
+                             <Upload className="w-6 h-6 mb-2 text-slate-400" />
+                             <span className="text-xs text-slate-400">เปลี่ยนรูปภาพ</span>
+                          </>
+                       )}
+                    </label>
+                    
+                    {/* Fields */}
+                    <div className="grid grid-cols-2 gap-4 w-full">
+                      <div style={{ gridColumn: 'span 2' }}>
+                         <label className="form-label">ชื่อเมนู <span className="text-red-500">*</span></label>
+                         <input className="form-input" value={editProd.name} onChange={e => setEditProd({ ...editProd, name: e.target.value })} />
+                      </div>
+                      <div>
+                         <label className="form-label">หมวดหมู่ <span className="text-red-500">*</span></label>
+                         <select className="form-input" value={editProd.category_id || ''} onChange={e => setEditProd({ ...editProd, category_id: e.target.value })}>
+                           <option value="">-- ไม่ระบุ --</option>
+                           {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                         </select>
+                      </div>
+                      <div>
+                         <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
+                         <input type="number" className="form-input" value={editProd.sort_order ?? 0} onChange={e => setEditProd({ ...editProd, sort_order: e.target.value })} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pricing Block */}
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700/50">
+                  <h5 className="form-label flex justify-between w-full" style={{ fontSize: '15px', color: '#fff', marginBottom: '16px' }}>
+                     <span>ตั้งราคา</span>
+                     {bomCosts[editProd.id] !== undefined && (
+                        <span className="text-xs px-2 py-1 rounded-md" style={{ color: '#fbbf24', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>ต้นทุน: ฿{bomCosts[editProd.id].toFixed(2)}</span>
+                     )}
+                  </h5>
+                  
+                  {/* Main Price Box */}
+                  <div className="flex items-center gap-4 border border-slate-700 rounded-xl p-3 bg-slate-900 justify-between">
+                     <div className="text-white font-medium" style={{ width: '90px', flexShrink: 0 }}>หน้าร้าน</div>
+                     <div className="flex-1 relative">
+                        <span className="absolute left-3 top-1/2" style={{ transform: 'translateY(-50%)', color: '#9ca3af' }}>฿</span>
+                        <input type="number" min="0" step="0.01" className="form-input" style={{ paddingLeft: '30px' }} value={editProd.price} onChange={e => setEditProd({ ...editProd, price: e.target.value })} />
+                     </div>
+                     <div className="flex items-center gap-2" style={{ width: '80px', flexShrink: 0 }}>
+                        <button onClick={() => setEditProd({...editProd, is_available: !editProd.is_available})} className={`relative inline-flex items-center rounded-full transition-colors ${editProd.is_available ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: '40px', height: '22px' }}>
+                          <span className={`inline-block rounded-full bg-white transition-transform ${editProd.is_available ? 'translate-x-[18px]' : 'translate-x-1'}`} style={{ width: '14px', height: '14px' }} />
+                        </button>
+                     </div>
+                  </div>
+
+                  {/* Channel Collapsible Section */}
+                  <div className="mt-3">
+                     <button onClick={() => setShowEditChannels(!showEditChannels)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm w-full py-2">
+                        {showEditChannels ? '▲' : '▼'}
+                        ตั้งค่าราคาแยกตามช่องทางพิเศษ
+                     </button>
+                     {showEditChannels && (
+                        <div className="mt-3 space-y-3 pl-3 border-l-2 border-slate-700">
+                           {salesChannels.filter(ch => ch.id !== 'dine_in').map(ch => {
+                              const mp = editProd.menu_prices?.[ch.id] || { price: '', is_available: true };
+                              return (
+                                 <div key={ch.id} className="flex items-center gap-3 border border-slate-700 rounded-xl p-2 bg-slate-900/50 justify-between">
+                                    <div className="flex items-center gap-2" style={{ width: '80px', flexShrink: 0 }}>
+                                       <span className="text-lg">{ch.emoji}</span>
+                                       <span className="text-white text-xs font-medium truncate">{ch.label}</span>
+                                    </div>
+                                    <div className="flex-1 relative">
+                                       <span className="absolute left-2 top-1/2" style={{ transform: 'translateY(-50%)', color: '#9ca3af' }}>฿</span>
+                                       <input type="number" className="form-input" style={{ paddingLeft: '24px', paddingRight: '8px', fontSize: '13px' }} placeholder={`อิงหน้าร้าน`} value={mp.price} onChange={e => {
+                                          setEditProd(prev => ({
+                                             ...prev,
+                                             menu_prices: {
+                                                ...prev.menu_prices,
+                                                [ch.id]: { ...mp, price: e.target.value }
+                                             }
+                                          }));
+                                       }} />
+                                    </div>
+                                    <div className="flex items-center gap-2" style={{ width: '40px', flexShrink: 0 }}>
+                                       <button onClick={(e) => {
+                                           e.preventDefault();
+                                           setEditProd(prev => ({
+                                              ...prev,
+                                              menu_prices: {
+                                                 ...prev.menu_prices,
+                                                 [ch.id]: { ...mp, is_available: !mp.is_available }
+                                              }
+                                           }));
+                                       }} className={`relative inline-flex items-center rounded-full transition-colors ${mp.is_available ? 'bg-emerald-500' : 'bg-slate-600'}`} style={{ width: '36px', height: '20px' }}>
+                                         <span className={`inline-block rounded-full bg-white transition-transform ${mp.is_available ? 'translate-x-[20px]' : 'translate-x-1'}`} style={{ width: '12px', height: '12px' }} />
+                                       </button>
+                                    </div>
+                                 </div>
+                              );
+                           })}
+                        </div>
+                     )}
+                  </div>
+                </div>
+                
+                {/* Misc Costs Edit */}
+                <div className="bg-slate-800 border border-amber-500/30 rounded-xl p-4">
+                  <p className="text-xs font-semibold mb-3 flex items-center gap-1.5" style={{ color: '#fbbf24' }}>
+                    ⚙️ Q-Factor (ต้นทุนแฝง/เครื่องปรุง/แพ็กเกจจิ้ง)
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <select className="form-input" value={editProd.misc_cost_type || 'PERCENT'} onChange={e => setEditProd({ ...editProd, misc_cost_type: e.target.value })}>
+                      <option value="PERCENT">% จากต้นทุนรวม</option>
+                      <option value="FIXED_AMOUNT">เงินคงที่ (บาท)</option>
+                    </select>
+                    <input type="number" min="0" step="0.01" className="form-input" placeholder="ระบุตัวเลข" value={editProd.misc_cost_value ?? 0} onChange={e => setEditProd({ ...editProd, misc_cost_value: e.target.value })} />
+                  </div>
+                </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-4 mt-6 border-t border-slate-700/50">
               <button onClick={() => { setEditProd(null); setEditImgFile(null); setEditImgPreview(null); }}
-                className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm border border-slate-600">ยกเลิก</button>
+                className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm border border-slate-600 transition-colors">ยกเลิก</button>
               <button onClick={handleEditProd} disabled={uploadingImg}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
                 <Save className="w-4 h-4" /> {uploadingImg ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
               </button>
             </div>
@@ -3115,7 +3228,7 @@ function ProductsTab() {
 
       {/* Edit Category Modal */}
       {editCat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md space-y-4 shadow-2xl">
             <h3 className="text-white font-semibold text-lg">แก้ไขหมวดหมู่</h3>
             <div>
@@ -3591,7 +3704,7 @@ function PromotionsTab() {
 
       {/* Create/Edit Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowForm(false); setEditPromo(null); }}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => { setShowForm(false); setEditPromo(null); }}>
           <div className="bg-slate-800 border border-slate-700/50 rounded-xl p-6 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
               <Gift className="w-5 h-5 text-emerald-400" />
@@ -3736,840 +3849,6 @@ function PromotionsTab() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ============================================================
-// TAB: Channel Menu Manager (ตั้งค่าเมนูตามช่องทาง)
-// ============================================================
-
-function ChannelMenuTab() {
-  // Read channels live every render so newly-added channels appear immediately
-  const salesChannels = getSalesChannels();
-  const [activeChannel, setActiveChannel] = useState(() => {
-    const channels = getSalesChannels().filter(ch => ch.id !== 'dine_in');
-    return channels.length > 0 ? channels[0].id : 'grab';
-  });
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [menuPrices, setMenuPrices] = useState([]); // raw rows from menu_prices
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterCat, setFilterCat] = useState('all');
-  const [hasChanges, setHasChanges] = useState(false);
-
-  // Local editable state: { [product_id]: { is_available: bool, price: string|number } }
-  const [channelState, setChannelState] = useState({});
-
-  // CSV Import state
-  const [showCsvImport, setShowCsvImport] = useState(false);
-  const [csvData, setCsvData] = useState(null);
-  const [csvFileName, setCsvFileName] = useState('');
-  const [csvImporting, setCsvImporting] = useState(false);
-  const [csvResult, setCsvResult] = useState(null);
-
-  useEffect(() => { loadData(); }, []);
-
-  useEffect(() => {
-    // When channel changes, rebuild channelState from menuPrices
-    if (products.length === 0) return;
-    const state = {};
-    products.forEach(p => {
-      const mp = menuPrices.find(r => r.menu_id === p.id && r.channel === activeChannel);
-      state[p.id] = {
-        is_available: mp ? mp.is_available !== false : false,
-        price: mp?.price ?? '',
-      };
-    });
-    setChannelState(state);
-    setHasChanges(false);
-  }, [activeChannel, menuPrices, products]);
-
-  async function loadData() {
-    try {
-      const [prodRes, catRes, mpRes] = await Promise.all([
-        supabase.from('products').select('*').order('sort_order'),
-        supabase.from('categories').select('*').order('sort_order'),
-        supabase.from('menu_prices').select('*'),
-      ]);
-      setProducts(prodRes.data || []);
-      setCategories(catRes.data || []);
-      setMenuPrices(mpRes.data || []);
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
-  }
-
-  // rebuildChannelState is now inlined in the useEffect above
-
-  function toggleProduct(productId) {
-    setChannelState(prev => ({
-      ...prev,
-      [productId]: { ...prev[productId], is_available: !prev[productId]?.is_available }
-    }));
-    setHasChanges(true);
-  }
-
-  function setProductPrice(productId, price) {
-    setChannelState(prev => ({
-      ...prev,
-      [productId]: { ...prev[productId], price }
-    }));
-    setHasChanges(true);
-  }
-
-  function selectAll() {
-    const filtered = getFilteredProducts();
-    setChannelState(prev => {
-      const next = { ...prev };
-      filtered.forEach(p => { next[p.id] = { ...next[p.id], is_available: true }; });
-      return next;
-    });
-    setHasChanges(true);
-  }
-
-  function deselectAll() {
-    const filtered = getFilteredProducts();
-    setChannelState(prev => {
-      const next = { ...prev };
-      filtered.forEach(p => { next[p.id] = { ...next[p.id], is_available: false }; });
-      return next;
-    });
-    setHasChanges(true);
-  }
-
-  function getFilteredProducts() {
-    return products.filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchCat = filterCat === 'all' || p.category_id === filterCat;
-      return matchSearch && matchCat;
-    });
-  }
-
-  async function handleSaveAll() {
-    setSaving(true);
-    try {
-      // Collect all upsert rows for the active channel
-      const upserts = [];
-      const deletes = [];
-
-      Object.entries(channelState).forEach(([productId, st]) => {
-        if (st.is_available || (st.price !== '' && st.price !== null && st.price !== undefined)) {
-          const parsedPrice = st.price !== '' && st.price !== null ? parseFloat(st.price) : null;
-          upserts.push({
-            menu_id: productId,
-            channel: activeChannel,
-            price: parsedPrice !== null && !isNaN(parsedPrice) ? parsedPrice : null,
-            is_available: st.is_available,
-          });
-        } else {
-          // If not available and no price, delete the row if it exists
-          deletes.push(productId);
-        }
-      });
-
-      // Delete rows for products that are now OFF and have no custom price
-      if (deletes.length > 0) {
-        await supabase.from('menu_prices').delete()
-          .eq('channel', activeChannel)
-          .in('menu_id', deletes);
-      }
-
-      // Upsert the rest
-      if (upserts.length > 0) {
-        const { error } = await supabase.from('menu_prices').upsert(upserts, { onConflict: 'menu_id,channel' });
-        if (error) throw error;
-      }
-
-      // Reload
-      const { data: freshMp } = await supabase.from('menu_prices').select('*');
-      setMenuPrices(freshMp || []);
-      setHasChanges(false);
-      alert('✅ บันทึกสำเร็จ!');
-    } catch (err) {
-      alert('❌ เกิดข้อผิดพลาด: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // ── CSV Import Logic ──
-  function handleCsvFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setCsvFileName(file.name);
-    setCsvResult(null);
-
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const text = ev.target.result;
-        const lines = text.split(/\r?\n/).filter(l => l.trim());
-        if (lines.length < 2) { alert('ไฟล์ CSV ว่างเปล่า'); return; }
-
-        // CSV parser that handles quoted fields (e.g. "field with, comma")
-        function parseCsvLine(line) {
-          const result = [];
-          let current = '';
-          let inQuotes = false;
-          for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-              if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } // escaped quote
-              else { inQuotes = !inQuotes; }
-            } else if (ch === ',' && !inQuotes) {
-              result.push(current.trim());
-              current = '';
-            } else {
-              current += ch;
-            }
-          }
-          result.push(current.trim());
-          return result;
-        }
-
-        const headers = parseCsvLine(lines[0]);
-        const rows = lines.slice(1).map(line => {
-          const vals = parseCsvLine(line);
-          const obj = {};
-          headers.forEach((h, i) => { obj[h] = vals[i] || ''; });
-          return obj;
-        });
-
-        setCsvData({ headers, rows });
-      } catch (err) {
-        alert('ไม่สามารถอ่านไฟล์ CSV ได้: ' + err.message);
-      }
-    };
-    reader.readAsText(file, 'UTF-8');
-  }
-
-  async function handleCsvImport() {
-    if (!csvData?.rows?.length) return;
-    setCsvImporting(true);
-    setCsvResult(null);
-
-    try {
-      // Detect columns
-      const hLower = csvData.headers.map(s => s.toLowerCase());
-      function findCol(predicate, fallbackIndex) {
-        const idx = hLower.findIndex(predicate);
-        return idx >= 0 ? csvData.headers[idx] : (fallbackIndex !== undefined ? csvData.headers[fallbackIndex] : null);
-      }
-      const idCol = findCol(x => x.includes('id'), 0);
-      const nameCol = findCol(x => x.includes('ชื่อ') || x.includes('name') || x.includes('เมนู'), 1);
-      const catCol = findCol(x => x.includes('หมวด') || x.includes('category'));
-      const priceCol = findCol(x => x.includes('ราคา') || x.includes('price'));
-
-      // Classify rows by prefix
-      const baseMenus = [];   // P*, PS*
-      const deliveryMenus = []; // PD*
-      const partnerMenus = []; // PP*
-      const staffMenus = [];   // PB*
-      const specialMenus = []; // PE*
-      const skipped = [];      // PC*, PW*
-
-      csvData.rows.forEach(row => {
-        const id = (row[idCol] || '').trim();
-        const name = (row[nameCol] || '').trim();
-        const category = catCol ? (row[catCol] || '').trim() : '';
-        const price = priceCol ? parseFloat(row[priceCol]) || 0 : 0;
-
-        if (!id || !name) return;
-
-        if (id.startsWith('PC') || id.startsWith('PW')) {
-          skipped.push({ id, name, reason: id.startsWith('PC') ? 'สต๊อก (เพิ่มแล้ว)' : 'ของเสีย' });
-        } else if (id.startsWith('PD')) {
-          deliveryMenus.push({ id, name, category, price });
-        } else if (id.startsWith('PP')) {
-          partnerMenus.push({ id, name, category, price });
-        } else if (id.startsWith('PB')) {
-          staffMenus.push({ id, name, category, price });
-        } else if (id.startsWith('PE')) {
-          specialMenus.push({ id, name, category, price });
-        } else {
-          // P*, PS* → base products
-          baseMenus.push({ id, name, category, price });
-        }
-      });
-
-      // ── Step 1: Create categories if needed
-      const existingCats = (await supabase.from('categories').select('*')).data || [];
-      const catMap = {};
-      existingCats.forEach(c => { catMap[c.name] = c.id; });
-
-      // Auto-create categories: หมูปิ้ง/ย่าง, ข้าว/เครื่องเคียง, เซ็ตเมนู
-      const autoCats = ['หมูปิ้ง/ย่าง', 'ข้าว/เครื่องเคียง', 'เซ็ตเมนู'];
-      for (const catName of autoCats) {
-        if (!catMap[catName]) {
-          const { data: newCat } = await supabase.from('categories')
-            .insert({ name: catName, is_active: true })
-            .select().single();
-          if (newCat) catMap[catName] = newCat.id;
-        }
-      }
-
-      // Classify base menus into categories
-      function guessCategory(name) {
-        const n = name.toLowerCase();
-        if (n.includes('ข้าวเหนียว') || n.includes('น้ำ') || n.includes('เก๊กฮวย')) return 'ข้าว/เครื่องเคียง';
-        if (n.includes('ชุด') || n.includes('set') || n.includes('meal') || n.includes('combo') || n.includes('hero') || n.includes('โปร')) return 'เซ็ตเมนู';
-        return 'หมูปิ้ง/ย่าง';
-      }
-
-      // ── Step 2: Insert base products (skip if name already exists)
-      const existingProds = (await supabase.from('products').select('id, name')).data || [];
-      const prodNameMap = {};
-      existingProds.forEach(p => { prodNameMap[p.name.toLowerCase().trim()] = p.id; });
-
-      let insertedCount = 0;
-      let skippedDup = 0;
-      const newProdMap = {}; // oldId → newId
-
-      for (const item of baseMenus) {
-        // Clean name: remove underscores → spaces
-        const cleanName = item.name.replace(/_/g, ' ').trim();
-        const lookupKey = cleanName.toLowerCase();
-
-        if (prodNameMap[lookupKey]) {
-          newProdMap[item.id] = prodNameMap[lookupKey];
-          skippedDup++;
-          continue;
-        }
-
-        const catName = guessCategory(cleanName);
-        const { data: inserted, error } = await supabase.from('products').insert({
-          name: cleanName,
-          price: item.price,
-          cost: 0,
-          category_id: catMap[catName] || null,
-          is_available: true,
-          sort_order: 0,
-        }).select().single();
-
-        if (!error && inserted) {
-          newProdMap[item.id] = inserted.id;
-          prodNameMap[lookupKey] = inserted.id;
-          insertedCount++;
-        }
-      }
-
-      // ── Step 3: Map delivery items → menu_prices
-      // Match by name similarity: "Grab_หมูปิ้งธรรมดา_ไม้เล็ก" → find "หมูปิ้งติดมัน ไม้เล็ก" or similar
-      let mpInserted = 0;
-      const mpUpserts = [];
-
-      function findBaseProduct(deliveryName) {
-        // Remove prefix like "Grab_", "LineMan_"
-        let cleanName = deliveryName
-          .replace(/^(Grab|LineMan|LineMAN|line_man|grab)_/i, '')
-          .replace(/_/g, ' ')
-          .trim()
-          .toLowerCase();
-
-        // Try exact match first
-        if (prodNameMap[cleanName]) return prodNameMap[cleanName];
-
-        // Try fuzzy match: check if any product name contains the core words
-        for (const [existingName, existingId] of Object.entries(prodNameMap)) {
-          // Check if significant overlap
-          const words = cleanName.split(/\s+/).filter(w => w.length > 1);
-          const matchCount = words.filter(w => existingName.includes(w)).length;
-          if (words.length > 0 && matchCount >= Math.ceil(words.length * 0.6)) {
-            return existingId;
-          }
-        }
-
-        return null;
-      }
-
-      function detectChannel(name) {
-        const n = name.toLowerCase();
-        if (n.startsWith('grab')) return 'grab';
-        if (n.startsWith('lineman') || n.startsWith('line_man')) return 'lineman';
-        return null;
-      }
-
-      // Delivery set menus that don't match any base product → create as new product
-      const unmatchedDelivery = [];
-
-      for (const item of deliveryMenus) {
-        const channel = detectChannel(item.name);
-        if (!channel) continue;
-
-        const baseId = findBaseProduct(item.name);
-        if (baseId) {
-          mpUpserts.push({
-            menu_id: baseId,
-            channel,
-            price: item.price,
-            is_available: true,
-          });
-        } else {
-          unmatchedDelivery.push({ ...item, channel });
-        }
-      }
-
-      // Create unmatched delivery items as new products + link to channel
-      for (const item of unmatchedDelivery) {
-        let cleanName = item.name
-          .replace(/^(Grab|LineMan|LineMAN|line_man|grab)_/i, '')
-          .replace(/_/g, ' ')
-          .trim();
-
-        const lookupKey = cleanName.toLowerCase();
-
-        let productId = prodNameMap[lookupKey];
-        if (!productId) {
-          const catName = guessCategory(cleanName);
-          const { data: inserted } = await supabase.from('products').insert({
-            name: cleanName,
-            price: item.price, // use delivery price as base
-            cost: 0,
-            category_id: catMap[catName] || null,
-            is_available: true,
-            sort_order: 0,
-          }).select().single();
-          if (inserted) {
-            productId = inserted.id;
-            prodNameMap[lookupKey] = inserted.id;
-            insertedCount++;
-          }
-        }
-
-        if (productId) {
-          mpUpserts.push({
-            menu_id: productId,
-            channel: item.channel,
-            price: item.price,
-            is_available: true,
-          });
-        }
-      }
-
-      // Partner menu_prices
-      for (const item of partnerMenus) {
-        const cleanName = item.name.replace(/_/g, ' ').trim().toLowerCase();
-        // Try to find matching product
-        let productId = null;
-        for (const [name, id] of Object.entries(prodNameMap)) {
-          const words = cleanName.split(/\s+/).filter(w => w.length > 1);
-          const matchCount = words.filter(w => name.includes(w)).length;
-          if (words.length > 0 && matchCount >= Math.ceil(words.length * 0.5)) {
-            productId = id;
-            break;
-          }
-        }
-        if (productId) {
-          mpUpserts.push({
-            menu_id: productId,
-            channel: 'partner',
-            price: item.price,
-            is_available: true,
-          });
-        }
-      }
-
-      // Upsert all menu_prices
-      if (mpUpserts.length > 0) {
-        // Deduplicate - keep last entry per menu_id+channel
-        const deduped = {};
-        mpUpserts.forEach(mp => {
-          deduped[`${mp.menu_id}_${mp.channel}`] = mp;
-        });
-        const finalUpserts = Object.values(deduped);
-
-        const { error } = await supabase.from('menu_prices').upsert(finalUpserts, { onConflict: 'menu_id,channel' });
-        if (error) console.error('menu_prices upsert error:', error);
-        mpInserted = finalUpserts.length;
-      }
-
-      setCsvResult({
-        success: true,
-        productsInserted: insertedCount,
-        productsDuplicate: skippedDup,
-        menuPricesInserted: mpInserted,
-        skipped: skipped.length,
-        unmatchedDelivery: unmatchedDelivery.length,
-      });
-
-      // Reload data
-      await loadData();
-
-    } catch (err) {
-      setCsvResult({ success: false, error: err.message });
-    } finally {
-      setCsvImporting(false);
-    }
-  }
-
-  // ── Filter channels (exclude dine_in for this tab) ──
-  const editableChannels = salesChannels.filter(ch => ch.id !== 'dine_in');
-  const activeChInfo = editableChannels.find(ch => ch.id === activeChannel) || editableChannels[0];
-  const filteredProducts = getFilteredProducts();
-  const enabledCount = filteredProducts.filter(p => channelState[p.id]?.is_available).length;
-
-  if (loading) return <div className="text-slate-400 p-8 text-center animate-pulse">กำลังโหลดข้อมูลเมนู...</div>;
-
-  return (
-    <div className="space-y-6">
-      {/* Header Area */}
-      <div className="mb-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex flex-shrink-0 items-center justify-center shadow-lg shadow-amber-900/20">
-              <Layers className="w-5 h-5 text-black" />
-            </div>
-            <div>
-              <h2 className="text-white text-xl font-bold">ตั้งค่าเมนูตามช่องทาง</h2>
-              <p className="text-slate-400 text-sm mt-0.5">กำหนดรายการอาหารและตั้งราคาพิเศษสำหรับแต่ละแพลตฟอร์ม</p>
-            </div>
-          </div>
-          
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setShowCsvImport(!showCsvImport)}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              <FileUp className="w-4 h-4 text-emerald-400" /> นำเข้า CSV (ระบบเก่า)
-            </button>
-            <button
-              onClick={handleSaveAll}
-              disabled={saving || !hasChanges}
-              className={`flex items-center gap-2 px-6 py-2 rounded-lg text-sm font-bold transition-all ${
-                hasChanges
-                  ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-900/30'
-                  : 'bg-slate-800/80 text-slate-300 cursor-not-allowed border border-slate-700'
-              }`}
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'กำลังบันทึก...' : hasChanges ? 'บันทึกการตั้งค่า' : 'ไม่มีการเปลี่ยนแปลง'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* CSV Import Panel (Hidden by default) */}
-      {showCsvImport && (
-        <div className="bg-slate-900/80 border border-amber-500/30 rounded-2xl overflow-hidden shadow-2xl mb-6 ring-1 ring-white/5">
-          <div className="flex items-center justify-between p-5 border-b border-white/5 bg-gradient-to-r from-amber-900/20 to-transparent">
-            <h3 className="text-amber-400 font-semibold text-base flex items-center gap-2">
-              <FileUp className="w-5 h-5" /> นำเข้าข้อมูลเมนูจากไฟล์ CSV
-            </h3>
-            <button onClick={() => setShowCsvImport(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800/50 p-2 rounded-lg hover:bg-slate-700">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="p-6 space-y-6">
-            <div className="bg-amber-950/20 border border-amber-900/30 rounded-xl p-4 flex gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-slate-200 text-sm font-medium mb-1">ระบบนำเข้าอัตโนมัติ (Automated Import)</p>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  อัปโหลดไฟล์ที่มีรหัส <span className="text-emerald-400 font-mono bg-emerald-900/30 px-1 rounded">P*</span>, <span className="text-emerald-400 font-mono bg-emerald-900/30 px-1 rounded">PS*</span> (เมนูหน้าร้าน), 
-                  <span className="text-blue-400 font-mono bg-blue-900/30 px-1 rounded ml-1">PD*</span> (เดลิเวอรี่), หรือ <span className="text-purple-400 font-mono bg-purple-900/30 px-1 rounded ml-1">PP*</span> (พาร์ทเนอร์).
-                  ระบบจะแยกประเภทและเชื่อมโยงราคาเข้ากับช่องทางต่างๆ ให้โดยอัตโนมัติ
-                </p>
-              </div>
-            </div>
-
-            {/* File Input */}
-            <div>
-              <label className="flex flex-col items-center justify-center gap-3 cursor-pointer w-full bg-slate-800/50 border-2 border-dashed border-slate-600 rounded-xl p-8 hover:border-amber-500 transition-colors group">
-                <div className="w-12 h-12 bg-slate-700 group-hover:bg-amber-500/20 rounded-full flex items-center justify-center transition-colors">
-                  <Upload className="w-6 h-6 text-slate-400 group-hover:text-amber-400 transition-colors" />
-                </div>
-                <div className="text-center">
-                  <span className="text-base text-slate-300 font-medium">{csvFileName || 'คลิกเพื่อเลือกไฟล์ CSV'}</span>
-                  {!csvFileName && <p className="text-xs text-slate-500 mt-1">หรือลากไฟล์มาวางที่นี่</p>}
-                </div>
-                <input type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
-              </label>
-            </div>
-
-            {/* CSV Preview */}
-            {csvData && (
-              <div className="animate-in fade-in slide-in-from-bottom-2">
-                <div className="flex items-center justify-between mb-3 text-sm">
-                  <span className="text-slate-300 font-medium">ตัวอย่างข้อมูล <span className="text-slate-500 font-normal">({csvData.rows.length} รายการ)</span></span>
-                </div>
-                <div className="max-h-60 overflow-auto border border-slate-700/50 rounded-xl bg-[#0f172a]/80 custom-scrollbar">
-                  <table className="w-full text-left text-xs whitespace-nowrap">
-                    <thead className="sticky top-0 bg-slate-800 text-slate-400 z-10 shadow-md">
-                      <tr>
-                        {csvData.headers.map((h, i) => <th key={i} className="px-4 py-3 font-medium border-b border-slate-700">{h}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-800/50">
-                      {csvData.rows.slice(0, 10).map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-800/50 transition-colors">
-                          {csvData.headers.map((h, j) => (
-                            <td key={j} className="px-4 py-2 text-slate-300">{row[h]}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={handleCsvImport}
-                    disabled={csvImporting}
-                    className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white px-8 py-3 rounded-xl text-sm font-bold shadow-lg shadow-emerald-900/20 transition-all transform hover:-translate-y-0.5"
-                  >
-                    <Download className="w-5 h-5" />
-                    {csvImporting ? 'กำลังประมวลผลข้อมูล...' : `ยืนยันการนำเข้าข้อมูล`}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Result */}
-            {csvResult && (
-              <div className={`rounded-xl p-6 border ${
-                csvResult.success
-                  ? 'bg-emerald-950/20 border-emerald-500/30'
-                  : 'bg-red-950/20 border-red-500/30'
-              }`}>
-                {csvResult.success ? (
-                  <div className="space-y-4">
-                    <p className="text-emerald-400 font-bold text-lg flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center"><Check className="w-5 h-5" /></div>
-                      นำเข้าข้อมูลสำเร็จเรียบร้อยแล้ว
-                    </p>
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div className="bg-slate-900/50 border border-emerald-900/50 rounded-xl p-4 flex flex-col items-center justify-center">
-                        <div className="text-3xl font-black text-emerald-400 mb-1">{csvResult.productsInserted}</div>
-                        <div className="text-xs font-medium text-slate-400 uppercase tracking-widest">เมนูใหม่</div>
-                      </div>
-                      <div className="bg-slate-900/50 border border-blue-900/50 rounded-xl p-4 flex flex-col items-center justify-center">
-                        <div className="text-3xl font-black text-blue-400 mb-1">{csvResult.menuPricesInserted}</div>
-                        <div className="text-xs font-medium text-slate-400 uppercase tracking-widest">ผูกราคาต่อช่องทาง</div>
-                      </div>
-                      <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 flex flex-col items-center justify-center">
-                        <div className="text-3xl font-black text-slate-300 mb-1">{csvResult.productsDuplicate}</div>
-                        <div className="text-xs font-medium text-slate-500 uppercase tracking-widest">ข้อมูลอัปเดตซ้ำ</div>
-                      </div>
-                      <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 flex flex-col items-center justify-center">
-                        <div className="text-3xl font-black text-slate-500 mb-1">{csvResult.skipped}</div>
-                        <div className="text-xs font-medium text-slate-500 uppercase tracking-widest">รายการที่ข้าม (ของเสีย/สต๊อก)</div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-red-400 flex items-center gap-2 font-medium">
-                    <AlertTriangle className="w-5 h-5" /> ข้อผิดพลาด: {csvResult.error}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Main Content Layout */}
-      <div className="bg-slate-900/60 border border-white/5 rounded-2xl shadow-xl overflow-hidden flex flex-col h-[800px] max-h-[80vh]">
-        
-        {/* Top bar: Tabs & Filters */}
-        <div className="p-4 border-b border-white/5 bg-slate-800/40">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            
-            {/* Elegant Segmented Tabs for Channels */}
-            <div className="flex gap-2 bg-slate-800/80 p-1.5 rounded-lg border border-slate-700 overflow-x-auto w-full md:w-auto">
-              {editableChannels.map(ch => {
-                const isActive = activeChannel === ch.id;
-                const count = menuPrices.filter(mp => mp.channel === ch.id && mp.is_available !== false).length;
-                return (
-                  <button
-                    key={ch.id}
-                    onClick={() => { setActiveChannel(ch.id); setSearchTerm(''); setFilterCat('all'); }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
-                      isActive
-                        ? 'bg-slate-900 text-amber-400 shadow'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>{ch.emoji}</span> {ch.label}
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ml-1 font-bold ${
-                      isActive ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-700 text-slate-400'
-                    }`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Quick Actions & Stats */}
-            <div className="flex items-center gap-4 text-sm font-medium">
-              <div className="flex items-center gap-4 text-slate-400 px-4 py-2 bg-slate-900/50 rounded-xl border border-white/5">
-                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500"></span> รวม {filteredProducts.length}</div>
-                <div className="w-px h-4 bg-slate-700"></div>
-                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span> เปิด {enabledCount}</div>
-                <div className="w-px h-4 bg-slate-700"></div>
-                <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span> ปิด {filteredProducts.length - enabledCount}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters Toolbar */}
-        <div className="px-5 py-3 border-b border-white/5 bg-slate-800/20 flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex items-center gap-3 flex-1">
-            <div className="relative max-w-xs w-full group">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" />
-              <input
-                type="text"
-                className="form-input w-full pl-9"
-                placeholder={`ค้นหาในช่องทาง ${activeChInfo?.label}...`}
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <select
-              className="form-select"
-              value={filterCat}
-              onChange={e => setFilterCat(e.target.value)}
-              style={{ minWidth: '150px' }}
-            >
-              <option value="all">ทุกหมวดหมู่อาหาร</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          
-          <div className="flex bg-slate-900/50 rounded-xl p-1 border border-slate-700/50">
-            <button onClick={selectAll} className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-emerald-400 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">
-              <CheckSquare className="w-3.5 h-3.5" /> เปิดทั้งหมด
-            </button>
-            <div className="w-px bg-slate-700 my-1 mx-1"></div>
-            <button onClick={deselectAll} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-400 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors">
-              <Square className="w-3.5 h-3.5" /> ปิดทั้งหมด
-            </button>
-          </div>
-        </div>
-
-        {/* Products Table Area */}
-        <div className="flex-1 overflow-auto custom-scrollbar bg-[#0B1120]">
-          <table className="w-full relative border-collapse">
-            <thead className="sticky top-0 bg-slate-900 shadow-md ring-1 ring-white/5 z-10">
-              <tr>
-                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider w-16">เปิดขาย</th>
-                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">รายการเมนู</th>
-                <th className="px-5 py-4 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider w-36">หมวดหมู่</th>
-                <th className="px-5 py-4 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider w-32 border-l border-white/5 bg-slate-800/30">ราคาหน้าร้าน</th>
-                <th className="px-5 py-4 text-right text-[11px] font-bold text-amber-400 uppercase tracking-wider w-48 bg-amber-900/10 border-l border-amber-500/20">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <span className="text-lg">{activeChInfo?.emoji}</span> ราคา {activeChInfo?.label}
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-slate-500">
-                    <UtensilsCrossed className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p>ไม่พบรายการเมนูที่ค้นหา</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredProducts.map(prod => {
-                  const state = channelState[prod.id] || { is_available: false, price: '' };
-                  const catName = categories.find(c => c.id === prod.category_id)?.name || '';
-                  const isOn = state.is_available;
-
-                  return (
-                    <tr
-                      key={prod.id}
-                      className={`group transition-all duration-200 border-b border-slate-800/50 last:border-0 ${
-                        isOn
-                          ? 'bg-transparent hover:bg-slate-800/30'
-                          : 'bg-slate-900/80 hover:bg-slate-800/50 opacity-60'
-                      }`}
-                    >
-                      {/* Toggle */}
-                      <td className="px-5 py-3">
-                        <button
-                          onClick={() => toggleProduct(prod.id)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 ${
-                            isOn ? 'bg-amber-500' : 'bg-slate-700'
-                          }`}
-                        >
-                          <span className={`inline-block h-4 w-4 rounded-full bg-black shadow transition-transform ${
-                            isOn ? 'translate-x-[1.4rem]' : 'translate-x-1'
-                          }`} />
-                        </button>
-                      </td>
-
-                      {/* Name + image */}
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-4">
-                          {prod.image_url ? (
-                            <img src={prod.image_url} alt="" className={`w-10 h-10 rounded-lg object-cover ring-1 transition-all ${isOn ? 'ring-white/10 group-hover:ring-amber-500/50 shadow-lg' : 'ring-white/5 grayscale opacity-70'}`} />
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center ring-1 ring-white/5">
-                              <UtensilsCrossed className="w-4 h-4 text-slate-600" />
-                            </div>
-                          )}
-                          <span className={`font-semibold text-sm transition-colors ${isOn ? 'text-slate-200 group-hover:text-white' : 'text-slate-500'}`}>{prod.name}</span>
-                        </div>
-                      </td>
-
-                      {/* Category */}
-                      <td className="px-5 py-3">
-                        {catName && <span className="text-[11px] font-medium bg-slate-800/80 text-slate-400 border border-slate-700 px-2.5 py-1 rounded-md">{catName}</span>}
-                      </td>
-
-                      {/* Dine-in price (reference) */}
-                      <td className="px-5 py-3 text-right border-l border-white/5 bg-slate-800/10">
-                        <span className="text-slate-400 text-sm font-medium">฿{Number(prod.price).toLocaleString()}</span>
-                      </td>
-
-                      {/* Channel price */}
-                      <td className="px-5 py-3 text-right border-l border-white/5 bg-slate-900/40">
-                        <div className="flex items-center justify-end gap-2">
-                          <div className="relative flex-1 max-w-[120px] ml-auto">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-medium">฿</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              className={`form-input w-full text-right py-1.5 pr-3 pl-8 !rounded-lg text-sm transition-colors ${
-                                isOn 
-                                  ? 'border-slate-600 focus:border-amber-500' 
-                                  : 'border-slate-700 cursor-not-allowed bg-slate-800 opacity-70'
-                              }`}
-                              style={{ fontWeight: isOn ? 600 : 400 }}
-                              placeholder={String(prod.price)}
-                              value={state.price}
-                              disabled={!isOn}
-                              onChange={e => setProductPrice(prod.id, e.target.value)}
-                            />
-                          </div>
-                          
-                          {/* Price diff indicator */}
-                          <div className="w-12 text-left">
-                            {state.price !== '' && state.price !== null && Number(state.price) !== Number(prod.price) && isOn ? (
-                              <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-900 ${
-                                Number(state.price) > Number(prod.price) ? 'text-emerald-400 ring-1 ring-emerald-500/30' : 'text-amber-400 ring-1 ring-amber-500/30'
-                              }`}>
-                                {Number(state.price) > Number(prod.price) ? '▲' : '▼'}
-                                {Math.abs(Number(state.price) - Number(prod.price))}
-                              </span>
-                            ) : null}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }

@@ -741,6 +741,7 @@ function HistoryTab() {
   const users = data?.users || [];
 
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false);
+  const [nameFilter, setNameFilter] = useState('');
 
   const { incompleteGroupKeys, incompleteCount } = useMemo(() => {
     const groups = {};
@@ -766,14 +767,27 @@ function HistoryTab() {
   }, [records]);
 
   const filteredRecords = useMemo(() => {
-    if (!showIncompleteOnly) return records;
-    return records.filter(r => {
-      if (r.is_deleted) return false;
-      const dateKey = getDateStr(r.timestamp);
-      const key = `${r.user_id}_${dateKey}_${r.shift_type || 'none'}`;
-      return incompleteGroupKeys.has(key);
-    });
-  }, [records, showIncompleteOnly, incompleteGroupKeys]);
+    let result = records;
+    if (showIncompleteOnly) {
+      result = result.filter(r => {
+        if (r.is_deleted) return false;
+        const dateKey = getDateStr(r.timestamp);
+        const key = `${r.user_id}_${dateKey}_${r.shift_type || 'none'}`;
+        return incompleteGroupKeys.has(key);
+      });
+    }
+
+    if (nameFilter.trim()) {
+      const q = nameFilter.toLowerCase().trim();
+      result = result.filter(r => {
+        const fullName = r.users?.full_name || '';
+        const name = r.users?.name || '';
+        return fullName.toLowerCase().includes(q) || name.toLowerCase().includes(q);
+      });
+    }
+    
+    return result;
+  }, [records, showIncompleteOnly, incompleteGroupKeys, nameFilter]);
 
   function getFakeTime(type, shift) {
       if (shift === 'ช่วงเช้า') return type === 'clock_in' ? '06:00:00' : '12:00:00';
@@ -1122,8 +1136,18 @@ function HistoryTab() {
 
       <div className="card mt-6">
         <div className="card-header flex justify-between items-center flex-wrap gap-4">
-          <div className="card-title">
-            {showIncompleteOnly ? '⚠️ รายการลงเวลาไม่ครบ (กะที่ลืมสแกนเข้า/ออก)' : 'รายการทั้งหมด'}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="card-title">
+              {showIncompleteOnly ? '⚠️ รายการลงเวลาไม่ครบ (กะที่ลืมสแกนเข้า/ออก)' : 'รายการทั้งหมด'}
+            </div>
+            <input 
+              type="text" 
+              placeholder="🔍 ค้นหาชื่อพนักงาน..."
+              className="form-input text-sm py-1.5 px-3 rounded-lg"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', minWidth: '220px', outline: 'none' }}
+              value={nameFilter}
+              onChange={(e) => setNameFilter(e.target.value)}
+            />
           </div>
           {incompleteCount > 0 && (
             <button 
