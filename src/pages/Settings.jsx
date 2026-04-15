@@ -1584,6 +1584,7 @@ function SystemConfigTab() {
     localStorage.setItem('systemConfig', JSON.stringify(config));
     localStorage.setItem('paymentMethods', JSON.stringify(payMethods));
     localStorage.setItem('salesChannels', JSON.stringify(salesChannels));
+    window.dispatchEvent(new Event('salesChannelsUpdate'));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -2595,8 +2596,13 @@ function ProductsTab() {
   const [showAddChannels, setShowAddChannels] = useState(false);
   const [showEditChannels, setShowEditChannels] = useState(false);
 
-  // Reload channels if Settings page is visited
-  useEffect(() => { setSalesChannels(getSalesChannels()); }, []);
+  // Reload channels if Settings page is visited or if channels are updated
+  useEffect(() => {
+    const syncChannels = () => setSalesChannels(getSalesChannels());
+    syncChannels();
+    window.addEventListener('salesChannelsUpdate', syncChannels);
+    return () => window.removeEventListener('salesChannelsUpdate', syncChannels);
+  }, []);
 
   useEffect(() => { loadData(); }, []);
 
@@ -3449,7 +3455,13 @@ function PromotionsTab() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editPromo, setEditPromo] = useState(null);
-  const [salesChannels] = useState(() => getSalesChannels());
+  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
+
+  useEffect(() => {
+    const syncChannels = () => setSalesChannels(getSalesChannels());
+    window.addEventListener('salesChannelsUpdate', syncChannels);
+    return () => window.removeEventListener('salesChannelsUpdate', syncChannels);
+  }, []);
 
   // Discount Limit config (stored in localStorage)
   const [discountLimit, setDiscountLimit] = useState(() => {

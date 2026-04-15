@@ -142,7 +142,7 @@ function PayslipPrintView({ payslip, employee }) {
   const netPay = totalIncome - totalDeductions;
   const cashPaid = payslip.cashPaid || 0;
   const clockInCount = payslip.clockInCount || 0;
-  const bankTransfer = Math.max(0, netPay - cashPaid);
+  const bankTransfer = Math.max(0, netPay);
 
   const printStyle = {
     background: '#ffffff',
