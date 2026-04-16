@@ -39,20 +39,34 @@ export const AuthProvider = ({ children }) => {
         body: { user_id: userId, pin }
       });
 
-      // supabase.functions.invoke: 
-      //   - `error` is set only for network/transport failures
-      //   - For HTTP 4xx/5xx the response body is parsed into `data`
+      // supabase.functions.invoke behavior:
+      //   - 2xx: data = parsed body, error = null
+      //   - non-2xx (401, 429, 500): data = null, error = FunctionsHttpError
+      //   - network failure: data = null, error = FunctionsFetchError
       if (error) {
+        // Try to extract the JSON body from the Edge Function's error response
+        let serverMsg = null;
+        try {
+          const errBody = await error.context?.json();
+          serverMsg = errBody?.error;
+        } catch (_e) { /* context not available or not JSON */ }
+
+        if (serverMsg) {
+          // Map known server messages to Thai
+          if (serverMsg.includes('Too many attempts') || serverMsg.includes('locked')) {
+            throw new Error('กรอก PIN ผิดเกินกำหนด กรุณารอ 5 นาทีแล้วลองใหม่');
+          }
+          if (serverMsg.includes('Invalid user or PIN')) {
+            throw new Error('รหัส PIN ไม่ถูกต้อง');
+          }
+          throw new Error(serverMsg);
+        }
+        // Fallback for network errors or unparseable responses
         throw new Error('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง');
       }
 
       if (!data || !data.success) {
-        // Check for rate limiting message
-        const errMsg = data?.error || 'รหัส PIN ไม่ถูกต้อง หรือไม่พบผู้ใช้งาน';
-        if (errMsg.includes('Too many attempts') || errMsg.includes('locked')) {
-          throw new Error('กรอก PIN ผิดเกินกำหนด กรุณารอ 5 นาทีแล้วลองใหม่');
-        }
-        throw new Error(errMsg);
+        throw new Error('เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่');
       }
 
       const { user: verifiedUser, token } = data;
