@@ -128,7 +128,17 @@ export default function COGSEngine() {
       // === 1. Products (master data with BOM cost) ===
       const { data: products } = await supabase
         .from('products')
-        .select('id, name, price, cost, is_available');
+        .select('id, name, price, cost, is_available, product_type');
+
+      // === 1.5 Combo structure ===
+      const { data: comboItems } = await supabase
+        .from('product_combo_items')
+        .select('combo_product_id, item_product_id, quantity');
+      const comboMap = {};
+      (comboItems || []).forEach(ci => {
+        if (!comboMap[ci.combo_product_id]) comboMap[ci.combo_product_id] = [];
+        comboMap[ci.combo_product_id].push(ci);
+      });
 
       // === 2. Transaction items in date range ===
       const { data: txItems } = await supabase
@@ -175,14 +185,34 @@ export default function COGSEngine() {
         bomCostMap[b.menu_item_id].bomCost += cost;
       });
 
-      // === 7. Process each product ===
+      // === 7. Cost Resolution stage ===
+      // Map of product_id -> cost (initial cost for STANDARD based on BOM or manual cost)
+      const resolvedCosts = {};
+      (products || []).forEach(p => {
+        const bomEntry = bomCostMap[p.id];
+        // Use BOM cost if available, fallback to products.cost for standard
+        resolvedCosts[p.id] = bomEntry ? bomEntry.bomCost : Number(p.cost || 0);
+      });
+
+      // Now resolve COMBO costs BASED ON resolvedCosts of children
+      // This happens "dynamically" so if child cost (BOM) changes, combo cost changes
+      (products || []).forEach(p => {
+        if (p.product_type === 'COMBO') {
+          const children = comboMap[p.id] || [];
+          let comboTotalCost = 0;
+          children.forEach(ci => {
+            comboTotalCost += (resolvedCosts[ci.item_product_id] || 0) * ci.quantity;
+          });
+          resolvedCosts[p.id] = comboTotalCost;
+        }
+      });
+
+      // === 8. Process each product ===
       const processed = (products || []).map(p => {
         const agg = aggMap[p.id] || { qty: 0, revenue: 0 };
         const sellingPrice = Number(p.price);
-        const bomEntry = bomCostMap[p.id];
-        // Use BOM cost if available, fallback to products.cost
-        const trueCost = bomEntry ? bomEntry.bomCost : Number(p.cost || 0);
-        const hasBom = !!bomEntry;
+        const hasBom = !!bomCostMap[p.id] || p.product_type === 'COMBO';
+        const trueCost = resolvedCosts[p.id];
         const qtySold = agg.qty;
         const revenue = agg.revenue || (sellingPrice * qtySold);
         const fcPct = sellingPrice > 0 ? (trueCost / sellingPrice) * 100 : 0;

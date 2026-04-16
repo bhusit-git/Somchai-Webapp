@@ -52,8 +52,7 @@ function loadDiscountLimit() {
   return { maxPercent: 100, maxAmount: 9999 };
 }
 
-const EMOJIS = ['🍜', '🍛', '🍲', '🌗', '🍚', '🥤', '🧊', '☕', '🍺', '🥗', '🍰', '🍣'];
-
+// Emojis removed for cleaner UI
 // ── Promotion Evaluation Engine ──
 function isPromoValid(promo, channel, todayStr, nowTime) {
   if (!promo.is_active) return false;
@@ -190,15 +189,26 @@ export default function POS() {
     setLoading(true);
     try {
       const branchId = user?.branch_id;
-      const [catRes, prodRes, custRes, mpRes, promoRes] = await Promise.all([
+      const [catRes, prodRes, custRes, mpRes, promoRes, comboRes] = await Promise.all([
         supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
         supabase.from('products').select('*').eq('is_available', true).order('sort_order'),
         branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] }),
         supabase.from('menu_prices').select('*'),
         supabase.from('promotions').select('*, promotion_item_mappings(*)').eq('is_active', true),
+        supabase.from('product_combo_items').select('*')
       ]);
+
+      const comboMap = {};
+      (comboRes.data || []).forEach(r => {
+        if (!comboMap[r.combo_product_id]) comboMap[r.combo_product_id] = [];
+        comboMap[r.combo_product_id].push(r);
+      });
+
       setCategories(catRes.data || []);
-      setProducts(prodRes.data || []);
+      setProducts((prodRes.data || []).map(p => ({
+        ...p,
+        combo_items: comboMap[p.id] || []
+      })));
       setCustomers(custRes.data || []);
       setPromotions(promoRes.data || []);
 
@@ -213,11 +223,29 @@ export default function POS() {
   }
 
   function isAvailable(product) {
+    // 1. Check Channel-specific availability
     if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
       const mp = menuPrices[product.id]?.[activeSalesChannel];
-      // For delivery channels: product must have an explicit menu_prices record with is_available = true
       if (!mp || mp.is_available === false) return false;
     }
+    
+    // 2. Base availability
+    if (product.is_available === false) return false;
+
+    // 3. Cascading Availability for Combo Items
+    if (product.product_type === 'COMBO' && product.combo_items?.length > 0) {
+      for (const ci of product.combo_items) {
+        // Find child in the ALREADY LOADED products list
+        // Note: products list only contains available ones (due to prodRes query filter)
+        // If a child is not found in prodData, it means it was deleted or marked unavailable
+        const child = products.find(p => p.id === ci.item_product_id);
+        if (!child) return false; 
+        
+        // Recursively check (though we only allow 1-level)
+        if (!isAvailable(child)) return false;
+      }
+    }
+    
     return true;
   }
 
@@ -270,7 +298,6 @@ export default function POS() {
         quantity: 1,
         total_price: effectivePrice,
         category_id: product.category_id,
-        emoji: EMOJIS[Math.floor(Math.random() * EMOJIS.length)],
         image_url: product.image_url || null,
       }];
     });
@@ -523,27 +550,12 @@ export default function POS() {
       }
     }
 
-    // Auto-Depletion BOM
+    // Atomic Stock Depletion via RPC
     try {
-      const productIds = cart.map(c => c.product_id);
-      const { data: bomData, error: bomErr } = await supabase
-        .from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required').in('menu_item_id', productIds);
-      if (!bomErr && bomData && bomData.length > 0) {
-        const depletionMap = {};
-        for (const cartItem of cart) {
-          for (const bom of bomData.filter(b => b.menu_item_id === cartItem.product_id)) {
-            const qty = Number(bom.qty_required) * cartItem.quantity;
-            depletionMap[bom.inventory_item_id] = (depletionMap[bom.inventory_item_id] || 0) + qty;
-          }
-        }
-        for (const [invId, depletionQty] of Object.entries(depletionMap)) {
-          const { data: invItem } = await supabase.from('inventory_items').select('current_stock').eq('id', invId).single();
-          if (invItem) {
-            await supabase.from('inventory_items').update({ current_stock: Math.max(0, Number(invItem.current_stock || 0) - depletionQty) }).eq('id', invId);
-          }
-        }
-      }
-    } catch (depErr) { console.error('Auto-depletion error:', depErr); }
+      await supabase.rpc('process_transaction_stock_depletion', { p_transaction_id: txData.id });
+    } catch (depErr) { 
+      console.error('Auto-depletion error (RPC):', depErr); 
+    }
 
     // Receipt data
     const currentOrder = {
@@ -628,7 +640,7 @@ export default function POS() {
                     <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
                 ) : (
-                  <div className="product-emoji">{EMOJIS[idx % EMOJIS.length]}</div>
+                  <div style={{ width: '56px', height: '56px', margin: '0 auto 8px auto' }} />
                 )}
                 <div className="product-name">{product.name}</div>
                 <div className="product-price">
@@ -692,7 +704,7 @@ export default function POS() {
               return (
                 <div key={item.product_id} className="pos-cart-item">
                   <div className="pos-cart-item-info">
-                    <div className="pos-cart-item-name">{item.emoji} {item.product_name}</div>
+                    <div className="pos-cart-item-name">{item.product_name}</div>
                     <div className="pos-cart-item-price">
                       ฿{item.unit_price.toLocaleString()} / ชิ้น
                       {disc && <span style={{ color: '#f59e0b', fontSize: '10px', marginLeft: '6px' }}>🏷️ -{disc.type === 'percent' ? `${disc.value}%` : `฿${disc.value}`}</span>}
