@@ -55,65 +55,83 @@ function loadDiscountLimit() {
 const EMOJIS = ['🍜', '🍛', '🍲', '🌗', '🍚', '🥤', '🧊', '☕', '🍺', '🥗', '🍰', '🍣'];
 
 // ── Promotion Evaluation Engine ──
-function evaluatePromotions(promotions, channel, cart, categories) {
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const nowTime = now.toTimeString().slice(0, 5); // "HH:MM"
+function isPromoValid(promo, channel, todayStr, nowTime) {
+  if (!promo.is_active) return false;
+  if (promo.start_date && todayStr < promo.start_date) return false;
+  if (promo.end_date && todayStr > promo.end_date) return false;
+  if (promo.start_time && promo.end_time) {
+    if (nowTime < promo.start_time || nowTime > promo.end_time) return false;
+  }
+  const channels = promo.applicable_channels || [];
+  if (channels.length > 0 && !channels.includes(channel)) return false;
+  return true;
+}
 
+// 1. Line Item Layer
+function evaluateBestItemPromotion(item, promotions, channel, todayStr, nowTime) {
   const matched = [];
   for (const promo of promotions) {
-    if (!promo.is_active) continue;
-    // Date range check
-    if (promo.start_date && todayStr < promo.start_date) continue;
-    if (promo.end_date && todayStr > promo.end_date) continue;
-    // Happy hour check
-    if (promo.happy_hour_start && promo.happy_hour_end) {
-      if (nowTime < promo.happy_hour_start || nowTime > promo.happy_hour_end) continue;
-    }
-    // Channel check
-    const channels = promo.applicable_channels || [];
-    if (channels.length > 0 && !channels.includes(channel)) continue;
+    if (!isPromoValid(promo, channel, todayStr, nowTime)) continue;
+    const maps = promo.promotion_item_mappings || [];
+    if (maps.length === 0) continue; // ENTIRE_BILL
+    
+    // Check if this item is eligible via Product or Category mapping
+    const isEligible = maps.some(m => 
+      (m.reference_type === 'product' && m.reference_id === item.product_id) || 
+      (m.reference_type === 'category' && m.reference_id === item.category_id)
+    );
 
-    // Calculate discount amount based on apply_to
-    let discountAmount = 0;
-    if (promo.apply_to === 'ENTIRE_BILL') {
-      const billTotal = cart.reduce((s, i) => s + i.total_price, 0);
+    if (isEligible) {
+      let discountAmount = 0;
       if (promo.discount_type === 'PERCENTAGE') {
-        discountAmount = billTotal * (promo.discount_value / 100);
+        discountAmount = item.total_price * (promo.discount_value / 100);
       } else if (promo.discount_type === 'FIXED_AMOUNT') {
-        discountAmount = Math.min(promo.discount_value, billTotal);
-      }
-    } else if (promo.apply_to === 'SPECIFIC_ITEM') {
-      const targetIds = promo.target_ids || [];
-      for (const item of cart) {
-        if (targetIds.includes(item.product_id)) {
-          if (promo.discount_type === 'PERCENTAGE') {
-            discountAmount += item.total_price * (promo.discount_value / 100);
-          } else if (promo.discount_type === 'FIXED_AMOUNT') {
-            discountAmount += Math.min(promo.discount_value * item.quantity, item.total_price);
-          }
+        discountAmount = Math.min(promo.discount_value * item.quantity, item.total_price);
+      } else if (promo.discount_type === 'FIXED_PRICE') {
+        const fixedTotal = promo.discount_value * item.quantity;
+        if (item.total_price > fixedTotal) {
+           discountAmount = item.total_price - fixedTotal;
         }
       }
-    } else if (promo.apply_to === 'CATEGORY') {
-      const targetCatIds = promo.target_ids || [];
-      for (const item of cart) {
-        if (targetCatIds.includes(item.category_id)) {
-          if (promo.discount_type === 'PERCENTAGE') {
-            discountAmount += item.total_price * (promo.discount_value / 100);
-          } else if (promo.discount_type === 'FIXED_AMOUNT') {
-            discountAmount += Math.min(promo.discount_value * item.quantity, item.total_price);
-          }
-        }
+      if (discountAmount > 0) {
+        matched.push({ ...promo, calculatedDiscount: Math.round(discountAmount * 100) / 100 });
       }
+    }
+  }
+  if (matched.length === 0) return null;
+  // Best Deal (Highest discount), Tie-breaker (created_at newest)
+  matched.sort((a, b) => {
+    if (b.calculatedDiscount !== a.calculatedDiscount) return b.calculatedDiscount - a.calculatedDiscount;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+  return matched[0];
+}
+
+// 2. Entire Bill Layer
+function evaluateBestBillPromotion(subtotal, promotions, channel, todayStr, nowTime) {
+  const matched = [];
+  for (const promo of promotions) {
+    if (!isPromoValid(promo, channel, todayStr, nowTime)) continue;
+    const maps = promo.promotion_item_mappings || [];
+    if (maps.length > 0) continue; // Item level promo
+
+    let discountAmount = 0;
+    if (promo.discount_type === 'PERCENTAGE') {
+      discountAmount = subtotal * (promo.discount_value / 100);
+    } else if (promo.discount_type === 'FIXED_AMOUNT') {
+      discountAmount = Math.min(promo.discount_value, subtotal);
     }
 
     if (discountAmount > 0) {
       matched.push({ ...promo, calculatedDiscount: Math.round(discountAmount * 100) / 100 });
     }
   }
-  // Return best single promo (highest discount)
-  matched.sort((a, b) => b.calculatedDiscount - a.calculatedDiscount);
-  return matched.length > 0 ? matched[0] : null;
+  if (matched.length === 0) return null;
+  matched.sort((a, b) => {
+    if (b.calculatedDiscount !== a.calculatedDiscount) return b.calculatedDiscount - a.calculatedDiscount;
+    return new Date(b.created_at) - new Date(a.created_at);
+  });
+  return matched[0];
 }
 
 export default function POS() {
@@ -177,7 +195,7 @@ export default function POS() {
         supabase.from('products').select('*').eq('is_available', true).order('sort_order'),
         branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] }),
         supabase.from('menu_prices').select('*'),
-        supabase.from('promotions').select('*').eq('is_active', true),
+        supabase.from('promotions').select('*, promotion_item_mappings(*)').eq('is_active', true),
       ]);
       setCategories(catRes.data || []);
       setProducts(prodRes.data || []);
@@ -203,12 +221,6 @@ export default function POS() {
     return true;
   }
 
-  const filteredProducts = (
-    activeCategory === 'all'
-      ? products
-      : products.filter(p => p.category_id === activeCategory)
-  ).filter(isAvailable);
-
   function getChannelPrice(product) {
     if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
       const mp = menuPrices[product.id]?.[activeSalesChannel];
@@ -216,6 +228,29 @@ export default function POS() {
     }
     return Number(product.price);
   }
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const nowTime = now.toTimeString().slice(0, 5); // "HH:MM"
+
+  const productPromotionsMap = useMemo(() => {
+    const map = {};
+    for (const p of products) {
+      if (!isAvailable(p)) continue;
+      const price = getChannelPrice(p);
+      const mockItem = { product_id: p.id, category_id: p.category_id, unit_price: price, quantity: 1, total_price: price };
+      const bestPromo = evaluateBestItemPromotion(mockItem, promotions, activeSalesChannel, todayStr, nowTime);
+      if (bestPromo) map[p.id] = bestPromo;
+    }
+    return map;
+  }, [products, promotions, activeSalesChannel, menuPrices]);
+
+  const filteredProducts = products.filter(p => {
+    if (!isAvailable(p)) return false;
+    if (activeCategory === 'promotions') return !!productPromotionsMap[p.id];
+    if (activeCategory === 'all') return true;
+    return p.category_id === activeCategory;
+  });
 
   function addToCart(product) {
     const effectivePrice = getChannelPrice(product);
@@ -255,48 +290,66 @@ export default function POS() {
     setItemDiscounts(prev => { const n = { ...prev }; delete n[productId]; return n; });
   }
 
-  // ── Auto Promotion Evaluation ──
-  const activePromo = useMemo(() => {
-    if (cart.length === 0) return null;
-    return evaluatePromotions(promotions, activeSalesChannel, cart, categories);
-  }, [cart, promotions, activeSalesChannel, categories]);
-
-  const hasAutoPromo = !!activePromo;
+  // ── Auto Promotion Evaluation (Layer 1: Items) ──
+  const cartWithPromos = useMemo(() => {
+    return cart.map(item => {
+      // Rule: No Stacking. If manual discount applied, skip auto promo for this item.
+      const hasManualDiscount = !!itemDiscounts[item.product_id];
+      if (hasManualDiscount) return { ...item, autoPromo: null };
+      
+      const bestPromo = evaluateBestItemPromotion(item, promotions, activeSalesChannel, todayStr, nowTime);
+      return { ...item, autoPromo: bestPromo };
+    });
+  }, [cart, promotions, activeSalesChannel, itemDiscounts, todayStr, nowTime]);
 
   // ── Calculation Engine ──
-  const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0); // Raw subtotal
 
-  // Item-level discounts total
-  const totalItemDiscount = useMemo(() => {
-    let total = 0;
-    for (const item of cart) {
-      const disc = itemDiscounts[item.product_id];
-      if (disc) {
-        if (disc.type === 'percent') {
-          total += item.total_price * (disc.value / 100);
-        } else {
-          total += Math.min(disc.value, item.total_price);
-        }
-      }
+  const cartSubtotalDetails = useMemo(() => {
+    let sub = 0;
+    let manualItemDiscTotal = 0;
+    let autoItemDiscTotal = 0;
+    
+    for (const item of cartWithPromos) {
+       let finalItemPrice = item.total_price;
+       
+       const manualDisc = itemDiscounts[item.product_id];
+       if (manualDisc) {
+         let d = manualDisc.type === 'percent' ? item.total_price * (manualDisc.value / 100) : Math.min(manualDisc.value, item.total_price);
+         manualItemDiscTotal += d;
+         finalItemPrice -= d;
+       } else if (item.autoPromo) {
+         autoItemDiscTotal += item.autoPromo.calculatedDiscount;
+         finalItemPrice -= item.autoPromo.calculatedDiscount;
+       }
+       sub += finalItemPrice;
     }
-    return Math.round(total * 100) / 100;
-  }, [cart, itemDiscounts]);
+    return { subtotalAfterItems: Math.round(sub * 100) / 100, manualItemDiscTotal: Math.round(manualItemDiscTotal * 100) / 100, autoItemDiscTotal: Math.round(autoItemDiscTotal * 100) / 100 };
+  }, [cartWithPromos, itemDiscounts]);
 
-  const afterItemDiscount = subtotal - totalItemDiscount;
+  const { subtotalAfterItems, manualItemDiscTotal, autoItemDiscTotal } = cartSubtotalDetails;
+  const totalItemDiscount = manualItemDiscTotal + autoItemDiscTotal;
 
-  // Auto-promo discount (only if no manual bill discount)
-  const promoDiscount = hasAutoPromo && !billDiscount ? activePromo.calculatedDiscount : 0;
+  // ── Auto Promotion Evaluation (Layer 2: Entire Bill) ──
+  const activeBillPromo = useMemo(() => {
+     if (subtotalAfterItems <= 0) return null;
+     if (billDiscount) return null; // No auto-bill if manual bill disc is active
+     return evaluateBestBillPromotion(subtotalAfterItems, promotions, activeSalesChannel, todayStr, nowTime);
+  }, [subtotalAfterItems, promotions, activeSalesChannel, billDiscount, todayStr, nowTime]);
 
-  // Manual bill discount (only if no auto-promo, No Stacking)
+  const hasAutoBillPromo = !!activeBillPromo;
+  const promoBillDiscountAmount = hasAutoBillPromo ? activeBillPromo.calculatedDiscount : 0;
+
+  // Manual bill discount (only if no auto-promo)
   const manualBillDiscount = useMemo(() => {
-    if (hasAutoPromo || !billDiscount) return 0;
+    if (hasAutoBillPromo || !billDiscount) return 0;
     if (billDiscount.type === 'percent') {
-      return Math.round(afterItemDiscount * (billDiscount.value / 100) * 100) / 100;
+      return Math.round(subtotalAfterItems * (billDiscount.value / 100) * 100) / 100;
     }
-    return Math.min(billDiscount.value, afterItemDiscount);
-  }, [billDiscount, afterItemDiscount, hasAutoPromo]);
+    return Math.min(billDiscount.value, subtotalAfterItems);
+  }, [billDiscount, subtotalAfterItems, hasAutoBillPromo]);
 
-  const totalDiscount = totalItemDiscount + promoDiscount + manualBillDiscount;
+  const totalDiscount = totalItemDiscount + promoBillDiscountAmount + manualBillDiscount;
 
   const selectedMethodObj = paymentMethods.find(m => m.value === paymentMethod);
   const configuredDeliveryFee = Number(selectedMethodObj?.deliveryFee) || 0;
@@ -401,20 +454,33 @@ export default function POS() {
       change_amount: paymentMethod === 'cash' ? changeAmount : null,
       status: 'completed',
       sales_channel: activeSalesChannel || 'dine_in',
+      applied_bill_promotion_id: hasAutoBillPromo ? activeBillPromo.id : null,
+      bill_discount_amount: promoBillDiscountAmount > 0 ? promoBillDiscountAmount : 0,
     }).select('id').single();
 
     if (txError) return alert('Error: ' + txError.message);
 
-    const items = cart.map(item => {
+    const items = cartWithPromos.map(item => {
       const disc = itemDiscounts[item.product_id];
       let itemDiscAmt = 0;
+      let appliedPromoId = null;
       if (disc) {
         itemDiscAmt = disc.type === 'percent' ? item.total_price * (disc.value / 100) : Math.min(disc.value, item.total_price);
+      } else if (item.autoPromo) {
+        itemDiscAmt = item.autoPromo.calculatedDiscount;
+        appliedPromoId = item.autoPromo.id;
       }
+      
+      const finalPrice = Math.round((item.total_price - itemDiscAmt) * 100) / 100;
+      
       return {
         transaction_id: txData.id, product_id: item.product_id, product_name: item.product_name,
         quantity: item.quantity, unit_price: item.unit_price,
-        total_price: Math.round((item.total_price - itemDiscAmt) * 100) / 100,
+        total_price: finalPrice, // Legacy total_price
+        applied_promotion_id: appliedPromoId,
+        original_price: item.total_price,
+        discount_amount: Math.round(itemDiscAmt * 100) / 100,
+        final_price: finalPrice
       };
     });
 
@@ -483,10 +549,11 @@ export default function POS() {
     const currentOrder = {
       orderNumber, items: [...cart], subtotal, deliveryFee, total,
       totalDiscount,
-      promoName: hasAutoPromo && !billDiscount ? activePromo.name : null,
-      promoDiscount,
+      promoName: hasAutoBillPromo ? activeBillPromo.name : null,
+      promoDiscount: promoBillDiscountAmount,
       manualBillDiscount,
       totalItemDiscount,
+      autoItemDiscTotal,
       paymentMethod,
       gpPercent: selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0,
       gpAmount: (total * (selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0)) / 100,
@@ -535,6 +602,9 @@ export default function POS() {
 
         <div className="pos-categories">
           <button className={`pos-category-btn ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>ทั้งหมด</button>
+          <button className={`pos-category-btn ${activeCategory === 'promotions' ? 'active' : ''}`} onClick={() => setActiveCategory('promotions')}>
+            🔥 โปรโมชั่น
+          </button>
           {categories.map(cat => (
             <button key={cat.id} className={`pos-category-btn ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => setActiveCategory(cat.id)}>{cat.name}</button>
           ))}
@@ -547,7 +617,12 @@ export default function POS() {
             <div className="empty-state" style={{ gridColumn: '1 / -1' }}><ShoppingCart size={48} /><h3>ยังไม่มีสินค้า</h3></div>
           ) : (
             filteredProducts.map((product, idx) => (
-              <div key={product.id} className="pos-product-card" onClick={() => addToCart(product)}>
+              <div key={product.id} className="pos-product-card" onClick={() => addToCart(product)} style={{ position: 'relative' }}>
+                {productPromotionsMap[product.id] && (
+                  <div style={{ position: 'absolute', top: '-6px', right: '-6px', background: '#e11d48', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '12px', fontWeight: 'bold', zIndex: 10, boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                    🏷️ โปรโมชั่น
+                  </div>
+                )}
                 {product.image_url ? (
                   <div className="product-image" style={{ width: '56px', height: '56px', margin: '0 auto 8px auto', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
                     <img src={product.image_url} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -600,24 +675,20 @@ export default function POS() {
         </div>
 
         <div className={`pos-cart-body ${!isMobileCartOpen ? 'mobile-closed' : ''}`} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        {/* Active Promo Badge */}
-        {hasAutoPromo && cart.length > 0 && (
-          <div style={{ padding: '8px 12px', background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(59,130,246,0.1))', borderRadius: '10px', margin: '0 0 8px 0', border: '1px solid rgba(16,185,129,0.3)' }}>
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              🎉 {activePromo.name}
-              <span style={{ marginLeft: 'auto', fontWeight: 800, fontSize: '13px' }}>-฿{activePromo.calculatedDiscount.toLocaleString()}</span>
-            </div>
-            <div style={{ fontSize: '10px', color: '#6ee7b7', marginTop: '2px' }}>โปรโมชั่นอัตโนมัติ • ลดซ้อนลดปิด</div>
-          </div>
-        )}
 
         <div className="pos-cart-items">
-          {cart.length === 0 ? (
+          {cartWithPromos.length === 0 ? (
             <div className="empty-state"><ShoppingCart size={40} /><h3>ตะกร้าว่าง</h3><p>กดที่เมนูเพื่อเพิ่มสินค้า</p></div>
           ) : (
-            cart.map(item => {
+            cartWithPromos.map(item => {
               const disc = itemDiscounts[item.product_id];
-              const discAmt = disc ? (disc.type === 'percent' ? item.total_price * (disc.value / 100) : Math.min(disc.value, item.total_price)) : 0;
+              let combinedDiscAmt = 0;
+              if (disc) {
+                combinedDiscAmt = disc.type === 'percent' ? item.total_price * (disc.value / 100) : Math.min(disc.value, item.total_price);
+              } else if (item.autoPromo) {
+                combinedDiscAmt = item.autoPromo.calculatedDiscount;
+              }
+              
               return (
                 <div key={item.product_id} className="pos-cart-item">
                   <div className="pos-cart-item-info">
@@ -625,6 +696,7 @@ export default function POS() {
                     <div className="pos-cart-item-price">
                       ฿{item.unit_price.toLocaleString()} / ชิ้น
                       {disc && <span style={{ color: '#f59e0b', fontSize: '10px', marginLeft: '6px' }}>🏷️ -{disc.type === 'percent' ? `${disc.value}%` : `฿${disc.value}`}</span>}
+                      {!disc && item.autoPromo && <span style={{ color: '#10b981', fontSize: '10px', marginLeft: '6px' }}>🎉 {item.autoPromo.name}</span>}
                     </div>
                   </div>
                   <div className="pos-cart-item-qty">
@@ -633,11 +705,11 @@ export default function POS() {
                     <button onClick={() => updateQty(item.product_id, 1)}><Plus size={12} /></button>
                   </div>
                   <div className="pos-cart-item-total" style={{ position: 'relative' }}>
-                    {discAmt > 0 ? (
+                    {combinedDiscAmt > 0 ? (
                       <>
                         <span style={{ textDecoration: 'line-through', color: 'var(--text-muted)', fontSize: '11px' }}>฿{item.total_price.toLocaleString()}</span>
                         <br />
-                        <span style={{ color: 'var(--accent-success)', fontWeight: 700 }}>฿{(item.total_price - discAmt).toLocaleString()}</span>
+                        <span style={{ color: 'var(--accent-success)', fontWeight: 700 }}>฿{(item.total_price - combinedDiscAmt).toLocaleString()}</span>
                       </>
                     ) : (
                       <>฿{item.total_price.toLocaleString()}</>
@@ -659,14 +731,19 @@ export default function POS() {
 
         <div className="pos-cart-summary">
           <div className="pos-cart-summary-row"><span>ยอดรวม</span><span>฿{subtotal.toLocaleString()}</span></div>
-          {totalItemDiscount > 0 && (
+          {manualItemDiscTotal > 0 && (
             <div className="pos-cart-summary-row" style={{ color: '#f59e0b', fontSize: '13px' }}>
-              <span>🏷️ ส่วนลดรายชิ้น</span><span>-฿{totalItemDiscount.toLocaleString()}</span>
+              <span>🏷️ ส่วนลดรายชิ้น (Manual)</span><span>-฿{manualItemDiscTotal.toLocaleString()}</span>
             </div>
           )}
-          {promoDiscount > 0 && (
+          {autoItemDiscTotal > 0 && (
             <div className="pos-cart-summary-row" style={{ color: '#10b981', fontSize: '13px' }}>
-              <span>🎉 {activePromo?.name}</span><span>-฿{promoDiscount.toLocaleString()}</span>
+              <span>🎉 ส่วนลดโปรโมชั่น (สินค้า)</span><span>-฿{autoItemDiscTotal.toLocaleString()}</span>
+            </div>
+          )}
+          {promoBillDiscountAmount > 0 && (
+            <div className="pos-cart-summary-row" style={{ color: '#3b82f6', fontSize: '13px' }}>
+              <span>🎉 {activeBillPromo?.name}</span><span>-฿{promoBillDiscountAmount.toLocaleString()}</span>
             </div>
           )}
           {manualBillDiscount > 0 && (
@@ -687,10 +764,10 @@ export default function POS() {
             </button>
             <button
               className="btn btn-ghost"
-              disabled={cart.length === 0 || hasAutoPromo}
+              disabled={cart.length === 0 || hasAutoBillPromo}
               onClick={openBillDiscountModal}
-              title={hasAutoPromo ? 'ไม่สามารถลดซ้อนได้ (มีโปรโมชั่นอัตโนมัติ)' : 'ส่วนลดท้ายบิล'}
-              style={{ opacity: hasAutoPromo ? 0.4 : 1 }}
+              title={hasAutoBillPromo ? 'ไม่สามารถลดซ้อนได้ (มีโปรโมชั่นอัตโนมัติ)' : 'ส่วนลดท้ายบิล'}
+              style={{ opacity: hasAutoBillPromo ? 0.4 : 1 }}
             >
               <Percent size={16} /> {billDiscount ? `ลด ${billDiscount.type === 'percent' ? billDiscount.value + '%' : '฿' + billDiscount.value}` : 'ลดท้ายบิล'}
             </button>
