@@ -1,31 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import './OwnerDashboard.css';
 
-const DEFAULT_PAYMENT_METHODS = [
-  { value: 'cash',      label: 'เงินสด',        icon: 'Banknote', isDefault: true, enabled: true, gpPercent: 0 },
-  { value: 'promptpay', label: 'PromptPay',      icon: 'QrCode',   isDefault: true, enabled: true, gpPercent: 0 },
-  { value: 'transfer',  label: 'โอนเงิน',        icon: 'CreditCard', isDefault: true, enabled: true, gpPercent: 0 },
-  { value: 'Grab',      label: 'Grab',           icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
-  { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
-  { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
-];
+// Removed DEFAULT_PAYMENT_METHODS and loadPaymentMethods
 
-function loadPaymentMethods() {
-  try {
-    const raw = localStorage.getItem('paymentMethods');
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch (err) {
-    console.error('Error loading payment methods:', err);
-  }
-  return DEFAULT_PAYMENT_METHODS;
-}
 
 export default function OwnerDashboard() {
-  const [paymentMethods] = useState(() => loadPaymentMethods());
+  const { paymentMethods } = useSettings();
   const { user } = useAuth();
   const currentBranchId = user?.branch_id;
   const currentBranchName = user?.branch_name;

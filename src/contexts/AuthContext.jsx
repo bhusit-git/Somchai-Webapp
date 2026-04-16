@@ -6,7 +6,8 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true); // for first app load only
+  const [loading, setLoading] = useState(false);           // for login requests
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -14,9 +15,11 @@ export const AuthProvider = ({ children }) => {
     // Check local storage for existing session
     const storedUser = localStorage.getItem('cashsync_user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (_e) {}
     }
-    setLoading(false);
+    setInitializing(false); // done checking — render the app
   }, []);
 
   const loginWithPin = async (pin, userId = null) => {
@@ -91,14 +94,14 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
-    loading,
+    loading,    // login-in-progress indicator (for showing spinner on numpad)
     loginWithPin,
     logout
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {!initializing && children}
     </AuthContext.Provider>
   );
 };
@@ -110,3 +113,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

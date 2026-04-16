@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { SettingsProvider } from './contexts/SettingsContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,8 +44,9 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
+          <SettingsProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/']}><Dashboard /></ProtectedRoute>} />
               <Route path="attendance" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/attendance']}><Attendance /></ProtectedRoute>} />
@@ -67,7 +69,8 @@ export default function App() {
               <Route path="settings" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/settings']}><Settings /></ProtectedRoute>} />
               <Route path="profile" element={<ProtectedRoute allowedRoles={ROUTE_PERMISSIONS['/profile']}><Profile /></ProtectedRoute>} />
             </Route>
-          </Routes>
+            </Routes>
+          </SettingsProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

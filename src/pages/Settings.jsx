@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, getBranches, createBranch, updateBranch } from '../services/authService';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { supabase } from '../lib/supabase';
 import Papa from 'papaparse';
 
@@ -1114,19 +1115,13 @@ function BranchesTab() {
 // TAB 3: Company Info (linked to payslip)
 // ============================================================
 function CompanyInfoTab() {
-  const [info, setInfo] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : defaultCompanyInfo;
-    } catch {
-      return defaultCompanyInfo;
-    }
-  });
+  const { companyInfo: defaultCompanyInfo, updateSettings } = useSettings();
+  const [info, setInfo] = useState(defaultCompanyInfo || {});
   const [saved, setSaved] = useState(false);
   const fileRef = useRef(null);
 
-  const handleSave = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(info));
+  const handleSave = async () => {
+    await updateSettings('company_info', info);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -1276,52 +1271,25 @@ function CompanyInfoTab() {
 // ============================================================
 function SystemConfigTab() {
   const { user } = useAuth();
-  const [config, setConfig] = useState(() => {
-    try {
-      const saved = localStorage.getItem('systemConfig');
-      return saved ? JSON.parse(saved) : {
-        vatPercent: 7,
-        gpGrabPercent: 30,
-        gpLinemanPercent: 30,
-        receiptFooter: 'ขอบคุณที่ใช้บริการ สมชายหมูปิ้ง 🐷',
-        lineOAToken: '',
-        stockAlertDays: 2,
-        dailySalesTarget: 10000,
-        targetFcPercent: 35,
-        targetGpPercent: 60,
-      };
-    } catch {
-      return {
-        vatPercent: 7,
-        gpGrabPercent: 30,
-        gpLinemanPercent: 30,
-        receiptFooter: 'ขอบคุณที่ใช้บริการ สมชายหมูปิ้ง 🐷',
-        lineOAToken: '',
-        stockAlertDays: 2,
-        dailySalesTarget: 10000,
-        targetFcPercent: 35,
-        targetGpPercent: 60,
-      };
-    }
-  });
+  const { 
+    systemConfig: globalConfig,
+    paymentMethods: globalPayMethods,
+    salesChannels: globalSalesChannels,
+    updateSettings
+  } = useSettings();
+
+  const [config, setConfig] = useState(globalConfig);
   const [saved, setSaved] = useState(false);
 
   // Payment methods state
-  const [payMethods, setPayMethods] = useState(() => {
-    try {
-      const raw = localStorage.getItem('paymentMethods');
-      return raw ? JSON.parse(raw) : DEFAULT_PAYMENT_METHODS;
-    } catch {
-      return DEFAULT_PAYMENT_METHODS;
-    }
-  });
+  const [payMethods, setPayMethods] = useState(globalPayMethods);
   const [newMethodName, setNewMethodName] = useState('');
   const [newMethodIcon, setNewMethodIcon] = useState('CircleDollarSign');
   const [newMethodGP, setNewMethodGP] = useState('');
   const [newMethodDeliveryFee, setNewMethodDeliveryFee] = useState('');
 
   // Sales Channels state
-  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
+  const [salesChannels, setSalesChannels] = useState(globalSalesChannels);
   const [newChannelLabel, setNewChannelLabel] = useState('');
   const [newChannelEmoji, setNewChannelEmoji] = useState('📦');
 
@@ -1582,10 +1550,10 @@ function SystemConfigTab() {
     });
   };
 
-  const handleSave = () => {
-    localStorage.setItem('systemConfig', JSON.stringify(config));
-    localStorage.setItem('paymentMethods', JSON.stringify(payMethods));
-    localStorage.setItem('salesChannels', JSON.stringify(salesChannels));
+  const handleSave = async () => {
+    await updateSettings('system_config', config);
+    await updateSettings('payment_methods', payMethods);
+    await updateSettings('sales_channels', salesChannels);
     window.dispatchEvent(new Event('salesChannelsUpdate'));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -2579,7 +2547,7 @@ function ProductsTab() {
   const [products, setProducts]       = useState([]);
   const [bomCosts, setBomCosts]       = useState({}); // { product_id: calculatedCost }
   const [loading, setLoading]         = useState(true);
-  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
+  const { salesChannels }             = useSettings();
 
   // Category state
   const [showAddCat, setShowAddCat]   = useState(false);
@@ -2653,13 +2621,7 @@ function ProductsTab() {
     });
   };
 
-  // Reload channels if Settings page is visited or if channels are updated
-  useEffect(() => {
-    const syncChannels = () => setSalesChannels(getSalesChannels());
-    syncChannels();
-    window.addEventListener('salesChannelsUpdate', syncChannels);
-    return () => window.removeEventListener('salesChannelsUpdate', syncChannels);
-  }, []);
+  // Reload channels handled by useSettings()
 
   useEffect(() => { loadData(); }, []);
 
@@ -3755,13 +3717,7 @@ function PromotionsTab() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editPromo, setEditPromo] = useState(null);
-  const [salesChannels, setSalesChannels] = useState(() => getSalesChannels());
-
-  useEffect(() => {
-    const syncChannels = () => setSalesChannels(getSalesChannels());
-    window.addEventListener('salesChannelsUpdate', syncChannels);
-    return () => window.removeEventListener('salesChannelsUpdate', syncChannels);
-  }, []);
+  const { salesChannels } = useSettings();
 
   // Discount Limit config (stored in localStorage)
   const [discountLimit, setDiscountLimit] = useState(() => {

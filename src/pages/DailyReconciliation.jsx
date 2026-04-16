@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 // =====================================================
 // Payment method icon/label map (same source as SalesHistory)
@@ -23,13 +24,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',           isDefault: true, enabled: true },
 ];
 
-function loadPaymentMethods() {
-  try {
-    const raw = localStorage.getItem('paymentMethods');
-    if (raw) return JSON.parse(raw);
-  } catch (err) { console.error(err); }
-  return DEFAULT_PAYMENT_METHODS;
-}
+// function loadPaymentMethods() removed
 
 // =====================================================
 // Component
@@ -38,7 +33,8 @@ export default function DailyReconciliation() {
   const { user } = useAuth();
   const branchId = user?.branch_id;
   const userId = user?.id;
-  const [paymentMethods] = useState(() => loadPaymentMethods());
+  const { paymentMethods: sysPaymentMethods } = useSettings();
+  const [paymentMethods] = useState(sysPaymentMethods);
 
   // State
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);

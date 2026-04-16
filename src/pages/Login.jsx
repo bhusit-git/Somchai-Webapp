@@ -96,7 +96,7 @@ export default function Login() {
 
     const { success, message } = await loginWithPin(pin, selectedUser.id);
     if (!success) {
-      setError('PIN ไม่ถูกต้อง');
+      setError(message || 'PIN ไม่ถูกต้อง');
       setPin(''); // Clear on fail
       triggerShake();
     }

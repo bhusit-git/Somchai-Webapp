@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Tag, Percent, X, ChevronUp, ChevronDown, Gift } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 // Icon map for dynamic payment method icons
 const PM_ICON_MAP = {
@@ -17,33 +18,6 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
   { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',     isDefault: true, enabled: true, gpPercent: 0 },
 ];
-
-function loadPaymentMethods() {
-  try {
-    const raw = localStorage.getItem('paymentMethods');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return parsed.filter(m => m.enabled);
-    }
-  } catch (err) {
-    console.error('Error loading payment methods:', err);
-  }
-  return DEFAULT_PAYMENT_METHODS.filter(m => m.enabled);
-}
-
-const DEFAULT_SALES_CHANNELS = [
-  { id: 'dine_in', label: 'หน้าร้าน', emoji: '🏪' },
-  { id: 'grab',    label: 'Grab',     emoji: '🟢' },
-  { id: 'lineman', label: 'LineMan',  emoji: '🟡' },
-];
-
-function loadSalesChannels() {
-  try {
-    const raw = localStorage.getItem('salesChannels');
-    if (raw) return JSON.parse(raw);
-  } catch { }
-  return DEFAULT_SALES_CHANNELS;
-}
 
 function loadDiscountLimit() {
   try {
@@ -149,14 +123,19 @@ export default function POS() {
   const [sysConfig, setSysConfig] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
-  const [paymentMethods, setPaymentMethods] = useState(() => loadPaymentMethods());
+  
+  const { paymentMethods: allPaymentMethods, salesChannels, systemConfig } = useSettings();
+  const [paymentMethods, setPaymentMethods] = useState(allPaymentMethods.filter(m => m.enabled));
   const [deliveryType, setDeliveryType] = useState('round');
   // Channel pricing
-  const [salesChannels, setSalesChannels] = useState(() => loadSalesChannels());
   const [activeSalesChannel, setActiveSalesChannel] = useState('dine_in');
   const [menuPrices, setMenuPrices] = useState({});
   const { user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    setPaymentMethods(allPaymentMethods.filter(m => m.enabled));
+  }, [allPaymentMethods]);
 
   // ── Promotions state ──
   const [promotions, setPromotions] = useState([]);
