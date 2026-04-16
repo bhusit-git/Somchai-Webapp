@@ -23,34 +23,47 @@ export const AuthProvider = ({ children }) => {
     try {
       setLoading(true);
 
-      let query = supabase
-        .from('users')
-        .select(`
-          *,
-          branches:branch_id (name)
-        `)
-        .eq('pin_hash', pin);
-
-      if (userId) {
-        query = query.eq('id', userId);
+      if (!userId) {
+        throw new Error('ต้องระบุผู้ใช้งานเพื่อเข้าสู่ระบบ');
       }
 
-      const { data, error } = await query.single();
+      // Clear any stale JWT before calling verify-pin so the interceptor 
+      // doesn't attach an expired/old token to the Edge Function call
+      localStorage.removeItem('cashsync_jwt');
 
-      if (error || !data) {
-        throw new Error('รหัส PIN ไม่ถูกต้อง หรือไม่พบผู้ใช้งาน');
+      // Call the Edge Function instead of reading pin_hash directly
+      const { data, error } = await supabase.functions.invoke('verify-pin', {
+        body: { user_id: userId, pin }
+      });
+
+      // supabase.functions.invoke: 
+      //   - `error` is set only for network/transport failures
+      //   - For HTTP 4xx/5xx the response body is parsed into `data`
+      if (error) {
+        throw new Error('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง');
       }
 
-      // Check if user is active (if we add active column later)
-      // For now, any found user by PIN is allowed
+      if (!data || !data.success) {
+        // Check for rate limiting message
+        const errMsg = data?.error || 'รหัส PIN ไม่ถูกต้อง หรือไม่พบผู้ใช้งาน';
+        if (errMsg.includes('Too many attempts') || errMsg.includes('locked')) {
+          throw new Error('กรอก PIN ผิดเกินกำหนด กรุณารอ 5 นาทีแล้วลองใหม่');
+        }
+        throw new Error(errMsg);
+      }
 
+      const { user: verifiedUser, token } = data;
+
+      // Store the JWT — the global fetch interceptor will inject it into all subsequent requests
+      localStorage.setItem('cashsync_jwt', token);
+      
       const userData = {
-        id: data.id,
-        name: data.name,
-        employee_id: data.employee_id || null,
-        role: data.role,
-        branch_id: data.branch_id,
-        branch_name: data.branches?.name || 'ไม่ระบุสาขา'
+        id: verifiedUser.id,
+        name: verifiedUser.name,
+        employee_id: verifiedUser.employee_id || null,
+        role: verifiedUser.role,
+        branch_id: verifiedUser.branch_id,
+        branch_name: verifiedUser.branch_name || 'ไม่ระบุสาขา'
       };
 
       setUser(userData);
@@ -72,6 +85,7 @@ export const AuthProvider = ({ children }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('cashsync_user');
+    localStorage.removeItem('cashsync_jwt');
     navigate('/login');
   };
 
