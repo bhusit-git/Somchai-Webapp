@@ -40,6 +40,8 @@ export default function OwnerDashboard() {
     managerSafe: 0,
     totalDiscount: 0,
     totalRefund: 0,
+    totalStaffMealRetail: 0,
+    totalStaffMealCOGS: 0,
     paymentBreakdown: {},
   });
   const [branchData, setBranchData] = useState([]);
@@ -107,6 +109,7 @@ export default function OwnerDashboard() {
       // Calculate COGS
       let totalTheoreticalCOGS = 0; // World 1 (with Q-Factor)
       let totalFinancialCOGS = 0; // World 2 (raw materials only)
+      let totalStaffMealCOGS = 0; // Staff Meal COGS
       let branchCogsMap = {}; // branch_id -> theoretical cogs for Gross Profit
       if (completedTxs.length > 0) {
         const txIds = completedTxs.map(t => t.id);
@@ -132,13 +135,16 @@ export default function OwnerDashboard() {
              const lineTheoreticalCogs = Number(item.quantity) * cost;
              const lineFinancialCogs = Number(item.quantity) * rawMcs;
              
-             totalTheoreticalCOGS += lineTheoreticalCogs;
-             totalFinancialCOGS += lineFinancialCogs;
-             
              // group by branch_id
              const tx = txData.find(t => t.id === item.transaction_id);
              if (tx) {
-               branchCogsMap[tx.branch_id] = (branchCogsMap[tx.branch_id] || 0) + lineTheoreticalCogs;
+               if (tx.payment_method === 'staff_meal') {
+                 totalStaffMealCOGS += lineFinancialCogs; // Use financial as concrete cost
+               } else {
+                 totalTheoreticalCOGS += lineTheoreticalCogs;
+                 totalFinancialCOGS += lineFinancialCogs;
+                 branchCogsMap[tx.branch_id] = (branchCogsMap[tx.branch_id] || 0) + lineTheoreticalCogs;
+               }
              }
            });
         }
@@ -147,12 +153,19 @@ export default function OwnerDashboard() {
       // 1. Overall stats
       let totalRev = 0;
       let totalDiscount = 0;
+      let totalStaffMealRetail = 0;
       (txData || []).forEach(t => {
         const amt = Number(t.total);
-        if (amt < 0) totalRev += amt;
-        else if (t.status === 'completed') {
-           totalRev += amt;
-           totalDiscount += Number(t.discount || 0);
+        if (t.payment_method === 'staff_meal') {
+          if (t.status === 'completed' || amt < 0) {
+             totalStaffMealRetail += amt;
+          }
+        } else {
+          if (amt < 0) totalRev += amt;
+          else if (t.status === 'completed') {
+             totalRev += amt;
+             totalDiscount += Number(t.discount || 0);
+          }
         }
       });
       const totalExp = (expData || []).reduce((sum, e) => sum + Number(e.amount), 0);
@@ -160,6 +173,7 @@ export default function OwnerDashboard() {
       // Breakdown stats
       const totalRefund = voidedTxs.reduce((sum, t) => sum + Math.abs(Number(t.total)), 0);
       const paymentBreakdown = completedTxs.reduce((acc, t) => {
+        if (t.payment_method === 'staff_meal') return acc;
         const pm = t.payment_method || 'unknown';
         acc[pm] = (acc[pm] || 0) + Number(t.total);
         return acc;
@@ -183,6 +197,8 @@ export default function OwnerDashboard() {
         managerSafe: totalSafe,
         totalDiscount,
         totalRefund,
+        totalStaffMealRetail,
+        totalStaffMealCOGS,
         paymentBreakdown,
       });
 
@@ -410,6 +426,16 @@ export default function OwnerDashboard() {
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>ยอดเงินที่เสียไปจากการยกเลิก</span>
                     </div>
                     <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-warning)' }}>{formatCurrency(stats.totalRefund)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', paddingTop: '8px', borderTop: '1px dashed var(--border-secondary)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px' }}>สวัสดิการพนักงาน (Staff Meal)</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>มูลค่าป้าย (Retail): {formatCurrency(stats.totalStaffMealRetail)}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent-info)' }}>{formatCurrency(stats.totalStaffMealCOGS)}</span>
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>ทุนวัตถุดิบ (COGS)</span>
+                    </div>
                   </div>
                 </div>
               </div>

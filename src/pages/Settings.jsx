@@ -39,7 +39,7 @@ const genPIN = () => Math.floor(100000 + Math.random() * 900000).toString();
 
 // ── Payment Method Icon Map ──
 const PM_ICON_MAP = {
-  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Gift
 };
 const PM_ICON_OPTIONS = [
   { key: 'Banknote', label: 'เงินสด' },
@@ -49,6 +49,7 @@ const PM_ICON_OPTIONS = [
   { key: 'Users', label: 'เงินเชื่อ' },
   { key: 'Wallet', label: 'กระเป๋าเงิน' },
   { key: 'Smartphone', label: 'Mobile' },
+  { key: 'Gift', label: 'สวัสดิการ' },
   { key: 'CircleDollarSign', label: 'อื่นๆ' },
 ];
 
@@ -59,6 +60,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'Grab',      label: 'Grab',           icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 0 },
   { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',       isDefault: true, enabled: true, gpPercent: 30, deliveryFee: 0 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',       isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
+  { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',        isDefault: true, enabled: true, gpPercent: 0,  deliveryFee: 0 },
 ];
 
 function getPaymentMethods() {
@@ -2739,18 +2741,57 @@ function ProductsTab() {
           )}
         </div>
         
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-          <input className="form-input pl-9 text-xs py-2" placeholder="ค้นหาเมนูมาตรฐานเพื่อเพิ่ม..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        <div style={{ position: 'relative', marginBottom: '12px' }}>
+          <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '14px', height: '14px', color: '#64748b', pointerEvents: 'none' }} />
+          <input
+            className="form-input text-xs"
+            style={{ paddingLeft: '2.25rem', paddingTop: '8px', paddingBottom: '8px' }}
+            placeholder="ค้นหาเมนูมาตรฐานเพื่อเพิ่ม..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
           {searchTerm && (
-            <div className="absolute top-full left-0 right-0 z-[60] mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl max-h-40 overflow-y-auto">
-              {filtered.map(p => (
-                <button key={p.id} onClick={() => { 
-                  if (!items.find(i => i.item_product_id === p.id)) {
-                    onChange([...items, { item_product_id: p.id, quantity: 1 }]);
-                  }
-                  setSearchTerm('');
-                }} className="w-full text-left p-2.5 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 text-xs text-slate-200">
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              zIndex: 60,
+              marginTop: '4px',
+              backgroundColor: '#1e293b',
+              border: '1px solid #334155',
+              borderRadius: '8px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)',
+              maxHeight: '160px',
+              overflowY: 'auto',
+            }}>
+              {filtered.length === 0 && (
+                <div style={{ padding: '10px 12px', color: '#94a3b8', fontSize: '12px', textAlign: 'center' }}>ไม่พบเมนู</div>
+              )}
+              {filtered.map((p, idx) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    if (!items.find(i => i.item_product_id === p.id)) {
+                      onChange([...items, { item_product_id: p.id, quantity: 1 }]);
+                    }
+                    setSearchTerm('');
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    fontSize: '13px',
+                    color: '#f1f5f9',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderBottom: idx < filtered.length - 1 ? '1px solid rgba(51,65,85,0.5)' : 'none',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = '#334155'}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
                   {p.name}
                 </button>
               ))}
@@ -2762,14 +2803,21 @@ function ProductsTab() {
           {items.map(item => {
             const p = availableProducts.find(x => x.id === item.item_product_id);
             return (
-              <div key={item.item_product_id} className="flex items-center justify-between bg-slate-800/80 rounded-lg p-2 border border-slate-700/30">
+              <div key={item.item_product_id} className="flex items-center justify-between rounded-lg p-2 border border-slate-700/30" style={{ backgroundColor: 'rgba(30, 41, 59, 0.8)' }}>
                 <span className="text-xs text-white truncate flex-1">{p?.name}</span>
                 <div className="flex items-center gap-2">
-                  <input type="number" min="1" className="form-input w-12 text-center text-[10px] py-1 px-1" value={item.quantity} onChange={e => {
-                    const val = parseInt(e.target.value);
-                    if (val > 0) onChange(items.map(i => i.item_product_id === item.item_product_id ? { ...i, quantity: val } : i));
+                  <input type="number" min="0" className="form-input w-12 text-center text-[10px] py-1 px-1" value={item.quantity} onChange={e => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                        onChange(items.map(i => i.item_product_id === item.item_product_id ? { ...i, quantity: '' } : i));
+                    } else {
+                        const val = parseInt(raw);
+                        if (!isNaN(val) && val >= 0) {
+                            onChange(items.map(i => i.item_product_id === item.item_product_id ? { ...i, quantity: val } : i));
+                        }
+                    }
                   }} />
-                  <button onClick={() => onChange(items.filter(i => i.item_product_id !== item.item_product_id))} className="text-red-400 hover:text-red-300 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => onChange(items.filter(i => i.item_product_id !== item.item_product_id))} className="text-red-400 hover:text-red-300 p-1" style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
               </div>
             );
@@ -3081,26 +3129,31 @@ function ProductsTab() {
                          </div>
                       </div>
 
-                      <div className={newProd.product_type === 'COMBO' ? 'col-span-2' : ''}>
+                      <div>
                          <label className="form-label">หมวดหมู่ <span className="text-red-500">*</span></label>
                          <select className="form-input" value={newProd.category_id} onChange={e => setNewProd({ ...newProd, category_id: e.target.value })}>
                            <option value="">-- ไม่ระบุ --</option>
                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                          </select>
                       </div>
-                      {newProd.product_type !== 'COMBO' && (
-                        <div>
-                           <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
-                           <input type="number" className="form-input" placeholder="เช่น 1, 2, 3..." value={newProd.sort_order} onChange={e => setNewProd({ ...newProd, sort_order: e.target.value })} />
-                        </div>
-                      )}
+                      <div>
+                         <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
+                         <input type="number" className="form-input" placeholder="เช่น 1, 2, 3..." value={newProd.sort_order} onChange={e => setNewProd({ ...newProd, sort_order: e.target.value })} />
+                      </div>
                     </div>
                   </div>
                   
                   {newProd.product_type === 'COMBO' && (
                     <ComboItemsList 
                       items={newProd.combo_items || []} 
-                      onChange={(items) => setNewProd({ ...newProd, combo_items: items })} 
+                      onChange={(items) => {
+                        const sumPrice = items.reduce((acc, ci) => {
+                           const p = products.find(x => x.id === ci.item_product_id);
+                           const qty = parseInt(ci.quantity) || 0;
+                           return acc + (p ? Number(p.price) * qty : 0);
+                        }, 0);
+                        setNewProd({ ...newProd, combo_items: items, price: sumPrice > 0 ? sumPrice : '' });
+                      }} 
                       availableProducts={products}
                     />
                   )}
@@ -3250,8 +3303,12 @@ function ProductsTab() {
                   costText = `ต้นทุน ฿${calc.toFixed(2)} \u00A0 ${pct}% (จาก BOM)`;
                 }
 
+                const isDineInAvail = prod.is_available !== false;
+                const activeOtherChannels = salesChannels.filter(ch => ch.id !== 'dine_in' && prod.menu_prices?.[ch.id]?.is_available);
+                const isGloballyAvail = isDineInAvail || activeOtherChannels.length > 0;
+
                 return (
-                  <div key={prod.id} className={`bg-slate-800/60 border border-slate-700/50 rounded-lg p-4 flex items-center justify-between shadow-sm transition-all hover:bg-slate-800/80 ${!prod.is_available ? 'opacity-60 grayscale-[30%]' : ''}`}>
+                  <div key={prod.id} className={`bg-slate-800/60 border border-slate-700/50 rounded-lg p-4 flex items-center justify-between shadow-sm transition-all hover:bg-slate-800/80 ${!isGloballyAvail ? 'opacity-60 grayscale-[30%]' : ''}`}>
                     <div className="min-w-0 flex items-center gap-4">
                       {prod.image_url ? (
                         <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 border border-slate-600/50 bg-slate-900/50">
@@ -3270,13 +3327,17 @@ function ProductsTab() {
                         <p className="text-slate-400 text-xs mt-1.5 flex flex-wrap items-center gap-3">
                           <span className="text-green-400 font-medium bg-green-500/10 px-2 py-0.5 rounded-md border border-green-500/20">฿{Number(prod.price).toLocaleString()}</span>
                           {costText && <span className="bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-700">{costText}</span>}
-                          {!prod.is_available && <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20 uppercase tracking-wide text-[10px] font-bold">ปิดขายชั่วคราว</span>}
+                          {!isGloballyAvail ? (
+                            <span className="text-red-400 bg-red-500/10 px-2 py-0.5 rounded-md border border-red-500/20 uppercase tracking-wide text-[10px] font-bold">ปิดขายทุกช่องทาง</span>
+                          ) : !isDineInAvail ? (
+                            <span className="text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-md border border-orange-500/20 uppercase tracking-wide text-[10px] font-bold">ปิดขายหน้าร้าน</span>
+                          ) : null}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap justify-end shrink-0 pl-4 border-l border-slate-700/50 ml-4 py-1">
-                      <button onClick={() => toggleAvailable(prod)} title={prod.is_available ? 'ปิดขาย' : 'เปิดขาย'} className={`p-2 rounded-lg transition-colors border ${prod.is_available ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20' : 'text-slate-400 border-slate-700 bg-slate-800 hover:bg-slate-700'}`}>
-                        {prod.is_available ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                      <button onClick={() => toggleAvailable(prod)} title={isDineInAvail ? 'ปิดขายหน้าร้าน' : 'เปิดขายหน้าร้าน'} className={`p-2 rounded-lg transition-colors border ${isDineInAvail ? 'text-blue-400 border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20' : 'text-slate-400 border-slate-700 bg-slate-800 hover:bg-slate-700'}`}>
+                        {isDineInAvail ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                       </button>
                       <button onClick={() => { setEditProd(prod); setEditImgPreview(null); setEditImgFile(null); }} className="text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 p-2 rounded-lg transition-colors">
                         <Edit2 className="w-4 h-4" />
@@ -3341,26 +3402,31 @@ function ProductsTab() {
                          </div>
                       </div>
 
-                      <div className={editProd.product_type === 'COMBO' ? 'col-span-2' : ''}>
+                      <div>
                          <label className="form-label">หมวดหมู่ <span className="text-red-500">*</span></label>
                          <select className="form-input" value={editProd.category_id || ''} onChange={e => setEditProd({ ...editProd, category_id: e.target.value })}>
                            <option value="">-- ไม่ระบุ --</option>
                            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                          </select>
                       </div>
-                      {editProd.product_type !== 'COMBO' && (
-                        <div>
-                           <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
-                           <input type="number" className="form-input" value={editProd.sort_order ?? 0} onChange={e => setEditProd({ ...editProd, sort_order: e.target.value })} />
-                        </div>
-                      )}
+                      <div>
+                         <label className="form-label flex items-center gap-2">ลำดับ <span className="text-[10px] bg-slate-700 px-2 rounded-full" style={{ color: '#d1d5db', padding: '2px 8px' }}>ตัวเลือก</span></label>
+                         <input type="number" className="form-input" value={editProd.sort_order ?? 0} onChange={e => setEditProd({ ...editProd, sort_order: e.target.value })} />
+                      </div>
                     </div>
                   </div>
 
                   {editProd.product_type === 'COMBO' && (
                     <ComboItemsList 
                       items={editProd.combo_items || []} 
-                      onChange={(items) => setEditProd({ ...editProd, combo_items: items })} 
+                      onChange={(items) => {
+                        const sumPrice = items.reduce((acc, ci) => {
+                           const p = products.find(x => x.id === ci.item_product_id);
+                           const qty = parseInt(ci.quantity) || 0;
+                           return acc + (p ? Number(p.price) * qty : 0);
+                        }, 0);
+                        setEditProd({ ...editProd, combo_items: items, price: sumPrice > 0 ? sumPrice : '' });
+                      }}
                       availableProducts={products}
                     />
                   )}

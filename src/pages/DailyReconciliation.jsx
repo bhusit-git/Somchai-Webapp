@@ -3,7 +3,7 @@ import {
   ClipboardCheck, Calendar, RefreshCw, CheckCircle2, PauseCircle,
   Banknote, Smartphone, Truck, Users, DollarSign, Lock, ChevronDown, ChevronUp,
   AlertTriangle, ShieldCheck, CreditCard, QrCode, Wallet, HandCoins, CircleDollarSign,
-  Layers, Save
+  Layers, Save, Gift
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,7 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 // =====================================================
 // Payment method icon/label map (same source as SalesHistory)
 // =====================================================
-const PM_ICON_MAP = { Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins };
+const PM_ICON_MAP = { Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Gift };
 
 const DEFAULT_PAYMENT_METHODS = [
   { value: 'cash',      label: 'เงินสด',        icon: 'Banknote',        isDefault: true, enabled: true },
@@ -20,6 +20,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'Grab',      label: 'Grab',           icon: 'Truck',           isDefault: true, enabled: true },
   { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',           isDefault: true, enabled: true },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',           isDefault: true, enabled: true },
+  { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',           isDefault: true, enabled: true },
 ];
 
 function loadPaymentMethods() {
@@ -64,6 +65,7 @@ export default function DailyReconciliation() {
   const [digitalItems, setDigitalItems] = useState([]);
   const [arItems, setArItems] = useState([]);
   const [dailyCashExpenses, setDailyCashExpenses] = useState(0);
+  const [dailyStaffMeal, setDailyStaffMeal] = useState(0);
 
   // Stock count expand
   const [expandedShift, setExpandedShift] = useState(null);
@@ -99,12 +101,23 @@ export default function DailyReconciliation() {
 
       const txAll = txData || [];
       const groupedDigital = {};
+      let staffMealTotal = 0;
+      
       txAll.forEach(tx => {
         // Only skip cash-with-shift if there are actually closed shifts to display it in Table 1
         if (tx.payment_method?.toLowerCase() === 'cash' && tx.shift_id && closedShifts.length > 0) return;
         if (tx.payment_method?.toLowerCase() === 'credit') return; // AR handled in table 3
         
         let pm = tx.payment_method || '';
+        
+        // Extract staff_meal completely from Digital Reconciliation
+        if (pm.toLowerCase() === 'staff_meal') {
+           const amt = Number(tx.total || 0);
+           if (amt < 0) staffMealTotal += amt;
+           else if (tx.status === 'completed') staffMealTotal += amt;
+           return;
+        }
+
         // Find if it matches a known setting case-insensitively to normalize it
         // Check by value first, then by label as fallback
         let knownMethod = paymentMethods.find(m => m.value.toLowerCase() === pm.toLowerCase());
@@ -152,6 +165,7 @@ export default function DailyReconciliation() {
         expected,
       }));
       setDigitalChannels(digArr);
+      setDailyStaffMeal(staffMealTotal);
 
       // 3) Load AR records (accounts receivable) created on this date
       const { data: arData } = await supabase
@@ -367,6 +381,7 @@ export default function DailyReconciliation() {
       const channelExpected = {};
       txAll.forEach(tx => {
         if (tx.payment_method?.toLowerCase() === 'credit') return;
+        if (tx.payment_method?.toLowerCase() === 'staff_meal') return; // Exclude staff meal from recon channels
         const total = Number(tx.total || 0);
         if (total >= 0 && tx.status !== 'completed') return;
         const pm = normalizePM(tx.payment_method);
@@ -1556,6 +1571,23 @@ export default function DailyReconciliation() {
                 </span>
               </div>
             </div>
+
+            {dailyStaffMeal > 0 && (
+              <div style={{ margin: '0 20px 20px', padding: '12px 16px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-info-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-info)' }}>
+                    <Gift size={16} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>มูลค่าสวัสดิการพนักงานวันนี้</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ไม่ต้องตรวจรับเงิน (แยกยอดจากรายได้และเงินในลิ้นชักเรียบร้อย)</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--accent-info)' }}>
+                  {fmtCurrency(dailyStaffMeal)}
+                </div>
+              </div>
+            )}
 
             {digitalItems.length === 0 ? (
               <div className="empty-state" style={{ padding: '40px' }}>

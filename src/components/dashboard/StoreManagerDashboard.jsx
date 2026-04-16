@@ -35,6 +35,7 @@ export default function StoreManagerDashboard() {
     grossProfit: 0,
     cashDrawer: 0,
     startingCash: 0,
+    staffMealValue: 0,
   });
   const [alerts, setAlerts] = useState({
     lowStockItems: [],
@@ -89,13 +90,13 @@ export default function StoreManagerDashboard() {
       // Data fetching
       const { data: todayTx } = await supabase
         .from('transactions')
-        .select('id, total, status, created_at')
+        .select('id, total, status, created_at, payment_method')
         .eq('branch_id', user.branch_id)
         .gte('created_at', todayISO);
 
       const { data: twoWeeksTx } = await supabase
         .from('transactions')
-        .select('id, total, created_at, status')
+        .select('id, total, created_at, status, payment_method')
         .eq('branch_id', user.branch_id)
         .gte('created_at', fourteenDaysAgo.toISOString());
 
@@ -121,13 +122,18 @@ export default function StoreManagerDashboard() {
       // Calculations
       let tSales = 0;
       let tOrders = 0;
+      let tStaffMealRetail = 0;
       (todayTx || []).forEach(tx => {
         const amt = Number(tx.total);
-        if (amt < 0) {
-          tSales += amt;
-        } else if (tx.status === 'completed') {
-          tSales += amt;
-          tOrders++;
+        if (tx.payment_method === 'staff_meal') {
+          if (tx.status === 'completed' || amt < 0) tStaffMealRetail += amt;
+        } else {
+          if (amt < 0) {
+            tSales += amt;
+          } else if (tx.status === 'completed') {
+            tSales += amt;
+            tOrders++;
+          }
         }
       });
       const tExpenses = (todayExp || []).reduce((sum, e) => sum + Number(e.amount), 0);
@@ -141,12 +147,15 @@ export default function StoreManagerDashboard() {
         const txIds = todayTx.map(t => t.id);
         const { data: txItems } = await supabase
           .from('transaction_items')
-          .select('product_name, quantity, total_price, products(cost)')
+          .select('transaction_id, product_name, quantity, total_price, products(cost)')
           .in('transaction_id', txIds);
            
         if (txItems) {
            const itemMap = {};
            txItems.forEach(item => {
+             const tx = todayTx.find(t => t.id === item.transaction_id);
+             if (tx && tx.payment_method === 'staff_meal') return; // Exclude from normal COGS
+             
              const cost = Number(item.products?.cost || 0);
              todayCOGS += (Number(item.quantity) * cost);
 
@@ -174,6 +183,7 @@ export default function StoreManagerDashboard() {
         grossProfit: realGP,
         cashDrawer: cashDrawer,
         startingCash: startingCash,
+        staffMealValue: tStaffMealRetail,
       });
       setTopItems(topList);
 
@@ -197,6 +207,7 @@ export default function StoreManagerDashboard() {
       if (twoWeeksTx) {
         twoWeeksTx.forEach(tx => {
            const amt = Number(tx.total);
+           if (tx.payment_method === 'staff_meal') return; // Exclude from chart
            if (amt >= 0 && tx.status !== 'completed') return;
            
            const date = new Date(tx.created_at);
@@ -346,6 +357,11 @@ export default function StoreManagerDashboard() {
               <div className="card-val">฿{stats.cashDrawer.toLocaleString()}</div>
               <div className="card-sub">เงินทอนตั้งต้น ฿{(stats.startingCash || 0).toLocaleString()}  |  รับสด ฿{stats.todaySales.toLocaleString()}</div>
               <div className="card-sub">จ่ายค่าใช้จ่าย ฿{stats.todayExpenses.toLocaleString()}</div>
+              {stats.staffMealValue > 0 && (
+                 <div style={{ marginTop: '8px', padding: '6px 8px', background: 'var(--bg-tertiary)', borderRadius: '4px', fontSize: '11px', color: 'var(--text-primary)' }}>
+                    🎁 สวัสดิการพนักงานวันนี้: <strong>฿{stats.staffMealValue.toLocaleString()}</strong>
+                 </div>
+              )}
             </div>
           </div>
 

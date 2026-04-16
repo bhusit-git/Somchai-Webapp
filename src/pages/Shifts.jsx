@@ -38,16 +38,15 @@ export default function Shifts() {
       let loadedShifts = shiftRes.data || [];
       setKeyItems(inventoryRes?.data || []);
       
-      // Calculate live cash for open shifts
-      const openShifts = loadedShifts.filter(s => s.status === 'open');
-      if (openShifts.length > 0) {
-        const shiftIds = openShifts.map(s => s.id);
+      // Calculate live cash and staff meal for all loaded shifts
+      if (loadedShifts.length > 0) {
+        const shiftIds = loadedShifts.map(s => s.id);
         
         const [salesRes, expRes] = await Promise.all([
            supabase.from('transactions')
-             .select('shift_id, cash_received, change_amount, total, status')
+             .select('shift_id, cash_received, change_amount, total, status, payment_method')
              .in('shift_id', shiftIds)
-             .eq('payment_method', 'cash'),
+             .in('payment_method', ['cash', 'staff_meal']),
            supabase.from('expenses')
              .select('shift_id, amount')
              .in('shift_id', shiftIds)
@@ -60,34 +59,30 @@ export default function Shifts() {
         const expData = expRes.data || [];
         
         loadedShifts = loadedShifts.map(shift => {
-          if (shift.status !== 'open') return shift;
-          
           const shiftSales = salesData.filter(s => s.shift_id === shift.id);
           const shiftExp = expData.filter(e => e.shift_id === shift.id);
           
-          // Net cash from sales = (cash_received - change_amount) for each transaction
-          // Also handle negative total refunds adjusting cash downwards
           let totalCashSales = 0;
+          let totalStaffMeal = 0;
           shiftSales.forEach(tx => {
-            const isRefund = Number(tx.total) < 0;
-            if (isRefund || tx.status === 'completed') {
-              // If it's a negative refund, cash_received/change_amount might not be populated or might be negative.
-              // Fallback to tx.total if cash_received isn't explicitly setting the delta.
-              // Easiest is to add (cash_received - change) but if that is 0 for refunds, we add `total` (which is negative)
-              const received = Number(tx.cash_received || 0);
-              const change = Number(tx.change_amount || 0);
-              const netCash = (received > 0 || change > 0) ? (received - change) : Number(tx.total);
-              totalCashSales += netCash;
+            if (tx.payment_method === 'staff_meal') {
+              if (tx.status === 'completed' || Number(tx.total) < 0) {
+                totalStaffMeal += Number(tx.total);
+              }
+            } else {
+              const isRefund = Number(tx.total) < 0;
+              if (isRefund || tx.status === 'completed') {
+                const received = Number(tx.cash_received || 0);
+                const change = Number(tx.change_amount || 0);
+                const netCash = (received > 0 || change > 0) ? (received - change) : Number(tx.total);
+                totalCashSales += netCash;
+              }
             }
           });
           
           const totalCashExp = shiftExp.reduce((sum, exp) => sum + Number(exp.amount || 0), 0);
           
-          // We calculate the current live cash difference (excluding opening cash to match how closing works)
-          // Live Difference = Cash Sales - Cash Expenses
           const liveDifference = totalCashSales - totalCashExp;
-          
-          // Calculate expected cash in drawer right now
           const liveExpectedCash = Number(shift.opening_cash || 0) + liveDifference;
           
           return {
@@ -95,7 +90,8 @@ export default function Shifts() {
             live_cash_sales: totalCashSales,
             live_cash_expenses: totalCashExp,
             live_difference: liveDifference,
-            live_expected_cash: liveExpectedCash
+            live_expected_cash: liveExpectedCash,
+            staff_meal_total: totalStaffMeal
           };
         });
       }
@@ -255,15 +251,16 @@ export default function Shifts() {
                 <th>เงินเปิด</th>
                 <th>เงินปิด</th>
                 <th>ผลต่าง</th>
+                <th>สวัสดิการพนักงาน</th>
                 <th>สถานะ</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '40px' }}><span className="animate-pulse">กำลังโหลด...</span></td></tr>
               ) : shifts.length === 0 ? (
-                <tr><td colSpan="8"><div className="empty-state"><ArrowLeftRight size={48}/><h3>ยังไม่มีกะ</h3><p>กดปุ่ม "เปิดกะ" เพื่อเริ่ม</p></div></td></tr>
+                <tr><td colSpan="9"><div className="empty-state"><ArrowLeftRight size={48}/><h3>ยังไม่มีกะ</h3><p>กดปุ่ม "เปิดกะ" เพื่อเริ่ม</p></div></td></tr>
               ) : (
                 shifts.map((sh) => (
                   <tr key={sh.id}>
@@ -294,6 +291,13 @@ export default function Shifts() {
                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}> (Live)</span>
                             </div>
                         ) : <span style={{ color: 'var(--text-muted)' }}>—</span>
+                      )}
+                    </td>
+                    <td>
+                      {sh.staff_meal_total > 0 ? (
+                         <span style={{ color: 'var(--accent-info)', fontWeight: 600 }}>฿{Number(sh.staff_meal_total).toLocaleString()}</span>
+                      ) : (
+                         <span style={{ color: 'var(--text-muted)' }}>—</span>
                       )}
                     </td>
                     <td>
@@ -372,6 +376,13 @@ export default function Shifts() {
                   <label className="form-label">เงินปิดลิ้นชัก (บาท) *</label>
                   <input type="number" className="form-input" placeholder="นับเงินจริงทั้งหมดในลิ้นชัก" value={closeForm.closing_cash} onChange={(e) => setCloseForm({ ...closeForm, closing_cash: e.target.value })} required min="0" step="0.01" />
                 </div>
+                {showClose?.staff_meal_total > 0 && (
+                  <div className="form-group" style={{ background: 'var(--bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-primary)', marginBottom: '16px' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🎁 ยอดสวัสดิการพนักงานกะนี้</div>
+                    <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--accent-info)' }}>฿{Number(showClose.staff_meal_total).toLocaleString()}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>*ไม่ถูกนำมาคิดในเงินเปิด/ปิดลิ้นชัก (แยกยอดอัตโนมัติแล้ว)</div>
+                  </div>
+                )}
 
                 {/* -- TEMPORARILY DISABLED: User requested to remove mandatory stock counting for now -- */}
                 {false && keyItems.length > 0 && (

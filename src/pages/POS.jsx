@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Tag, Percent, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { ShoppingCart, Trash2, Plus, Minus, CreditCard, Banknote, QrCode, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Tag, Percent, X, ChevronUp, ChevronDown, Gift } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 // Icon map for dynamic payment method icons
 const PM_ICON_MAP = {
-  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Gift
 };
 
 const DEFAULT_PAYMENT_METHODS = [
@@ -15,6 +15,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'Grab',      label: 'Grab',           icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',     isDefault: true, enabled: true, gpPercent: 0 },
 ];
 
 function loadPaymentMethods() {
@@ -191,7 +192,7 @@ export default function POS() {
       const branchId = user?.branch_id;
       const [catRes, prodRes, custRes, mpRes, promoRes, comboRes] = await Promise.all([
         supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
-        supabase.from('products').select('*').eq('is_available', true).order('sort_order'),
+        supabase.from('products').select('*').order('sort_order'),
         branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] }),
         supabase.from('menu_prices').select('*'),
         supabase.from('promotions').select('*, promotion_item_mappings(*)').eq('is_active', true),
@@ -226,23 +227,30 @@ export default function POS() {
     // 1. Check Channel-specific availability
     if (activeSalesChannel && activeSalesChannel !== 'dine_in') {
       const mp = menuPrices[product.id]?.[activeSalesChannel];
-      if (!mp || mp.is_available === false) return false;
+      if (mp && mp.is_available === false) return false; // Explicitly disabled for this channel
+      if (!mp && product.is_available === false) return false; // No override, so inherit base availability
+    } else {
+      // 2. Base availability (Dine-in)
+      if (product.is_available === false) return false;
     }
-    
-    // 2. Base availability
-    if (product.is_available === false) return false;
 
     // 3. Cascading Availability for Combo Items
     if (product.product_type === 'COMBO' && product.combo_items?.length > 0) {
       for (const ci of product.combo_items) {
-        // Find child in the ALREADY LOADED products list
-        // Note: products list only contains available ones (due to prodRes query filter)
-        // If a child is not found in prodData, it means it was deleted or marked unavailable
         const child = products.find(p => p.id === ci.item_product_id);
         if (!child) return false; 
         
-        // Recursively check (though we only allow 1-level)
-        if (!isAvailable(child)) return false;
+        // We only disable the combo if the child ingredient is disabled ACROSS ALL channels (i.e. truly out of stock)
+        // If the child is merely hidden from the current channel's standalone menu, the combo should still stand.
+        let childGloballyAvail = child.is_available !== false;
+        if (!childGloballyAvail) {
+           const activeOtherChannels = salesChannels.filter(ch => ch.id !== 'dine_in' && menuPrices[child.id]?.[ch.id]?.is_available);
+           if (activeOtherChannels.length > 0) {
+              childGloballyAvail = true;
+           }
+        }
+        
+        if (!childGloballyAvail) return false;
       }
     }
     

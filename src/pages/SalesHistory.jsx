@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Receipt, Search, Filter, Eye, XCircle, ChevronDown, ChevronUp, Edit,
   ShoppingCart, Banknote, QrCode, CreditCard, Truck, Users,
-  DollarSign, Calendar, Clock, RefreshCw, Wallet, Smartphone, CircleDollarSign, HandCoins, Download, UserPlus
+  DollarSign, Calendar, Clock, RefreshCw, Wallet, Smartphone, CircleDollarSign, HandCoins, Download, UserPlus, Gift
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { supabase } from '../lib/supabase';
@@ -11,7 +11,7 @@ import DateRangePicker from '../components/DateRangePicker';
 import TimeRangePicker from '../components/TimeRangePicker';
 
 const PM_ICON_MAP = {
-  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins,
+  Banknote, QrCode, CreditCard, Truck, Users, Wallet, Smartphone, CircleDollarSign, HandCoins, Gift,
 };
 
 const DEFAULT_PAYMENT_METHODS = [
@@ -21,6 +21,7 @@ const DEFAULT_PAYMENT_METHODS = [
   { value: 'Grab',      label: 'Grab',           icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'Lineman',   label: 'LineMan',        icon: 'Truck',    isDefault: true, enabled: true, gpPercent: 30 },
   { value: 'credit',    label: 'เงินเชื่อ (AR)', icon: 'Users',    isDefault: true, enabled: true, gpPercent: 0 },
+  { value: 'staff_meal',label: 'สวัสดิการพนักงาน', icon: 'Gift',     isDefault: true, enabled: true, gpPercent: 0 },
 ];
 
 function loadPaymentMethods() {
