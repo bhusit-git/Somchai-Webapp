@@ -221,7 +221,7 @@ export default function SmartInsights() {
         supabase.from('transactions').select('id, total, created_at, status').gte('created_at', monthStart).lte('created_at', monthEnd),
         supabase.from('transaction_items').select('product_id, product_name, quantity, unit_price, total_price, transactions!inner(created_at, status)').gte('transactions.created_at', monthStart).lte('transactions.created_at', monthEnd).eq('transactions.status', 'completed'),
         supabase.from('transactions').select('total, status').gte('created_at', lmStart).lte('created_at', lmEnd),
-        supabase.from('products').select('id, name, price, cost, is_available'),
+        supabase.from('products').select('id, name, price, cost, is_available, product_type'),
         supabase.from('expenses').select('amount, category, created_at, status, payment_method').gte('created_at', monthStart).lte('created_at', monthEnd),
         supabase.from('expense_categories').select('name, is_fixed_cost').eq('is_active', true),
         supabase.from('inventory_items').select('id, name, current_stock, reorder_point, par_level, cost_per_stock_unit').eq('is_active', true),
@@ -314,7 +314,7 @@ export default function SmartInsights() {
 
       // Products with no BOM
       const bomProductIds = new Set(bomData.map(b => b.menu_item_id));
-      const noBomProducts = products.filter(p => !bomProductIds.has(p.id));
+      const noBomProducts = products.filter(p => p.product_type !== 'COMBO' && !bomProductIds.has(p.id));
 
       // High FC products
       const highFcProducts = productList.filter(p => p.cost > 0 && p.revenue > 0 && (p.cost * p.qty / p.revenue) * 100 > 35);

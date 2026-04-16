@@ -33,8 +33,7 @@ export default function DailyReconciliation() {
   const { user } = useAuth();
   const branchId = user?.branch_id;
   const userId = user?.id;
-  const { paymentMethods: sysPaymentMethods } = useSettings();
-  const [paymentMethods] = useState(sysPaymentMethods);
+  const { paymentMethods } = useSettings();
 
   // State
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
