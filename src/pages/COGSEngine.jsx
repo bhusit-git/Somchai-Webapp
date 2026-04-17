@@ -258,13 +258,17 @@ export default function COGSEngine() {
       const sorted = processed.sort((a, b) => b.totalQty - a.totalQty);
 
       const totalRevenue = sorted.reduce((s, m) => s + m.revenue, 0);
-      const totalCogs    = sorted.reduce((s, m) => s + m.totalCogs, 0);
+      const totalSalesCogs = sorted.reduce((s, m) => s + (m.trueCost * m.qtySold), 0);
+      const totalStaffCogs = sorted.reduce((s, m) => s + (m.trueCost * m.qtyStaff), 0);
+      const totalCogs    = totalSalesCogs + totalStaffCogs;
       const grossProfit  = totalRevenue - totalCogs;
       const avgFcPct     = totalRevenue > 0 ? (totalCogs / totalRevenue) * 100 : 0;
 
       setMenuData(sorted);
       setMetrics({
         totalRevenue,
+        totalSalesCogs,
+        totalStaffCogs,
         totalCogs,
         grossProfit,
         avgFcPct,
@@ -469,7 +473,8 @@ export default function COGSEngine() {
           </h4>
           {[
             { label: 'รายได้รวม (Revenue)',          value: metrics.totalRevenue,  color: 'var(--accent-info)', sign: '' },
-            { label: '— ต้นทุนวัตถุดิบ (COGS)',       value: -metrics.totalCogs,    color: 'var(--accent-warning)', sign: '' },
+            { label: '— ต้นทุนขายปกติ (Sales COGS)',   value: -metrics.totalSalesCogs, color: 'var(--accent-warning)', sign: '' },
+            { label: '— ต้นทุนอาหารพนักงาน (Staff)',   value: -metrics.totalStaffCogs, color: 'var(--text-muted)', sign: '', indent: true },
             { label: '= กำไรขั้นต้น (Gross Profit)', value: metrics.grossProfit,   color: metrics.grossProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', sign: '', bold: true },
             { label: '— ค่าแรง (Labor)',              value: -fixedCostAmts.labor,  color: 'var(--text-secondary)', sign: '' },
             { label: '— ค่าเช่า (Rent)',               value: -fixedCostAmts.rent,   color: 'var(--text-secondary)', sign: '' },
@@ -479,8 +484,9 @@ export default function COGSEngine() {
             <div key={i} style={{
               display: 'flex', justifyContent: 'space-between',
               padding: '7px 0',
-              borderTop: (i === 2 || i === 6) ? '1px solid var(--border-primary)' : 'none',
-              marginTop: (i === 2 || i === 6) ? '4px' : '0',
+              paddingLeft: row.indent ? '16px' : '0',
+              borderTop: (i === 3 || i === 7) ? '1px solid var(--border-primary)' : 'none',
+              marginTop: (i === 3 || i === 7) ? '4px' : '0',
               fontWeight: row.bold ? 700 : 400,
               fontSize: '13px'
             }}>
@@ -600,11 +606,11 @@ export default function COGSEngine() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px' }}>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '48px' }}>
                   <span className="animate-pulse">กำลังคำนวณต้นทุน...</span>
                 </td></tr>
               ) : displayData.length === 0 ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
                   ไม่พบเมนูที่ตรงกับเงื่อนไข
                 </td></tr>
               ) : displayData.map(m => (
