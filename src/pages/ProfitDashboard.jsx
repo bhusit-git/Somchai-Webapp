@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText } from 'lucide-react';
+import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText, Gift, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { calculateFinancials } from '../lib/financials';
-import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function ProfitDashboard() {
   const [safe, setSafe] = useState(null);
@@ -39,105 +38,109 @@ export default function ProfitDashboard() {
     if (!currentBranchId) return;
     setLoading(true);
 
-    const startStr = new Date(`${currentMonth}-01T00:00:00+07:00`).toISOString();
-    const endStr = new Date(new Date(`${currentMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${currentMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
+    try {
+      const startStr = new Date(`${currentMonth}-01T00:00:00+07:00`).toISOString();
+      const endStr = new Date(new Date(`${currentMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${currentMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-    // 1. Fetch Manager Safe
-    const { data: safeData, error: safeError } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
-    
-    let currentSafe = safeData;
+      // 1. Fetch Manager Safe
+      const { data: safeData, error: safeError } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
+      
+      let currentSafe = safeData;
 
-    // Auto-create safe if it doesn't exist for this branch
-    if (!currentSafe && !safeError) {
-      const { data: newSafe } = await supabase.from('manager_safes').insert({
-        branch_id: currentBranchId,
-        balance: 0,
-      }).select().single();
-      currentSafe = newSafe;
-    }
-
-    if (currentSafe) {
-      setSafe(currentSafe);
-      const { data: txData } = await supabase.from('safe_transactions').select('*, creator:users!created_by(name)').eq('safe_id', currentSafe.id).order('created_at', { ascending: false }).limit(20);
-      setTransactions(txData || []);
-    }
-
-    // 2. Fetch Expense Categories (พร้อม is_fixed_cost flag)
-    const { data: catData } = await supabase.from('expense_categories').select('id, name, is_fixed_cost').eq('is_active', true);
-    const categoryMap = {};
-    (catData || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
-
-    // 3. Fetch Transactions (เดือนปัจจุบัน)
-    const { data: revData } = await supabase.from('transactions')
-      .select('id, total, status, payment_method')
-      .eq('branch_id', currentBranchId)
-      .gte('created_at', startStr)
-      .lte('created_at', endStr);
-
-    // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
-    const { data: expData } = await supabase.from('expenses')
-      .select('id, amount, category, description, created_at, receipt_url')
-      .eq('branch_id', currentBranchId)
-      .eq('status', 'approved')
-      .gte('created_at', startStr)
-      .lte('created_at', endStr)
-      .order('created_at', { ascending: false });
-
-    const allExpenses = expData || [];
-    
-    // แยก Fixed Cost vs OPEX ตาม is_fixed_cost flag ของ category
-    const fcItems = allExpenses.filter(e => categoryMap[e.category] === true);
-    const opexItems = allExpenses.filter(e => categoryMap[e.category] !== true);
-
-    const totalFC = fcItems.reduce((s, e) => s + Number(e.amount), 0);
-    const totalOPEX = opexItems.reduce((s, e) => s + Number(e.amount), 0);
-
-    setFixedCostAmount(totalFC);
-    setFixedCostDetails(fcItems);
-    setOpexAmount(totalOPEX);
-    setOpexDetails(opexItems);
-
-    // 5. Fetch Products and BOM for Cost Resolution
-    const { data: prodData } = await supabase.from('products').select('id, cost, product_type');
-    const { data: bomData } = await supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required');
-    const { data: invData } = await supabase.from('inventory_items').select('id, cost_per_stock_unit');
-    const { data: comboItems } = await supabase.from('product_combo_items').select('combo_product_id, item_product_id, quantity');
-
-    const invMap = {}; (invData || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
-    
-    // Resolve costs (Simplified logic from COGSEngine)
-    const resolvedCosts = {};
-    (prodData || []).forEach(p => {
-      const boms = (bomData || []).filter(b => b.menu_item_id === p.id);
-      if (boms.length > 0) {
-        resolvedCosts[p.id] = boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0);
-      } else {
-        resolvedCosts[p.id] = Number(p.cost || 0);
+      // Auto-create safe if it doesn't exist for this branch
+      if (!currentSafe && !safeError) {
+        const { data: newSafe } = await supabase.from('manager_safes').insert({
+          branch_id: currentBranchId,
+          balance: 0,
+        }).select().single();
+        currentSafe = newSafe;
       }
-    });
-    // Combo cost resolution
-    (prodData || []).forEach(p => {
-      if (p.product_type === 'COMBO') {
-        const children = (comboItems || []).filter(ci => ci.combo_product_id === p.id);
-        resolvedCosts[p.id] = children.reduce((s, ci) => s + (Number(resolvedCosts[ci.item_product_id] || 0) * ci.quantity), 0);
+
+      if (currentSafe) {
+        setSafe(currentSafe);
+        const { data: txData } = await supabase.from('safe_transactions').select('*, creator:users!created_by(name)').eq('safe_id', currentSafe.id).order('created_at', { ascending: false }).limit(20);
+        setTransactions(txData || []);
       }
-    });
 
-    // 6. Fetch Transaction Items (MONTHLY FILTERED)
-    const { data: txItems, error: itemsError } = await supabase.from('transaction_items')
-      .select('*, transactions!inner(created_at, status, payment_method)')
-      .gte('transactions.created_at', startStr)
-      .lte('transactions.created_at', endStr)
-      .eq('transactions.status', 'completed')
-      .eq('transactions.branch_id', currentBranchId);
+      // 2. Fetch Expense Categories (พร้อม is_fixed_cost flag)
+      const { data: catData } = await supabase.from('expense_categories').select('id, name, is_fixed_cost').eq('is_active', true);
+      const categoryMap = {};
+      (catData || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
 
-    if (txItems) {
-      const metrics = calculateFinancials(revData || [], txItems, resolvedCosts);
-      setFinancialMetrics(metrics);
-      setRevenue(metrics.actualRevenue); // Update revenue to be Actual Revenue (non-staff)
+      // 3. Fetch Transactions (เดือนปัจจุบัน)
+      const { data: revData } = await supabase.from('transactions')
+        .select('id, total, status, payment_method')
+        .eq('branch_id', currentBranchId)
+        .gte('created_at', startStr)
+        .lte('created_at', endStr);
+
+      // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
+      const { data: expData } = await supabase.from('expenses')
+        .select('id, amount, category, description, created_at, receipt_url')
+        .eq('branch_id', currentBranchId)
+        .eq('status', 'approved')
+        .gte('created_at', startStr)
+        .lte('created_at', endStr)
+        .order('created_at', { ascending: false });
+
+      const allExpenses = expData || [];
+      
+      // แยก Fixed Cost vs OPEX ตาม is_fixed_cost flag ของ category
+      const fcItems = allExpenses.filter(e => categoryMap[e.category] === true);
+      const opexItems = allExpenses.filter(e => categoryMap[e.category] !== true);
+
+      const totalFC = fcItems.reduce((s, e) => s + Number(e.amount), 0);
+      const totalOPEX = opexItems.reduce((s, e) => s + Number(e.amount), 0);
+
+      setFixedCostAmount(totalFC);
+      setFixedCostDetails(fcItems);
+      setOpexAmount(totalOPEX);
+      setOpexDetails(opexItems);
+
+      // 5. Fetch Products and BOM for Cost Resolution
+      const { data: prodData } = await supabase.from('products').select('id, cost, product_type');
+      const { data: bomData } = await supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required');
+      const { data: invData } = await supabase.from('inventory_items').select('id, cost_per_stock_unit');
+      const { data: comboItems } = await supabase.from('product_combo_items').select('combo_product_id, item_product_id, quantity');
+
+      const invMap = {}; (invData || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
+      
+      // Resolve costs (Simplified logic from COGSEngine)
+      const resolvedCosts = {};
+      (prodData || []).forEach(p => {
+        const boms = (bomData || []).filter(b => b.menu_item_id === p.id);
+        if (boms.length > 0) {
+          resolvedCosts[p.id] = boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0);
+        } else {
+          resolvedCosts[p.id] = Number(p.cost || 0);
+        }
+      });
+      // Combo cost resolution
+      (prodData || []).forEach(p => {
+        if (p.product_type === 'COMBO') {
+          const children = (comboItems || []).filter(ci => ci.combo_product_id === p.id);
+          resolvedCosts[p.id] = children.reduce((s, ci) => s + (Number(resolvedCosts[ci.item_product_id] || 0) * ci.quantity), 0);
+        }
+      });
+
+      // 6. Fetch Transaction Items (MONTHLY FILTERED)
+      const { data: txItems, error: itemsError } = await supabase.from('transaction_items')
+        .select('product_id, quantity, total_price, final_price, transaction_id, transactions!inner(created_at, status, payment_method)')
+        .gte('transactions.created_at', startStr)
+        .lte('transactions.created_at', endStr)
+        .eq('transactions.status', 'completed')
+        .eq('transactions.branch_id', currentBranchId);
+
+      if (txItems) {
+        const metrics = calculateFinancials(revData || [], txItems, resolvedCosts);
+        setFinancialMetrics(metrics);
+        setRevenue(metrics.actualRevenue); // Update revenue to be Actual Revenue (non-staff)
+      }
+    } catch (error) {
+      console.error("Error fetching Profit Dashboard data:", error);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   async function handleSafeCutoff() {
