@@ -160,8 +160,6 @@ export default function POS() {
       const sConf = localStorage.getItem('systemConfig');
       if (sConf) setSysConfig(JSON.parse(sConf));
       else setSysConfig({ vatPercent: 7, receiptFooter: 'ขอบคุณที่ใช้บริการ 🐷' });
-      setPaymentMethods(loadPaymentMethods());
-      setSalesChannels(loadSalesChannels());
     } catch { }
   }, []);
 

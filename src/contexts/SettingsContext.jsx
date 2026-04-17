@@ -58,9 +58,19 @@ export const SettingsProvider = ({ children }) => {
       }
 
       if (data) {
-        if (data.sales_channels) setSalesChannels(data.sales_channels);
-        if (data.payment_methods) setPaymentMethods(data.payment_methods);
-        if (data.system_config) setSystemConfig(data.system_config);
+        if (data.sales_channels) {
+          // Merge: keep DB customizations but restore any missing defaults
+          const dbChannelIds = new Set(data.sales_channels.map(c => c.id));
+          const missingDefaults = DEFAULT_SALES_CHANNELS.filter(d => !dbChannelIds.has(d.id));
+          setSalesChannels([...data.sales_channels, ...missingDefaults]);
+        }
+        if (data.payment_methods) {
+          // Merge: keep DB customizations but restore any missing defaults
+          const dbMethodValues = new Set(data.payment_methods.map(m => m.value));
+          const missingDefaults = DEFAULT_PAYMENT_METHODS.filter(d => !dbMethodValues.has(d.value));
+          setPaymentMethods([...data.payment_methods, ...missingDefaults]);
+        }
+        if (data.system_config) setSystemConfig({ ...DEFAULT_SYSTEM_CONFIG, ...data.system_config });
         if (data.company_info) setCompanyInfo(data.company_info);
       }
     } catch (err) {
