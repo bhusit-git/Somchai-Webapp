@@ -143,7 +143,7 @@ export default function COGSEngine() {
       // === 2. Transaction items in date range ===
       const { data: txItems } = await supabase
         .from('transaction_items')
-        .select('product_id, product_name, quantity, unit_price, total_price, transactions!inner(created_at, status)')
+        .select('product_id, product_name, quantity, unit_price, total_price, transactions!inner(created_at, status, payment_method)')
         .gte('transactions.created_at', startStr)
         .lte('transactions.created_at', endStr)
         .eq('transactions.status', 'completed');
@@ -167,13 +167,19 @@ export default function COGSEngine() {
       (invItems || []).forEach(i => { invMap[i.id] = i; });
 
       // === 5. Aggregate qty & revenue per product ===
-      const aggMap = {}; // product_id → { qty, revenue }
+      const aggMap = {}; // product_id → { qtySold, qtyStaff, revenue }
       (txItems || []).forEach(item => {
         const id = item.product_id;
         if (!id) return;
-        if (!aggMap[id]) aggMap[id] = { qty: 0, revenue: 0 };
-        aggMap[id].qty     += Number(item.quantity);
-        aggMap[id].revenue += Number(item.total_price);
+        if (!aggMap[id]) aggMap[id] = { qtySold: 0, qtyStaff: 0, revenue: 0 };
+        
+        const isStaff = item.transactions?.payment_method === 'staff_meal';
+        if (isStaff) {
+          aggMap[id].qtyStaff += Number(item.quantity);
+        } else {
+          aggMap[id].qtySold  += Number(item.quantity);
+          aggMap[id].revenue  += Number(item.total_price);
+        }
       });
 
       // === 6. BOM cost map per product ===
@@ -209,16 +215,18 @@ export default function COGSEngine() {
 
       // === 8. Process each product ===
       const processed = (products || []).map(p => {
-        const agg = aggMap[p.id] || { qty: 0, revenue: 0 };
+        const agg = aggMap[p.id] || { qtySold: 0, qtyStaff: 0, revenue: 0 };
         const sellingPrice = Number(p.price);
         const hasBom = !!bomCostMap[p.id] || p.product_type === 'COMBO';
         const trueCost = resolvedCosts[p.id];
-        const qtySold = agg.qty;
-        const revenue = agg.revenue || (sellingPrice * qtySold);
+        const qtySold = agg.qtySold;
+        const qtyStaff = agg.qtyStaff;
+        const totalQty = qtySold + qtyStaff;
+        const revenue = agg.revenue;
         const fcPct = sellingPrice > 0 ? (trueCost / sellingPrice) * 100 : 0;
         const margin = sellingPrice - trueCost;
-        const totalCogs = trueCost * qtySold;
-        const totalMargin = margin * qtySold;
+        const totalCogs = trueCost * totalQty; // Include Staff Meals in usage cost
+        const totalMargin = (margin * qtySold) - (trueCost * qtyStaff); // Net margin considering staff cost
         const isHighFC = fcPct > 35 && trueCost > 0;
 
         // Variance: diff between products.cost (synced BOM) and live BOM calc
@@ -233,6 +241,8 @@ export default function COGSEngine() {
           trueCost,
           hasBom,
           qtySold,
+          qtyStaff,
+          totalQty,
           revenue,
           fcPct,
           margin,
@@ -245,7 +255,7 @@ export default function COGSEngine() {
       });
 
       // Show all products, but sort sold ones first
-      const sorted = processed.sort((a, b) => b.qtySold - a.qtySold);
+      const sorted = processed.sort((a, b) => b.totalQty - a.totalQty);
 
       const totalRevenue = sorted.reduce((s, m) => s + m.revenue, 0);
       const totalCogs    = sorted.reduce((s, m) => s + m.totalCogs, 0);
@@ -432,6 +442,23 @@ export default function COGSEngine() {
         </div>
       </div>
 
+      {/* Info Banner: Benchmark Policy */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.05))',
+        border: '1px solid rgba(16,185,129,0.2)',
+        borderRadius: '12px',
+        padding: '10px 16px',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px'
+      }}>
+        <AlertCircle size={16} style={{ color: 'var(--accent-success)' }} />
+        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+          💡 <b>Raw Material Summary:</b> ต้นทุนวัตถุดิบ (COGS) และ Food Cost Benchmark รวมมูลค่าของรายการสวัสดิการพนักงาน (Staff Meal) เพื่อให้เห็นภาพการใช้วัตถุดิบจริงทั้งหมดในคลัง
+        </p>
+      </div>
+
       {/* P&L + Cost Stack */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
 
@@ -550,8 +577,11 @@ export default function COGSEngine() {
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('qtySold')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>ขายได้ <SortIcon col="qtySold" /></div>
                 </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('qtyStaff')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', color: 'var(--accent-info)' }}>พนักงานทาน <SortIcon col="qtyStaff" /></div>
+                </th>
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('revenue')}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>รายได้รวม (฿) <SortIcon col="revenue" /></div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>รายได้จริง (฿) <SortIcon col="revenue" /></div>
                 </th>
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('trueCost')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>ต้นทุน/จาน <SortIcon col="trueCost" /></div>
@@ -585,6 +615,9 @@ export default function COGSEngine() {
                   </td>
                   <td style={{ textAlign: 'right', fontWeight: m.qtySold > 0 ? 600 : 400 }}>
                     {m.qtySold > 0 ? m.qtySold : '—'}
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: m.qtyStaff > 0 ? 600 : 400, color: m.qtyStaff > 0 ? 'var(--accent-info)' : 'inherit' }}>
+                    {m.qtyStaff > 0 ? m.qtyStaff : '—'}
                   </td>
                   <td style={{ textAlign: 'right' }}>
                     {m.qtySold > 0 ? `฿${fmtB(m.revenue)}` : '—'}

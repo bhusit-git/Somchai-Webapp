@@ -455,15 +455,17 @@ export default function POS() {
     const gpPercent = selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0;
     const gpAmount = (total * gpPercent) / 100;
 
+    const isStaffMeal = paymentMethod === 'staff_meal';
+
     const { data: txData, error: txError } = await supabase.from('transactions').insert({
       branch_id: shift.branch_id, shift_id: shift.id, created_by: userId,
       order_number: orderNumber, subtotal,
       discount: totalDiscount,
-      total,
+      total: isStaffMeal ? 0 : total,
       payment_method: paymentMethod,
       gp_percent: gpPercent, gp_amount: gpAmount, delivery_fee: deliveryFee,
-      cash_received: paymentMethod === 'cash' ? parseFloat(cashReceived) || total : null,
-      change_amount: paymentMethod === 'cash' ? changeAmount : null,
+      cash_received: isStaffMeal ? 0 : (paymentMethod === 'cash' ? parseFloat(cashReceived) || total : null),
+      change_amount: isStaffMeal ? 0 : (paymentMethod === 'cash' ? changeAmount : null),
       status: 'completed',
       sales_channel: activeSalesChannel || 'dine_in',
       applied_bill_promotion_id: hasAutoBillPromo ? activeBillPromo.id : null,
@@ -544,7 +546,8 @@ export default function POS() {
 
     // Receipt data
     const currentOrder = {
-      orderNumber, items: [...cart], subtotal, deliveryFee, total,
+      orderNumber, items: [...cart], subtotal, deliveryFee, 
+      total: isStaffMeal ? 0 : total,
       totalDiscount,
       promoName: hasAutoBillPromo ? activeBillPromo.name : null,
       promoDiscount: promoBillDiscountAmount,
@@ -554,8 +557,8 @@ export default function POS() {
       paymentMethod,
       gpPercent: selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0,
       gpAmount: (total * (selectedMethod ? (Number(selectedMethod.gpPercent) || 0) : 0)) / 100,
-      cashReceived: paymentMethod === 'cash' ? effectiveCashReceived : null,
-      changeAmount: paymentMethod === 'cash' ? changeAmount : null,
+      cashReceived: isStaffMeal ? 0 : (paymentMethod === 'cash' ? effectiveCashReceived : null),
+      changeAmount: isStaffMeal ? 0 : (paymentMethod === 'cash' ? changeAmount : null),
       customerName: paymentMethod === 'credit' && selectedCustomer ? customers.find(c => c.id === selectedCustomer)?.name : null,
       user_name: user?.user_metadata?.name || user?.email || 'Cashier',
       date: new Date(),
@@ -883,6 +886,15 @@ export default function POS() {
                   );
                 })}
               </div>
+
+              {paymentMethod === 'staff_meal' && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--accent-danger)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Gift size={20} style={{ color: 'var(--accent-danger)' }} />
+                  <div style={{ color: 'var(--accent-danger)', fontWeight: 'bold', fontSize: '13px' }}>
+                    ⚠️ รายการนี้ไม่มีรายได้เข้าเครื่อง (Non-Revenue)
+                  </div>
+                </div>
+              )}
 
               {configuredDeliveryFee > 0 && (
                 <div className="form-group">

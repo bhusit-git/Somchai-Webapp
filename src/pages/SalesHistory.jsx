@@ -611,10 +611,12 @@ export default function SalesHistory() {
         voidedCount++;
       } else if (t.status === 'completed') {
         // Normal completed sale
-        totalGrossSales += subtotal;
-        totalDiscount += Math.abs(discount);
-        totalNetSales += total;
-        completedCount++;
+        if (t.payment_method !== 'staff_meal') {
+          totalGrossSales += subtotal;
+          totalDiscount += Math.abs(discount);
+          totalNetSales += total;
+          completedCount++;
+        }
       }
     }
   });
@@ -701,6 +703,7 @@ export default function SalesHistory() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-success)', fontWeight: 600 }}>
                   <div style={{ background: 'var(--accent-success-bg)', padding: '6px', borderRadius: '8px' }}><Wallet size={20} /></div>
                   ยอดขายสุทธิ
+                  <span title="ยอดนี้ไม่รวมมูลค่าอาหารพนักงาน" style={{ cursor: 'help', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--bg-tertiary)', fontSize: '10px', color: 'var(--text-muted)' }}>i</span>
                 </div>
                 <h3 style={{ fontSize: '36px', fontWeight: 800, color: '#fff', marginTop: '4px' }}>
                   ฿{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -838,6 +841,11 @@ export default function SalesHistory() {
                             <span style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--bg-tertiary)', borderRadius: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>
                               {tx.order_type === 'delivery' ? 'Delivery' : 'หน้าร้าน'}
                             </span>
+                            {tx.payment_method === 'staff_meal' && (
+                              <span style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--bg-tertiary)', borderRadius: '12px', color: 'var(--text-muted)', fontWeight: 600, border: '1px solid var(--border-primary)' }}>
+                                🎁 Staff Meal
+                              </span>
+                            )}
                             {tx.status !== 'completed' && <span className={`badge ${statusInfo.class}`} style={{ transform: 'scale(0.8)', transformOrigin: 'left center' }}>{statusInfo.label}</span>}
                           </div>
                           <div style={{ fontSize: '13px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>

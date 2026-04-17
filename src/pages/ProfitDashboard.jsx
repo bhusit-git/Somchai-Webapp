@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { calculateFinancials } from '../lib/financials';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function ProfitDashboard() {
   const [safe, setSafe] = useState(null);
@@ -11,6 +13,13 @@ export default function ProfitDashboard() {
   const [fixedCostAmount, setFixedCostAmount] = useState(0);
   const [fixedCostDetails, setFixedCostDetails] = useState([]);
   const [opexDetails, setOpexDetails] = useState([]);
+  const [financialMetrics, setFinancialMetrics] = useState({
+    actualRevenue: 0,
+    staffBenefitMarketValue: 0,
+    staffMealCogs: 0,
+    salesCogs: 0
+  });
+  const [showStaffMealDetails, setShowStaffMealDetails] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [showSafeModal, setShowSafeModal] = useState(false);
@@ -58,20 +67,12 @@ export default function ProfitDashboard() {
     const categoryMap = {};
     (catData || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
 
-    // 3. Fetch Revenue (เดือนปัจจุบัน)
+    // 3. Fetch Transactions (เดือนปัจจุบัน)
     const { data: revData } = await supabase.from('transactions')
-      .select('total, status')
+      .select('id, total, status, payment_method')
       .eq('branch_id', currentBranchId)
       .gte('created_at', startStr)
       .lte('created_at', endStr);
-      
-    let totalRev = 0;
-    (revData || []).forEach(row => {
-      const amt = Number(row.total || 0);
-      if (amt < 0) totalRev += amt;
-      else if (row.status === 'completed') totalRev += amt;
-    });
-    setRevenue(totalRev);
 
     // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
     const { data: expData } = await supabase.from('expenses')
@@ -95,6 +96,46 @@ export default function ProfitDashboard() {
     setFixedCostDetails(fcItems);
     setOpexAmount(totalOPEX);
     setOpexDetails(opexItems);
+
+    // 5. Fetch Products and BOM for Cost Resolution
+    const { data: prodData } = await supabase.from('products').select('id, cost, product_type');
+    const { data: bomData } = await supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required');
+    const { data: invData } = await supabase.from('inventory_items').select('id, cost_per_stock_unit');
+    const { data: comboItems } = await supabase.from('product_combo_items').select('combo_product_id, item_product_id, quantity');
+
+    const invMap = {}; (invData || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
+    
+    // Resolve costs (Simplified logic from COGSEngine)
+    const resolvedCosts = {};
+    (prodData || []).forEach(p => {
+      const boms = (bomData || []).filter(b => b.menu_item_id === p.id);
+      if (boms.length > 0) {
+        resolvedCosts[p.id] = boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0);
+      } else {
+        resolvedCosts[p.id] = Number(p.cost || 0);
+      }
+    });
+    // Combo cost resolution
+    (prodData || []).forEach(p => {
+      if (p.product_type === 'COMBO') {
+        const children = (comboItems || []).filter(ci => ci.combo_product_id === p.id);
+        resolvedCosts[p.id] = children.reduce((s, ci) => s + (Number(resolvedCosts[ci.item_product_id] || 0) * ci.quantity), 0);
+      }
+    });
+
+    // 6. Fetch Transaction Items (MONTHLY FILTERED)
+    const { data: txItems, error: itemsError } = await supabase.from('transaction_items')
+      .select('*, transactions!inner(created_at, status, payment_method)')
+      .gte('transactions.created_at', startStr)
+      .lte('transactions.created_at', endStr)
+      .eq('transactions.status', 'completed')
+      .eq('transactions.branch_id', currentBranchId);
+
+    if (txItems) {
+      const metrics = calculateFinancials(revData || [], txItems, resolvedCosts);
+      setFinancialMetrics(metrics);
+      setRevenue(metrics.actualRevenue); // Update revenue to be Actual Revenue (non-staff)
+    }
 
     setLoading(false);
   }
@@ -144,7 +185,7 @@ export default function ProfitDashboard() {
     return acc;
   }, {});
 
-  const netProfit = revenue - opexAmount - fixedCostAmount;
+  const netProfit = financialMetrics.actualRevenue - financialMetrics.salesCogs - financialMetrics.staffMealCogs - opexAmount - fixedCostAmount;
 
   return (
     <div className="page-container" style={{ paddingBottom: '60px' }}>
@@ -182,41 +223,82 @@ export default function ProfitDashboard() {
           <div className="stats-grid mb-6">
             <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
               <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">ยอดยกมา (Revenue)</h3>
+                <h3 className="text-sm font-semibold text-muted">รายได้จริง (Actual Revenue)</h3>
                 <DollarSign size={20} className="text-info" />
               </div>
-              <p className="text-2xl text-info font-bold">฿{revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">รายได้ทั้งหมดจากบิลที่ขายแล้ว</p>
+              <p className="text-2xl text-info font-bold">฿{financialMetrics.actualRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">ไม่รวมมูลค่าอาหารพนักงาน</p>
             </div>
 
             <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
               <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">รายจ่ายร้าน (Purchases & OPEX)</h3>
-                <TrendingDown size={20} className="text-danger" />
+                <h3 className="text-sm font-semibold text-muted">ต้นทุนขาย (Sales COGS)</h3>
+                <TrendingDown size={20} style={{ color: 'var(--accent-warning)' }} />
               </div>
-              <p className="text-2xl text-danger font-bold">-฿{opexAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = false ({opexDetails.length} รายการ)</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--accent-warning)' }}>-฿{financialMetrics.salesCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">ต้นทุนวัตถุดิบจากการขายจริง</p>
             </div>
 
             <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
               <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">ต้นทุนคงที่ (Fixed Costs)</h3>
-                <Layers size={20} className="text-warning" />
+                <h3 className="text-sm font-semibold text-muted">ต้นทุนพนักงาน (Staff COGS)</h3>
+                <RefreshCw size={20} className="text-danger" />
               </div>
-              <p className="text-2xl text-warning font-bold">-฿{fixedCostAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">ดึงอัตโนมัติจากบิลที่ is_fixed_cost = true ({fixedCostDetails.length} รายการ)</p>
+              <p className="text-2xl text-danger font-bold">-฿{financialMetrics.staffMealCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">ต้นทุนวัตถุดิบของ Staff Meal</p>
             </div>
 
-            <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+              <div className="flex items-center justify-between w-full">
+                <h3 className="text-sm font-semibold text-muted">ค่าใช้จ่ายอื่น (OPEX/Fixed)</h3>
+                <Layers size={20} className="text-muted" />
+              </div>
+              <p className="text-2xl text-muted font-bold">-฿{(opexAmount + fixedCostAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+              <p className="text-xs text-muted">รวมค่าหมวดหมู่รายจ่ายร้าน</p>
+            </div>
+
+            <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px', gridColumn: 'span 2' }}>
               <div className="flex items-center justify-between w-full">
                 <h3 className="text-sm font-bold" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>กำไรสุทธิ (Net Profit)</h3>
                 {netProfit >= 0 ? <TrendingUp size={20} className="text-success" /> : <TrendingDown size={20} className="text-danger" />}
               </div>
-              <p className="text-2xl" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 800 }}>
+              <p className="text-3xl" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 800 }}>
                 {netProfit >= 0 ? '+' : '-'}฿{Math.abs(netProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </p>
               <div style={{ height: '4px', background: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', borderRadius: '2px', marginTop: 'auto' }} />
             </div>
+          </div>
+
+          {/* Staff Meal Insight Accordion */}
+          <div className="card mb-6" style={{ border: '1px solid var(--border-primary)', padding: 0, overflow: 'hidden' }}>
+            <div 
+              style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: 'var(--bg-tertiary)' }}
+              onClick={() => setShowStaffMealDetails(!showStaffMealDetails)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Gift size={20} style={{ color: 'var(--accent-info)' }} />
+                <h4 style={{ fontSize: '14px', fontWeight: 600 }}>วิเคราะห์สวัสดิการอาหารพนักงาน (Staff Meal Insights)</h4>
+              </div>
+              {showStaffMealDetails ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            </div>
+            
+            {showStaffMealDetails && (
+              <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid var(--border-primary)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🥕 ต้นทุนวัตถุดิบจริง (Internal COGS)</span>
+                  <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-danger)' }}>฿{financialMetrics.staffMealCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>เป็นต้นทุนที่คุณควักกระเป๋าจ่ายจริงเพื่อเป็นสวัสดิการ</p>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🎁 มูลค่าราคาขาย (Staff Benefit Value)</span>
+                  <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-info)' }}>฿{financialMetrics.staffBenefitMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>เป็นมูลค่าตลาดของอาหารที่พนักงานได้รับ</p>
+                </div>
+                <div style={{ gridColumn: 'span 2', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px' }}>
+                   <p style={{ margin: 0 }}>💡 <b>Note:</b> กำไรสุทธิถูกคำนวณโดยใช้ <b>หักต้นทุนวัตถุดิบจริง (Internal COGS)</b> ออกไปแล้ว เพื่อสะท้อนความจริงว่าสต็อกหายไปจากการที่พนักงานทานเข้าไป</p>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
