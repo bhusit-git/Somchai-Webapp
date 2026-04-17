@@ -19,6 +19,7 @@ export default function Shifts() {
 
   useEffect(() => { 
     if (user?.branch_id) loadData(); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.branch_id]);
 
   async function loadData() {

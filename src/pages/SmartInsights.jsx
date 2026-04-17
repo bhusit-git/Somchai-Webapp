@@ -228,7 +228,9 @@ export default function SmartInsights() {
   const [topSellers, setTopSellers]   = useState([]);
   const [lowStockItems, setLowStockItems] = useState([]);
 
-  useEffect(() => { loadData(); }, [dateRange]);
+  useEffect(() => { loadData(); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange]);
 
   // Logic: Calculate previous range for growth comparison
   function getPreviousRange(start, end) {

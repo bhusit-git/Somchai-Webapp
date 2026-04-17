@@ -24,8 +24,7 @@ export default function Checklist({ onComplete }) {
     if (onComplete) {
       onComplete(allChecked);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks]);
+  }, [tasks, onComplete]);
 
   const toggleTask = (id) => {
     setTasks(tasks.map((t) => (t.id === id ? { ...t, checked: !t.checked } : t)));

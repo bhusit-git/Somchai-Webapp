@@ -316,7 +316,8 @@ export default function SalesHistory() {
       loadData();
       loadCustomers();
     }
-  }, [user?.id, dateFilterStart, dateFilterEnd, timeFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.branch_id, dateFilterStart, dateFilterEnd, timeFilter]);
 
   async function loadCustomers() {
     if (!user?.branch_id) return;
@@ -621,8 +622,6 @@ export default function SalesHistory() {
     }
   });
 
-  const totalBills = completedCount;
-  const avgBill = totalBills > 0 ? totalNetSales / totalBills : 0;
 
   const isManager = ['owner', 'manager', 'store_manager'].includes(user?.role);
 

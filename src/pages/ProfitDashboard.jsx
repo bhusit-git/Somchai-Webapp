@@ -7,11 +7,9 @@ import { calculateFinancials } from '../lib/financials';
 export default function ProfitDashboard() {
   const [safe, setSafe] = useState(null);
   const [transactions, setTransactions] = useState([]);
-  const [revenue, setRevenue] = useState(0);
   const [opexAmount, setOpexAmount] = useState(0);
   const [fixedCostAmount, setFixedCostAmount] = useState(0);
   const [fixedCostDetails, setFixedCostDetails] = useState([]);
-  const [opexDetails, setOpexDetails] = useState([]);
   const [financialMetrics, setFinancialMetrics] = useState({
     actualRevenue: 0,
     staffBenefitMarketValue: 0,
@@ -32,6 +30,7 @@ export default function ProfitDashboard() {
 
   useEffect(() => {
     if (currentBranchId) fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBranchId]);
 
   async function fetchData() {
@@ -39,8 +38,14 @@ export default function ProfitDashboard() {
     setLoading(true);
 
     try {
-      const startStr = new Date(`${currentMonth}-01T00:00:00+07:00`).toISOString();
-      const endStr = new Date(new Date(`${currentMonth}-01T00:00:00+07:00`).getFullYear(), new Date(`${currentMonth}-01T00:00:00+07:00`).getMonth() + 1, 0, 23, 59, 59).toISOString();
+      const [yearStr, monthStr] = currentMonth.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      
+      const startStr = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+07:00`).toISOString();
+      const endStr = new Date(`${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}T23:59:59+07:00`).toISOString();
+
 
       // 1. Fetch Manager Safe
       const { data: safeData, error: safeError } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
@@ -95,7 +100,6 @@ export default function ProfitDashboard() {
       setFixedCostAmount(totalFC);
       setFixedCostDetails(fcItems);
       setOpexAmount(totalOPEX);
-      setOpexDetails(opexItems);
 
       // 5. Fetch Products and BOM for Cost Resolution
       const { data: prodData } = await supabase.from('products').select('id, cost, product_type');
@@ -124,7 +128,7 @@ export default function ProfitDashboard() {
       });
 
       // 6. Fetch Transaction Items (MONTHLY FILTERED)
-      const { data: txItems, error: itemsError } = await supabase.from('transaction_items')
+      const { data: txItems } = await supabase.from('transaction_items')
         .select('product_id, quantity, total_price, final_price, transaction_id, transactions!inner(created_at, status, payment_method)')
         .gte('transactions.created_at', startStr)
         .lte('transactions.created_at', endStr)
@@ -134,7 +138,6 @@ export default function ProfitDashboard() {
       if (txItems) {
         const metrics = calculateFinancials(revData || [], txItems, resolvedCosts);
         setFinancialMetrics(metrics);
-        setRevenue(metrics.actualRevenue); // Update revenue to be Actual Revenue (non-staff)
       }
     } catch (error) {
       console.error("Error fetching Profit Dashboard data:", error);
