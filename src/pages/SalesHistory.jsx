@@ -56,6 +56,228 @@ const MENU_ITEMS = [
   { id: 'shifts', label: 'กะ' },
 ];
 
+// ─────────────────────────────────────────────────────────────
+// ByPaymentTab — ยอดขาย แยกตาม ประเภทการชำระเงิน
+// ─────────────────────────────────────────────────────────────
+function ByPaymentTab({
+  transactions,
+  paymentMethods,
+  loading,
+  dateFilterStart,
+  dateFilterEnd,
+  setDateFilterStart,
+  setDateFilterEnd,
+  timeFilter,
+  setTimeFilter,
+}) {
+  // Build lookup map: payment_method value → label & icon
+  const pmMap = {};
+  paymentMethods.forEach(pm => {
+    pmMap[pm.value] = pm;
+  });
+
+  // Aggregate per payment method
+  const rowMap = {};
+
+  transactions.forEach(tx => {
+    const key = tx.payment_method || 'unknown';
+    if (!rowMap[key]) {
+      rowMap[key] = {
+        key,
+        label: pmMap[key]?.label || key,
+        iconName: pmMap[key]?.icon || 'DollarSign',
+        saleTxCount: 0,
+        saleAmount: 0,
+        refundTxCount: 0,
+        refundAmount: 0,
+      };
+    }
+    const row = rowMap[key];
+    const total = Number(tx.total || 0);
+
+    if (tx.status === 'completed') {
+      row.saleTxCount += 1;
+      row.saleAmount += total;
+    } else if (tx.status === 'voided' || tx.status === 'refunded') {
+      row.refundTxCount += 1;
+      row.refundAmount += Math.abs(total);
+    }
+  });
+
+  // Sort rows: by saleAmount desc
+  const rows = Object.values(rowMap).sort((a, b) => b.saleAmount - a.saleAmount);
+
+  // Totals
+  const totals = rows.reduce(
+    (acc, r) => ({
+      saleTxCount: acc.saleTxCount + r.saleTxCount,
+      saleAmount: acc.saleAmount + r.saleAmount,
+      refundTxCount: acc.refundTxCount + r.refundTxCount,
+      refundAmount: acc.refundAmount + r.refundAmount,
+    }),
+    { saleTxCount: 0, saleAmount: 0, refundTxCount: 0, refundAmount: 0 }
+  );
+
+  const fmt = (n) => n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div>
+      {/* Filters */}
+      <div className="card" style={{ marginBottom: '16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center' }}>
+          <DateRangePicker
+            startDate={dateFilterStart}
+            endDate={dateFilterEnd}
+            onChange={(s, e) => { setDateFilterStart(s); setDateFilterEnd(e); }}
+          />
+          <TimeRangePicker value={timeFilter} onChange={setTimeFilter} />
+        </div>
+      </div>
+
+      {/* Summary hero cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+        {/* ยอดชำระ */}
+        <div className="stat-card" style={{ background: 'linear-gradient(135deg, rgba(20,83,45,0.4), rgba(34,197,94,0.05))', border: '1px solid var(--accent-success)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-success)', marginBottom: '6px' }}>💰 ยอดชำระเงินรวม</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>฿{fmt(totals.saleAmount)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{totals.saleTxCount.toLocaleString()} ธุรกรรม</div>
+        </div>
+        {/* ยอดคืนเงิน */}
+        <div className="stat-card" style={{ border: '1px solid var(--accent-danger)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-danger)', marginBottom: '6px' }}>↩️ ยอดคืนเงินรวม</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)' }}>฿{fmt(totals.refundAmount)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{totals.refundTxCount.toLocaleString()} ธุรกรรม</div>
+        </div>
+        {/* ยอดสุทธิ */}
+        <div className="stat-card" style={{ border: '1px solid var(--accent-primary)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '6px' }}>✅ ยอดเงินสุทธิ</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)' }}>฿{fmt(totals.saleAmount - totals.refundAmount)}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{rows.length} ประเภทชำระเงิน</div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        {loading ? (
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <span className="animate-pulse">กำลังโหลดข้อมูล...</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <CircleDollarSign size={48} style={{ opacity: 0.3, marginBottom: '12px' }} />
+            <h3>ไม่มีข้อมูล</h3>
+            <p>ไม่พบรายการขายในช่วงเวลาที่เลือก</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '2px solid var(--border-primary)' }}>
+                  {[
+                    'ประเภทชำระเงิน',
+                    'ธุรกรรม',
+                    'ยอดชำระเงิน (฿)',
+                    'ธุรกรรมคืนเงิน',
+                    'ยอดคืนเงิน (฿)',
+                    'ยอดเงินสุทธิ (฿)',
+                  ].map((h, i) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '14px 16px',
+                        textAlign: i === 0 ? 'left' : 'right',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        color: 'var(--text-muted)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => {
+                  const Icon = PM_ICON_MAP[row.iconName] || CircleDollarSign;
+                  const net = row.saleAmount - row.refundAmount;
+                  return (
+                    <tr
+                      key={row.key}
+                      style={{
+                        borderBottom: '1px solid var(--border-primary)',
+                        background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                      onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'}
+                    >
+                      {/* ประเภทชำระเงิน */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Icon size={18} style={{ color: 'var(--accent-primary)' }} />
+                          </div>
+                          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.label}</span>
+                        </div>
+                      </td>
+                      {/* ธุรกรรม */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {row.saleTxCount.toLocaleString()}
+                      </td>
+                      {/* ยอดชำระ */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--accent-success)', fontFamily: 'monospace' }}>
+                        {fmt(row.saleAmount)}
+                      </td>
+                      {/* ธุรกรรมคืนเงิน */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', color: row.refundTxCount > 0 ? 'var(--accent-danger)' : 'var(--text-muted)', fontWeight: 600 }}>
+                        {row.refundTxCount > 0 ? row.refundTxCount.toLocaleString() : '—'}
+                      </td>
+                      {/* ยอดคืนเงิน */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', color: row.refundAmount > 0 ? 'var(--accent-danger)' : 'var(--text-muted)', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {row.refundAmount > 0 ? fmt(row.refundAmount) : '—'}
+                      </td>
+                      {/* ยอดสุทธิ */}
+                      <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: net >= 0 ? 'var(--text-primary)' : 'var(--accent-danger)', fontSize: '15px' }}>
+                        {fmt(net)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {/* Footer totals */}
+              <tfoot>
+                <tr style={{ borderTop: '2px solid var(--border-primary)', background: 'var(--bg-tertiary)' }}>
+                  <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--text-primary)', fontSize: '13px' }}>
+                    รวมทั้งหมด
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {totals.saleTxCount.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, color: 'var(--accent-success)', fontFamily: 'monospace', fontSize: '15px' }}>
+                    {fmt(totals.saleAmount)}
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 700, color: totals.refundTxCount > 0 ? 'var(--accent-danger)' : 'var(--text-muted)' }}>
+                    {totals.refundTxCount > 0 ? totals.refundTxCount.toLocaleString() : '—'}
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, color: totals.refundAmount > 0 ? 'var(--accent-danger)' : 'var(--text-muted)', fontFamily: 'monospace', fontSize: '15px' }}>
+                    {totals.refundAmount > 0 ? fmt(totals.refundAmount) : '—'}
+                  </td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, fontFamily: 'monospace', color: 'var(--accent-primary)', fontSize: '16px' }}>
+                    {fmt(totals.saleAmount - totals.refundAmount)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SalesHistory() {
   const [transactions, setTransactions] = useState([]);
   const [paymentMethods] = useState(() => loadPaymentMethods());
@@ -869,6 +1091,18 @@ export default function SalesHistory() {
             </div>
           )}
         </>
+      ) : activeTab === 'by_payment' ? (
+        <ByPaymentTab
+          transactions={filteredTx}
+          paymentMethods={paymentMethods}
+          loading={loading}
+          dateFilterStart={dateFilterStart}
+          dateFilterEnd={dateFilterEnd}
+          setDateFilterStart={setDateFilterStart}
+          setDateFilterEnd={setDateFilterEnd}
+          timeFilter={timeFilter}
+          setTimeFilter={setTimeFilter}
+        />
       ) : (
         <div>
           <div className="card" style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
