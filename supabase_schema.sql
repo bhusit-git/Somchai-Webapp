@@ -148,6 +148,13 @@ CREATE TABLE public.transactions (
     cash_received NUMERIC(10, 2),
     change_amount NUMERIC(10, 2),
     status TEXT DEFAULT 'completed',
+    -- Extended fields (promotions, delivery, channels, GP)
+    gp_percent NUMERIC(5, 2) DEFAULT 0,
+    gp_amount NUMERIC(10, 2) DEFAULT 0,
+    delivery_fee NUMERIC(10, 2) DEFAULT 0,
+    sales_channel TEXT DEFAULT 'dine_in',
+    applied_bill_promotion_id UUID REFERENCES public.promotions(id),
+    bill_discount_amount NUMERIC(10, 2) DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -158,7 +165,12 @@ CREATE TABLE public.transaction_items (
     product_name TEXT,
     quantity INTEGER NOT NULL,
     unit_price NUMERIC(10, 2) NOT NULL,
-    total_price NUMERIC(10, 2) NOT NULL
+    total_price NUMERIC(10, 2) NOT NULL,
+    -- Promotion & discount tracking
+    applied_promotion_id UUID REFERENCES public.promotions(id),
+    original_price NUMERIC(10, 2) DEFAULT 0,
+    discount_amount NUMERIC(10, 2) DEFAULT 0,
+    final_price NUMERIC(10, 2) DEFAULT 0
 );
 
 -- =========================================================
