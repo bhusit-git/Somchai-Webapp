@@ -929,10 +929,11 @@ export default function POS() {
                 </div>
               )}
             </div>
-            <div className="flex gap-2 w-full mt-4">
-              <button className="btn btn-ghost flex-1" onClick={() => setShowPayment(false)}>ยกเลิก</button>
+            <div className="flex gap-4 w-full mt-4 items-center">
+              <button className="text-secondary text-sm hover:underline px-2" onClick={() => setShowPayment(false)}>ยกเลิก</button>
               <button 
-                className={`btn btn-success btn-lg flex-[2] flex items-center justify-center gap-2 ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''}`} 
+                className={`btn btn-success btn-lg flex-1 flex items-center justify-center gap-2 ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''}`} 
+                style={{ fontSize: '18px', padding: '16px' }}
                 onClick={handleCheckout}
                 disabled={isProcessing}
               >

@@ -13,7 +13,8 @@ import {
   Minus,
   X,
   Lightbulb,
-  DollarSign
+  DollarSign,
+  AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -204,9 +205,10 @@ export default function MenuEngineering() {
   const [sortKey, setSortKey]         = useState('totalRevenue');
   const [sortDir, setSortDir]         = useState('desc');
   const [detailMenu, setDetailMenu]   = useState(null); // modal
+  const [includeStaffMeals, setIncludeStaffMeals] = useState(false);
 
   // ── Load data ────────────────────────────────────────────────────────────────
-  useEffect(() => { loadData(); }, [selectedMonth]);
+  useEffect(() => { loadData(); }, [selectedMonth, includeStaffMeals]);
 
   async function loadData(isRefresh = false) {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -229,33 +231,60 @@ export default function MenuEngineering() {
       // 2. Transaction items this month
       const { data: txItems } = await supabase
         .from('transaction_items')
-        .select('product_id, quantity, total_price, transactions!inner(created_at, status)')
+        .select('product_id, quantity, total_price, transactions!inner(created_at, status, payment_method)')
         .gte('transactions.created_at', monthStart)
         .lte('transactions.created_at', monthEnd)
         .eq('transactions.status', 'completed');
 
       // 3. Aggregate per product
       const aggMap = {};
+      const staffAggMap = {};
+
       (txItems || []).forEach(item => {
         const id = item.product_id;
         if (!id) return;
-        if (!aggMap[id]) aggMap[id] = { qty: 0, revenue: 0 };
-        aggMap[id].qty     += Number(item.quantity);
-        aggMap[id].revenue += Number(item.total_price);
+
+        const isStaff = item.transactions?.payment_method === 'staff_meal';
+        if (isStaff) {
+          if (!staffAggMap[id]) staffAggMap[id] = { qty: 0 };
+          staffAggMap[id].qty += Number(item.quantity);
+        } else {
+          if (!aggMap[id]) aggMap[id] = { qty: 0, revenue: 0 };
+          aggMap[id].qty     += Number(item.quantity);
+          aggMap[id].revenue += Number(item.total_price);
+        }
       });
 
       // 4. Compute metrics
       const processed = products.map(p => {
         const agg = aggMap[p.id] || { qty: 0, revenue: 0 };
+        const staff = staffAggMap[p.id] || { qty: 0 };
+        
         const sellingPrice = Number(p.price);
         const trueCost     = Number(p.cost) || 0;
-        const qtySold      = agg.qty;
-        const revenue      = agg.revenue || sellingPrice * qtySold;
-        const margin       = sellingPrice - trueCost;
+        
+        // Staff Meal impact logic
+        const qtySold = includeStaffMeals ? (agg.qty + staff.qty) : agg.qty;
+        const revenue = (agg.revenue || sellingPrice * agg.qty); // Staff meal revenue is always 0
         const totalRevenue = revenue;
-        const totalMargin  = margin * qtySold;
-        const fcPct        = sellingPrice > 0 ? (trueCost / sellingPrice) * 100 : 0;
-        return { id: p.id, name: p.name, sellingPrice, trueCost, qtySold, revenue, margin, totalRevenue, totalMargin, fcPct };
+        const totalMargin  = (sellingPrice - trueCost) * agg.qty + (0 - trueCost) * staff.qty; // Staff meal has negative margin
+        
+        const margin = qtySold > 0 ? totalMargin / qtySold : (sellingPrice - trueCost);
+        const fcPct  = sellingPrice > 0 ? (trueCost / sellingPrice) * 100 : 0;
+        
+        return { 
+          id: p.id, 
+          name: p.name, 
+          sellingPrice, 
+          trueCost, 
+          qtySold, 
+          qtyStaff: staff.qty,
+          revenue, 
+          margin, 
+          totalRevenue, 
+          totalMargin, 
+          fcPct 
+        };
       });
 
       // 5. Thresholds (only from menus with any sales for meaningful avg)
@@ -333,7 +362,24 @@ export default function MenuEngineering() {
           <h3 style={{ fontSize: '16px', fontWeight: 700 }}>Menu Engineering Matrix</h3>
           <p className="text-sm text-muted">M9: วิเคราะห์ความนิยมและกำไรแยกรายเมนู (BCG Matrix)</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Toggle Switch */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: includeStaffMeals ? 'rgba(245, 158, 11, 0.1)' : 'var(--bg-secondary)', padding: '6px 12px', borderRadius: '20px', border: includeStaffMeals ? '1px solid var(--accent-warning)' : '1px solid var(--border-primary)', transition: 'all 0.2s' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: includeStaffMeals ? 'var(--accent-warning)' : 'var(--text-muted)' }}>รวมสวัสดิการพนักงาน?</span>
+            <label style={{ position: 'relative', display: 'inline-block', width: '34px', height: '20px' }}>
+              <input type="checkbox" checked={includeStaffMeals} onChange={e => setIncludeStaffMeals(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+              <span style={{ 
+                position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
+                backgroundColor: includeStaffMeals ? 'var(--accent-warning)' : '#ccc', transition: '0.4s', borderRadius: '34px' 
+              }}>
+                <span style={{ 
+                  position: 'absolute', content: '""', height: '14px', width: '14px', left: includeStaffMeals ? '17px' : '3px', bottom: '3px', 
+                  backgroundColor: 'white', transition: '0.4s', borderRadius: '50%' 
+                }}></span>
+              </span>
+            </label>
+          </div>
+
           <button className="btn btn-sm btn-ghost" onClick={() => loadData(true)} disabled={refreshing || loading}>
             <RefreshCw size={13} style={{ animation: refreshing ? 'spin 1s linear infinite' : 'none' }} />
             รีเฟรช
@@ -344,10 +390,24 @@ export default function MenuEngineering() {
             className="form-input"
             value={selectedMonth}
             onChange={e => setSelectedMonth(e.target.value)}
-            style={{ width: '180px' }}
+            style={{ width: '150px' }}
           />
         </div>
       </div>
+
+      {/* Warning Banner when Toggle is ON */}
+      {includeStaffMeals && (
+        <div style={{ 
+          background: 'rgba(245, 158, 11, 0.1)', border: '1px solid var(--accent-warning)', 
+          padding: '10px 16px', borderRadius: '12px', marginBottom: '20px', 
+          display: 'flex', alignItems: 'center', gap: '10px', animation: 'pulse 2s infinite' 
+        }}>
+          <AlertCircle size={18} style={{ color: 'var(--accent-warning)' }} />
+          <p style={{ fontSize: '13px', color: 'var(--accent-warning)', fontWeight: 600, margin: 0 }}>
+            ⚠️ โหมดรวมสวัสดิการพนักงาน (ข้อมูลกำไรและคลาสเมนูอาจคลาดเคลื่อนจากพฤติกรรมลูกค้าจริง)
+          </p>
+        </div>
+      )}
 
       {/* Quadrant Stat Cards (clickable filter) */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
@@ -485,10 +545,18 @@ export default function MenuEngineering() {
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>เมนู <SortIcon col="name" /></div>
                 </th>
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('qtySold')}>
-                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>ขายได้ (จาน) <SortIcon col="qtySold" /></div>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>ขายได้ <SortIcon col="qtySold" /></div>
+                </th>
+                <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('qtyStaff')}>
+                  <div 
+                    style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end', color: 'var(--accent-info)' }}
+                    title="จำนวนจานที่พนักงานทานเป็นสวัสดิการ (ไม่นำมาคิดเป็นรายได้)"
+                  >
+                    พนักงานทาน <HelpCircle size={12} style={{ opacity: 0.6 }} /> <SortIcon col="qtyStaff" />
+                  </div>
                 </th>
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('totalRevenue')}>
-                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>รายได้รวม <SortIcon col="totalRevenue" /></div>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>รายได้จริง <SortIcon col="totalRevenue" /></div>
                 </th>
                 <th style={{ textAlign: 'right', cursor: 'pointer' }} onClick={() => toggleSort('margin')}>
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center', justifyContent: 'flex-end' }}>กำไร/จาน <SortIcon col="margin" /></div>
@@ -532,6 +600,9 @@ export default function MenuEngineering() {
                         {m.isPopular ? <TrendingUp size={12} style={{ color: 'var(--accent-success)' }} /> : m.qtySold === 0 ? null : <Minus size={12} style={{ color: 'var(--text-muted)' }} />}
                         {m.qtySold}
                       </div>
+                    </td>
+                    <td style={{ textAlign: 'right', color: m.qtyStaff > 0 ? 'var(--accent-info)' : 'var(--text-muted)', fontSize: '13px' }}>
+                      {m.qtyStaff > 0 ? m.qtyStaff : '—'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {m.qtySold > 0 ? `฿${fmtB(m.totalRevenue)}` : '—'}
@@ -618,11 +689,11 @@ export default function MenuEngineering() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
                 {[
                   { label: 'ขายได้', value: `${detailMenu.qtySold} จาน` },
+                  { label: 'สวัสดิการพนักงาน', value: `${detailMenu.qtyStaff} จาน`, color: 'var(--accent-info)' },
                   { label: 'ราคาขาย', value: `฿${fmtB(detailMenu.sellingPrice)}` },
                   { label: 'ต้นทุน/จาน', value: detailMenu.trueCost > 0 ? `฿${fmtB(detailMenu.trueCost)}` : 'ไม่มีข้อมูล' },
                   { label: 'กำไร/จาน', value: `฿${fmtB(detailMenu.margin)}`, color: detailMenu.margin >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' },
-                  { label: 'FC%', value: detailMenu.trueCost > 0 ? `${detailMenu.fcPct.toFixed(1)}%` : '—', color: detailMenu.fcPct > 35 ? 'var(--accent-danger)' : 'var(--accent-success)' },
-                  { label: 'รายได้รวม', value: detailMenu.qtySold > 0 ? `฿${fmtB(detailMenu.totalRevenue)}` : '—', color: 'var(--accent-info)' }
+                  { label: 'รายได้จริง', value: detailMenu.qtySold > 0 ? `฿${fmtB(detailMenu.revenue)}` : '—', color: 'var(--accent-info)' }
                 ].map(item => (
                   <div key={item.label} style={{ background: 'var(--bg-tertiary)', padding: '12px', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>{item.label}</div>
