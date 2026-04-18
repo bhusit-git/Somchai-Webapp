@@ -22,6 +22,12 @@ export default function Login() {
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
 
+    // Check for expired session from URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('expired') === 'true') {
+      setError('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+    }
+
     // Load company info
     const saved = localStorage.getItem('companyInfo');
     if (saved) {

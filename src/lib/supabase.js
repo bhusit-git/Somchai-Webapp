@@ -5,7 +5,7 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: {
-    fetch: (url, options) => {
+    fetch: async (url, options) => {
       try {
         const token = localStorage.getItem('cashsync_jwt');
         if (token) {
@@ -13,7 +13,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
           options.headers = new Headers(options.headers || {});
           options.headers.set('Authorization', `Bearer ${token}`);
           
-          // Debugging log (can be removed in prod window.location to prevent logging in prod)
           if (!url.includes('/functions/v1/verify-pin') && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
               console.log('[Supabase Fetch] Injected Authorization Header for:', url);
           }
@@ -21,7 +20,34 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       } catch (err) {
         console.error('Error applying custom JWT', err);
       }
-      return fetch(url, options);
+
+      const response = await fetch(url, options);
+
+      // Handle 401 Unauthorized (JWT Expired)
+      if (response.status === 401 && !url.includes('/functions/v1/verify-pin')) {
+        const clone = response.clone();
+        try {
+          const body = await clone.json();
+          const errorMsg = body.error || body.message || '';
+          
+          if (errorMsg.includes('JWT expired') || errorMsg.includes('invalid') || errorMsg.includes('expired')) {
+            console.warn('[Supabase] Auth session expired. Redirecting to login.');
+            
+            // Clear identity
+            localStorage.removeItem('cashsync_user');
+            localStorage.removeItem('cashsync_jwt');
+            
+            // Hard redirect if we are in a browser context
+            if (typeof window !== 'undefined') {
+              window.location.href = '/login?expired=true';
+            }
+          }
+        } catch (e) {
+          // Ignored if not JSON or parsing fails
+        }
+      }
+
+      return response;
     }
   }
 });

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText, Gift, ChevronDown, ChevronUp, AlertTriangle, Calendar, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -219,6 +220,26 @@ export default function ProfitDashboard() {
   const expectedSafeBalance = (reconData?.opening_balance || 0) + totalCashSalesFromShifts - totalCashExpensesFromShifts;
 
   const netProfit = financialMetrics.actualRevenue - financialMetrics.salesCogs - financialMetrics.staffMealCogs - opexAmount - fixedCostAmount;
+
+  async function handleSafeSubmit(e) {
+    e.preventDefault();
+    if (!safe?.id || !safeForm.amount) return;
+    try {
+      const { error } = await supabase.from('safe_transactions').insert({
+        safe_id: safe.id,
+        type: safeForm.type,
+        amount: Number(safeForm.amount),
+        reason: safeForm.reason,
+        created_by: user?.id
+      });
+      if (error) throw error;
+      setShowSafeModal(false);
+      setSafeForm({ type: 'in', amount: '', reason: '' });
+      fetchData();
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + err.message);
+    }
+  }
 
   return (
     <div className="page-container" style={{ paddingBottom: '60px' }}>
