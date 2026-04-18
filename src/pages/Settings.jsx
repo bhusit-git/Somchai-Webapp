@@ -261,7 +261,8 @@ function UsersTab() {
         setNewUser(prev => ({ ...prev, branch_id: user.branch_id }));
       }
     } catch (err) {
-      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล');
+      console.error('UsersTab loadData Error:', err);
+      alert('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + (err?.message || err));
     } finally {
       setLoading(false);
     }

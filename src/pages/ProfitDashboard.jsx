@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText, Gift, ChevronDown, ChevronUp } from 'lucide-react';
+import { Lock, DollarSign, TrendingUp, TrendingDown, X, ArrowUpRight, ArrowDownRight, RefreshCw, Layers, FileText, Gift, ChevronDown, ChevronUp, AlertTriangle, Calendar, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { calculateFinancials } from '../lib/financials';
@@ -7,6 +6,7 @@ import { calculateFinancials } from '../lib/financials';
 export default function ProfitDashboard() {
   const [safe, setSafe] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [pastSummaries, setPastSummaries] = useState(null); // Snapshot data
   const [opexAmount, setOpexAmount] = useState(0);
   const [fixedCostAmount, setFixedCostAmount] = useState(0);
   const [fixedCostDetails, setFixedCostDetails] = useState([]);
@@ -19,177 +19,204 @@ export default function ProfitDashboard() {
   const [showStaffMealDetails, setShowStaffMealDetails] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // --- Resolution 2: EOD Reconciliation State ---
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [reconData, setReconData] = useState(null); // Existing recon from daily_reconciliations
+  const [actualCashCount, setActualCashCount] = useState('');
+  const [shiftsData, setShiftsData] = useState([]); // Closed shifts for the date
+  const [isSubmittingRecon, setIsSubmittingRecon] = useState(false);
+
   const [showSafeModal, setShowSafeModal] = useState(false);
   const [safeForm, setSafeForm] = useState({ type: 'in', amount: '', reason: '' });
 
   const { user } = useAuth();
   const currentBranchId = user?.branch_id;
-  const currentUserId = user?.id;
   
-  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const currentMonth = selectedDate.slice(0, 7); // YYYY-MM
+  const isToday = selectedDate === new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (currentBranchId) fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentBranchId]);
+  }, [currentBranchId, selectedDate]);
 
   async function fetchData() {
     if (!currentBranchId) return;
     setLoading(true);
 
     try {
-      const [yearStr, monthStr] = currentMonth.split('-');
-      const year = parseInt(yearStr, 10);
-      const month = parseInt(monthStr, 10);
-      const daysInMonth = new Date(year, month, 0).getDate();
-      
-      const startStr = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+07:00`).toISOString();
-      const endStr = new Date(`${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}T23:59:59+07:00`).toISOString();
-
-
       // 1. Fetch Manager Safe
-      const { data: safeData, error: safeError } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
-      
-      let currentSafe = safeData;
+      const { data: safeData } = await supabase.from('manager_safes').select('*').eq('branch_id', currentBranchId).maybeSingle();
+      setSafe(safeData);
 
-      // Auto-create safe if it doesn't exist for this branch
-      if (!currentSafe && !safeError) {
-        const { data: newSafe } = await supabase.from('manager_safes').insert({
-          branch_id: currentBranchId,
-          balance: 0,
-        }).select().single();
-        currentSafe = newSafe;
-      }
+      // --- Resolution 3: Hybrid Fetching ---
+      if (isToday) {
+        // [LIVE FETCHING]
+        const startStr = `${selectedDate}T00:00:00+07:00`;
+        const endStr = `${selectedDate}T23:59:59+07:00`;
 
-      if (currentSafe) {
-        setSafe(currentSafe);
-        const { data: txData } = await supabase.from('safe_transactions').select('*, creator:users!created_by(name)').eq('safe_id', currentSafe.id).order('created_at', { ascending: false }).limit(20);
-        setTransactions(txData || []);
-      }
+        // Fetch Transactions & Expenses Live
+        const [revRes, expRes, catRes, prodRes, bomRes, invRes, comboRes, shiftRes, reconRes] = await Promise.all([
+          supabase.from('transactions').select('id, total, status, payment_method').eq('branch_id', currentBranchId).gte('created_at', startStr).lte('created_at', endStr),
+          supabase.from('expenses').select('*').eq('branch_id', currentBranchId).eq('status', 'approved').gte('created_at', startStr).lte('created_at', endStr),
+          supabase.from('expense_categories').select('id, name, is_fixed_cost').eq('is_active', true),
+          supabase.from('products').select('id, cost, product_type'),
+          supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required'),
+          supabase.from('inventory_items').select('id, cost_per_stock_unit'),
+          supabase.from('product_combo_items').select('combo_product_id, item_product_id, quantity'),
+          supabase.from('shifts').select('*').eq('branch_id', currentBranchId).eq('status', 'closed').gte('closed_at', startStr).lte('closed_at', endStr),
+          supabase.from('daily_reconciliations').select('*').eq('branch_id', currentBranchId).eq('reconciliation_date', selectedDate).maybeSingle()
+        ]);
 
-      // 2. Fetch Expense Categories (พร้อม is_fixed_cost flag)
-      const { data: catData } = await supabase.from('expense_categories').select('id, name, is_fixed_cost').eq('is_active', true);
-      const categoryMap = {};
-      (catData || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
+        const categoryMap = {};
+        (catRes.data || []).forEach(c => { categoryMap[c.name] = c.is_fixed_cost || false; });
 
-      // 3. Fetch Transactions (เดือนปัจจุบัน)
-      const { data: revData } = await supabase.from('transactions')
-        .select('id, total, status, payment_method')
-        .eq('branch_id', currentBranchId)
-        .gte('created_at', startStr)
-        .lte('created_at', endStr);
+        const allExpenses = expRes.data || [];
+        const fcItems = allExpenses.filter(e => categoryMap[e.category] === true);
+        const opexItems = allExpenses.filter(e => categoryMap[e.category] !== true);
 
-      // 4. Fetch ALL Expenses ประจำเดือน แล้วแยกตะกร้าอัตโนมัติ
-      const { data: expData } = await supabase.from('expenses')
-        .select('id, amount, category, description, created_at, receipt_url')
-        .eq('branch_id', currentBranchId)
-        .eq('status', 'approved')
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('created_at', { ascending: false });
+        setFixedCostAmount(fcItems.reduce((s, e) => s + Number(e.amount), 0));
+        setFixedCostDetails(fcItems);
+        setOpexAmount(opexItems.reduce((s, e) => s + Number(e.amount), 0));
 
-      const allExpenses = expData || [];
-      
-      // แยก Fixed Cost vs OPEX ตาม is_fixed_cost flag ของ category
-      const fcItems = allExpenses.filter(e => categoryMap[e.category] === true);
-      const opexItems = allExpenses.filter(e => categoryMap[e.category] !== true);
+        // Resolve costs for Live COGS
+        const invMap = {}; (invRes.data || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
+        const resCosts = {};
+        (prodRes.data || []).forEach(p => {
+          const boms = (bomRes.data || []).filter(b => b.menu_item_id === p.id);
+          resCosts[p.id] = boms.length > 0 ? boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0) : Number(p.cost || 0);
+        });
+        (prodRes.data || []).forEach(p => {
+          if (p.product_type === 'COMBO') {
+            const children = (comboRes.data || []).filter(ci => ci.combo_product_id === p.id);
+            resCosts[p.id] = children.reduce((s, ci) => s + (Number(resCosts[ci.item_product_id] || 0) * ci.quantity), 0);
+          }
+        });
 
-      const totalFC = fcItems.reduce((s, e) => s + Number(e.amount), 0);
-      const totalOPEX = opexItems.reduce((s, e) => s + Number(e.amount), 0);
+        // Fetch Items for Live COGS
+        const { data: txItems } = await supabase.from('transaction_items')
+          .select('product_id, quantity, total_price, final_price, transaction_id, transactions!inner(created_at, status, payment_method)')
+          .gte('transactions.created_at', startStr).lte('transactions.created_at', endStr)
+          .eq('transactions.status', 'completed').eq('transactions.branch_id', currentBranchId);
 
-      setFixedCostAmount(totalFC);
-      setFixedCostDetails(fcItems);
-      setOpexAmount(totalOPEX);
+        if (txItems) {
+          const metrics = calculateFinancials(revRes.data || [], txItems, resCosts);
+          setFinancialMetrics(metrics);
+        }
 
-      // 5. Fetch Products and BOM for Cost Resolution
-      const { data: prodData } = await supabase.from('products').select('id, cost, product_type');
-      const { data: bomData } = await supabase.from('menu_item_ingredients').select('menu_item_id, inventory_item_id, qty_required');
-      const { data: invData } = await supabase.from('inventory_items').select('id, cost_per_stock_unit');
-      const { data: comboItems } = await supabase.from('product_combo_items').select('combo_product_id, item_product_id, quantity');
+        setShiftsData(shiftRes.data || []);
+        setReconData(reconRes.data);
+        if (reconRes.data) setActualCashCount(reconRes.data.actual_balance);
+        else setActualCashCount('');
+        setPastSummaries(null);
+      } else {
+        // [SNAPSHOT FETCHING]
+        const { data: summaryData } = await supabase.from('profit_loss_summaries')
+          .select('*').eq('branch_id', currentBranchId).eq('summary_date', selectedDate).maybeSingle();
+        
+        const { data: reconRes } = await supabase.from('daily_reconciliations')
+          .select('*').eq('branch_id', currentBranchId).eq('reconciliation_date', selectedDate).maybeSingle();
 
-      const invMap = {}; (invData || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
-      
-      // Resolve costs (Simplified logic from COGSEngine)
-      const resolvedCosts = {};
-      (prodData || []).forEach(p => {
-        const boms = (bomData || []).filter(b => b.menu_item_id === p.id);
-        if (boms.length > 0) {
-          resolvedCosts[p.id] = boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0);
+        if (summaryData) {
+          setFinancialMetrics({
+            actualRevenue: Number(summaryData.total_revenue),
+            salesCogs: Number(summaryData.total_cogs),
+            staffMealCogs: 0, // Simplified for history
+            staffBenefitMarketValue: 0
+          });
+          setOpexAmount(Number(summaryData.total_expenses));
+          setFixedCostAmount(0); // Aggregated into total_expenses in snapshot
+          setPastSummaries(summaryData);
         } else {
-          resolvedCosts[p.id] = Number(p.cost || 0);
+          setFinancialMetrics({ actualRevenue: 0, salesCogs: 0, staffMealCogs: 0, staffBenefitMarketValue: 0 });
+          setOpexAmount(0);
+          setFixedCostAmount(0);
+          setPastSummaries(null);
         }
-      });
-      // Combo cost resolution
-      (prodData || []).forEach(p => {
-        if (p.product_type === 'COMBO') {
-          const children = (comboItems || []).filter(ci => ci.combo_product_id === p.id);
-          resolvedCosts[p.id] = children.reduce((s, ci) => s + (Number(resolvedCosts[ci.item_product_id] || 0) * ci.quantity), 0);
-        }
-      });
+        setReconData(reconRes);
+        if (reconRes) setActualCashCount(reconRes.actual_balance);
+        else setActualCashCount('');
+        setShiftsData([]); // Historical shifts optional, we trust recon record
+      }
 
-      // 6. Fetch Transaction Items (MONTHLY FILTERED)
-      const { data: txItems } = await supabase.from('transaction_items')
-        .select('product_id, quantity, total_price, final_price, transaction_id, transactions!inner(created_at, status, payment_method)')
-        .gte('transactions.created_at', startStr)
-        .lte('transactions.created_at', endStr)
-        .eq('transactions.status', 'completed')
-        .eq('transactions.branch_id', currentBranchId);
-
-      if (txItems) {
-        const metrics = calculateFinancials(revData || [], txItems, resolvedCosts);
-        setFinancialMetrics(metrics);
+      // 4. Fetch Safe Transactions (Ledger)
+      if (safeData?.id) {
+        const { data: stData } = await supabase.from('safe_transactions')
+          .select('*')
+          .eq('safe_id', safeData.id)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        setTransactions(stData || []);
       }
     } catch (error) {
-      console.error("Error fetching Profit Dashboard data:", error);
+      console.error("Error fetching Dashboard data:", error);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSafeCutoff() {
-    if (!safe?.id) return;
-    if (!confirm('ยืนยันตัดยอดบัญชีสะสม? การกระทำนี้จะบันทึกวันที่ปัจจุบันเป็นวันตัดรอบล่าสุด')) return;
-    
-    const { error } = await supabase.from('manager_safes')
-      .update({ last_cutoff_date: new Date().toISOString() })
-      .eq('id', safe.id);
+  // --- Resolution 1: EOD Reconciliation Submission ---
+  async function handleSubmitReconciliation() {
+    if (!currentBranchId || actualCashCount === '') return;
+    setIsSubmittingRecon(true);
 
-    if (!error) fetchData();
-    else alert('Error: ' + error.message);
-  }
+    try {
+      const actual = Number(actualCashCount);
+      const expected = expectedSafeBalance; // Derived from shifts below
+      const discrepancy = actual - expected;
 
-  async function handleSafeSubmit(e) {
-    e.preventDefault();
-    if (!safe?.id || !safeForm.amount || !currentUserId) return;
+      // 1. Update/Insert daily_reconciliations
+      const reconPayload = {
+        branch_id: currentBranchId,
+        reconciliation_date: selectedDate,
+        cash_sales: totalCashSalesFromShifts,
+        cash_expenses: totalCashExpensesFromShifts,
+        expected_balance: expected,
+        actual_balance: actual,
+        discrepancy_amount: discrepancy,
+        status: discrepancy === 0 ? 'matched' : (discrepancy < 0 ? 'short' : 'over'),
+        updated_at: new Date().toISOString()
+      };
 
-    const amt = parseFloat(safeForm.amount);
-    const newBalance = safeForm.type === 'in' ? Number(safe.balance) + amt : Number(safe.balance) - amt;
+      const { data: newRecon, error: reconErr } = await supabase
+        .from('daily_reconciliations')
+        .upsert(reconPayload, { onConflict: 'branch_id, reconciliation_date' })
+        .select().single();
 
-    const { error: txError } = await supabase.from('safe_transactions').insert({
-      safe_id: safe.id,
-      type: safeForm.type,
-      amount: amt,
-      reason: safeForm.reason,
-      created_by: currentUserId
-    });
+      if (reconErr) throw reconErr;
 
-    if (!txError) {
-      await supabase.from('manager_safes').update({ balance: newBalance }).eq('id', safe.id);
-      setShowSafeModal(false);
-      setSafeForm({ type: 'in', amount: '', reason: '' });
+      // 2. Update manager_safes balance (Resolution 1.2)
+      const { error: safeErr } = await supabase
+        .from('manager_safes')
+        .update({ balance: actual })
+        .eq('branch_id', currentBranchId);
+      
+      if (safeErr) throw safeErr;
+
+      // 3. Log audit adjustment if needed (Resolution 1.3)
+      if (discrepancy !== 0) {
+        await supabase.from('safe_transactions').insert({
+          safe_id: safe.id,
+          type: 'audit_adjustment',
+          amount: Math.abs(discrepancy),
+          reason: `System Auto-Adjustment from EOD Reconciliation. Discrepancy: ${discrepancy}`,
+          created_by: user.id
+        });
+      }
+
+      alert('ยืนยันยอดตู้เซฟและเปรียบเทียบกำไรสำเร็จ');
       fetchData();
-    } else {
-      alert('Error: ' + txError.message);
+    } catch (err) {
+      alert('เกิดข้อผิดพลาด: ' + err.message);
+    } finally {
+      setIsSubmittingRecon(false);
     }
   }
 
-  // รวม Fixed Cost ตาม category name
-  const fixedCostByCategory = fixedCostDetails.reduce((acc, item) => {
-    if (!acc[item.category]) acc[item.category] = { total: 0, count: 0 };
-    acc[item.category].total += Number(item.amount);
-    acc[item.category].count += 1;
-    return acc;
-  }, {});
+  // --- Derived Calculations for Reconciliation (Resolution 2) ---
+  const totalCashSalesFromShifts = shiftsData.reduce((s, sh) => s + Number(sh.expected_cash || 0) - Number(sh.opening_cash || 0), 0);
+  const totalCashExpensesFromShifts = 0; // Handled within expected_cash logic of shifts usually
+  const expectedSafeBalance = (reconData?.opening_balance || 0) + totalCashSalesFromShifts - totalCashExpensesFromShifts;
 
   const netProfit = financialMetrics.actualRevenue - financialMetrics.salesCogs - financialMetrics.staffMealCogs - opexAmount - fixedCostAmount;
 
@@ -197,12 +224,20 @@ export default function ProfitDashboard() {
     <div className="page-container" style={{ paddingBottom: '60px' }}>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 style={{ fontSize: '18px', fontWeight: 700 }}>กระดานวิเคราะห์ตู้เซฟและกำไรสุทธิ</h3>
-          <p className="text-sm text-muted">M9: Manager Safe & P&L Statement (เดือน {currentMonth})</p>
+          <h3 style={{ fontSize: '20px', fontWeight: 800 }}>วิเคราะห์กำไรและตู้เซฟ</h3>
+          <p className="text-sm text-muted">Safe & Net Profit Analysis Dashboard ({selectedDate})</p>
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={fetchData} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> รีเฟรช
-        </button>
+        <div className="flex items-center gap-3">
+          <input 
+            type="date" 
+            className="form-input" 
+            value={selectedDate} 
+            onChange={e => setSelectedDate(e.target.value)} 
+          />
+          <button className="btn btn-sm btn-ghost" onClick={fetchData} disabled={loading}>
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> รีเฟรช
+          </button>
+        </div>
       </div>
 
       {/* Info Banner: Single Source of Truth */}
@@ -222,212 +257,214 @@ export default function ProfitDashboard() {
         </p>
       </div>
 
-      {/* P&L Cards - Hidden from Store Manager */}
-      {['owner', 'manager'].includes(user?.role) && (
-        <>
-          <h4 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '12px' }}>📊 สรุปกำไรสุทธิตามกระแสเงินสด (Cash P&L) - เดือนปัจจุบัน</h4>
-          <div className="stats-grid mb-6">
-            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">รายได้จริง (Actual Revenue)</h3>
-                <DollarSign size={20} className="text-info" />
-              </div>
-              <p className="text-2xl text-info font-bold">฿{financialMetrics.actualRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">ไม่รวมมูลค่าอาหารพนักงาน</p>
-            </div>
-
-            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">ต้นทุนขาย (Sales COGS)</h3>
-                <TrendingDown size={20} style={{ color: 'var(--accent-warning)' }} />
-              </div>
-              <p className="text-2xl font-bold" style={{ color: 'var(--accent-warning)' }}>-฿{financialMetrics.salesCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">ต้นทุนวัตถุดิบจากการขายจริง</p>
-            </div>
-
-            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">ต้นทุนพนักงาน (Staff COGS)</h3>
-                <RefreshCw size={20} className="text-danger" />
-              </div>
-              <p className="text-2xl text-danger font-bold">-฿{financialMetrics.staffMealCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">ต้นทุนวัตถุดิบของ Staff Meal</p>
-            </div>
-
-            <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-semibold text-muted">ค่าใช้จ่ายอื่น (OPEX/Fixed)</h3>
-                <Layers size={20} className="text-muted" />
-              </div>
-              <p className="text-2xl text-muted font-bold">-฿{(opexAmount + fixedCostAmount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-              <p className="text-xs text-muted">รวมค่าหมวดหมู่รายจ่ายร้าน</p>
-            </div>
-
-            <div className={`stat-card ${netProfit >= 0 ? 'success' : 'danger'}`} style={{ border: `2px solid ${netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)'}50`, flexDirection: 'column', alignItems: 'stretch', gap: '8px', gridColumn: 'span 2' }}>
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-sm font-bold" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)' }}>กำไรสุทธิ (Net Profit)</h3>
-                {netProfit >= 0 ? <TrendingUp size={20} className="text-success" /> : <TrendingDown size={20} className="text-danger" />}
-              </div>
-              <p className="text-3xl" style={{ color: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', fontWeight: 800 }}>
-                {netProfit >= 0 ? '+' : '-'}฿{Math.abs(netProfit).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </p>
-              <div style={{ height: '4px', background: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', borderRadius: '2px', marginTop: 'auto' }} />
-            </div>
+      {/* Section 1: The Vitals (Summary Cards) */}
+      <div className="stats-grid mb-6" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+        {/* Card 1: Net Profit */}
+        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+          <div className="flex items-center justify-between w-full">
+            <h3 className="text-sm font-semibold text-muted">กำไรสุทธิ (Net Profit)</h3>
+            <TrendingUp size={20} className={netProfit >= 0 ? 'text-success' : 'text-danger'} />
           </div>
-
-          {/* Staff Meal Insight Accordion */}
-          <div className="card mb-6" style={{ border: '1px solid var(--border-primary)', padding: 0, overflow: 'hidden' }}>
-            <div 
-              style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', background: 'var(--bg-tertiary)' }}
-              onClick={() => setShowStaffMealDetails(!showStaffMealDetails)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Gift size={20} style={{ color: 'var(--accent-info)' }} />
-                <h4 style={{ fontSize: '14px', fontWeight: 600 }}>วิเคราะห์สวัสดิการอาหารพนักงาน (Staff Meal Insights)</h4>
-              </div>
-              {showStaffMealDetails ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </div>
-            
-            {showStaffMealDetails && (
-              <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', borderTop: '1px solid var(--border-primary)' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🥕 ต้นทุนวัตถุดิบจริง (Internal COGS)</span>
-                  <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-danger)' }}>฿{financialMetrics.staffMealCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>เป็นต้นทุนที่คุณควักกระเป๋าจ่ายจริงเพื่อเป็นสวัสดิการ</p>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>🎁 มูลค่าราคาขาย (Staff Benefit Value)</span>
-                  <span style={{ fontSize: '18px', fontWeight: 700, color: 'var(--accent-info)' }}>฿{financialMetrics.staffBenefitMarketValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>เป็นมูลค่าตลาดของอาหารที่พนักงานได้รับ</p>
-                </div>
-                <div style={{ gridColumn: 'span 2', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '8px', fontSize: '12px' }}>
-                   <p style={{ margin: 0 }}>💡 <b>Note:</b> กำไรสุทธิถูกคำนวณโดยใช้ <b>หักต้นทุนวัตถุดิบจริง (Internal COGS)</b> ออกไปแล้ว เพื่อสะท้อนความจริงว่าสต็อกหายไปจากการที่พนักงานทานเข้าไป</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      {/* Safe Section */}
-      <div className="card mb-6" style={{ background: 'linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary))', border: '1px solid var(--border-primary)' }}>
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div style={{ padding: '12px', background: 'var(--accent-success-bg)', borderRadius: '12px', color: 'var(--accent-success)' }}>
-              <Lock size={28} />
-            </div>
-            <div>
-              <h3 style={{ fontSize: '15px', color: 'var(--text-muted)' }}>ยอดเงินสดในตู้เซฟ (Manager Safe Balance)</h3>
-              <p style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                ฿{safe ? Number(safe.balance).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button className="btn btn-outline" onClick={() => setShowSafeModal(true)}>
-              <DollarSign size={16} /> นำเงินเข้า/ออก (ฝากเงิน)
-            </button>
-            <button className="btn btn-outline text-success border-green-500/50 hover:bg-green-500/10" onClick={handleSafeCutoff}>
-              <RefreshCw size={16} /> ตัดรอบบัญชีสะสม
-            </button>
-          </div>
+          <p className={`text-2xl font-bold ${netProfit >= 0 ? 'text-success' : 'text-danger'}`}>
+            ฿{netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </p>
+          <div style={{ height: '4px', background: netProfit >= 0 ? 'var(--accent-success)' : 'var(--accent-danger)', borderRadius: '2px' }} />
         </div>
-        <div className="text-xs text-muted mt-4">
-          ตัดรอบข้อมูลล่าสุด: {safe?.last_cutoff_date ? new Date(safe.last_cutoff_date).toLocaleString('th-TH') : 'ยังไม่เคยตัดรอบ'}
+
+        {/* Card 2: Net Profit Margin */}
+        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+          <div className="flex items-center justify-between w-full">
+            <h3 className="text-sm font-semibold text-muted">Profit Margin %</h3>
+            <Layers size={20} className="text-info" />
+          </div>
+          <p className="text-2xl font-bold text-info">
+            {financialMetrics.actualRevenue > 0 ? ((netProfit / financialMetrics.actualRevenue) * 100).toFixed(1) : 0}%
+          </p>
+          <p className="text-xs text-muted">ของรายรับรวม</p>
+        </div>
+
+        {/* Card 3: Safe Discrepancy (Highlighted) */}
+        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px', border: reconData?.discrepancy_amount < 0 ? '2px solid var(--accent-danger)' : 'none' }}>
+          <div className="flex items-center justify-between w-full">
+            <h3 className="text-sm font-semibold text-muted">ส่วนต่างตู้เซฟ</h3>
+            {reconData?.discrepancy_amount < 0 ? <AlertTriangle size={20} className="text-danger animate-pulse" /> : <Lock size={20} className="text-muted" />}
+          </div>
+          <p className={`text-2xl font-bold ${!reconData ? 'text-muted' : (reconData.discrepancy_amount < 0 ? 'text-danger' : (reconData.discrepancy_amount > 0 ? 'text-warning' : 'text-success'))}`}>
+            ฿{reconData ? Number(reconData.discrepancy_amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}
+          </p>
+          {reconData?.discrepancy_amount < 0 && <p className="text-[10px] text-danger font-bold">⚠️ เงินขาด ต้องตรวจสอบ!</p>}
+        </div>
+
+        {/* Card 4: Total Revenue */}
+        <div className="stat-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '8px' }}>
+          <div className="flex items-center justify-between w-full">
+            <h3 className="text-sm font-semibold text-muted">รายรับรวม</h3>
+            <DollarSign size={20} className="text-primary" />
+          </div>
+          <p className="text-2xl font-bold text-primary">฿{financialMetrics.actualRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+          <p className="text-xs text-muted">ไม่รวมสวัสดิการพนักงาน</p>
         </div>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: ['owner', 'manager'].includes(user?.role) ? '1fr 1fr' : '1fr', gap: '20px', marginTop: '20px' }}>
-        {/* Fixed Cost — Auto-pull from expenses - Hidden from Store Manager */}
-        {['owner', 'manager'].includes(user?.role) && (
-        <div className="content-card">
-          <div className="card-header">
-            <h3 className="card-title">🏷️ ต้นทุนคงที่รายเดือน (Auto) — {currentMonth}</h3>
+      {/* Section 2: Safe Reconciliation & Shift Integration (Resultion 1 & 2) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Left: EOD Reconciliation Console */}
+        <div className="card" style={{ border: '2px solid var(--accent-primary)20', background: 'var(--bg-secondary)' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <CheckCircle2 className="text-primary" size={20} />
+            <h4 style={{ fontSize: '16px', fontWeight: 700 }}>บันทึกและยืนยันยอดตู้เซฟประจำวัน (EOD)</h4>
           </div>
-          {/* สรุปตามหมวดหมู่ */}
-          {Object.keys(fixedCostByCategory).length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '12px 16px', borderBottom: '1px solid var(--border-primary)' }}>
-              {Object.entries(fixedCostByCategory).map(([cat, data]) => (
-                <div key={cat} style={{
-                  background: 'var(--bg-tertiary)',
-                  border: '1px solid var(--border-primary)',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px'
-                }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{cat} ({data.count} บิล)</span>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--accent-warning)' }}>
-                    ฿{data.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              ))}
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-tertiary rounded-lg">
+                <span className="text-[10px] text-muted block mb-1 uppercase tracking-wider">ยอดเงินยกมา (Opening)</span>
+                <span className="text-lg font-bold">฿{(reconData?.opening_balance || 0).toLocaleString()}</span>
+              </div>
+              <div className="p-3 bg-tertiary rounded-lg">
+                <span className="text-[10px] text-muted block mb-1 uppercase tracking-wider">ยอดขายเงินสด (Cash Sales)</span>
+                <span className="text-lg font-bold text-success">+฿{totalCashSalesFromShifts.toLocaleString()}</span>
+              </div>
             </div>
-          )}
-          <div className="table-responsive">
-            <table className="table">
+
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-semibold">ยอดเงินสดที่ต้องมี (Expected Cash)</span>
+                <span className="text-xl font-extrabold text-primary">฿{expectedSafeBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+              <p className="text-[11px] text-muted">คำนวณจาก: เปิดเซฟ + ยอดขายเงินสด ({shiftsData.length} กะ) - ค่าใช้จ่ายเงินสด</p>
+            </div>
+
+            <div className="form-group">
+              <label className="text-sm font-bold mb-2 block">ระบุยอดเงินสดที่นับได้จริง (Actual Cash)</label>
+              <div className="relative">
+                <input 
+                  type="number" 
+                  className="form-control text-2xl font-bold py-4 pl-10 h-auto" 
+                  placeholder="0.00"
+                  value={actualCashCount}
+                  onChange={e => setActualCashCount(e.target.value)}
+                  disabled={!isToday && reconData?.status === 'matched'}
+                />
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={20} />
+              </div>
+            </div>
+
+            <button 
+              className="btn btn-primary w-full py-4 text-lg font-bold rounded-xl shadow-lg shadow-primary/20"
+              onClick={handleSubmitReconciliation}
+              disabled={isSubmittingRecon || actualCashCount === ''}
+            >
+              {isSubmittingRecon ? <RefreshCw className="animate-spin mr-2" /> : <Lock className="mr-2" />}
+              {reconData ? 'อัปเดตและยืนยันยอดใหม่' : 'ยืนยันยอดและปิดวัน'}
+            </button>
+          </div>
+        </div>
+
+        {/* Right: Shifts Breakdown (Resolution 2) */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Calendar className="text-muted" size={20} />
+              <h4 style={{ fontSize: '15px', fontWeight: 600 }}>สรุปยอดเงินสดรายกะ (Closed Shifts)</h4>
+            </div>
+          </div>
+          
+          <div className="table-responsive" style={{ maxHeight: '320px' }}>
+            <table className="table table-sm">
               <thead>
                 <tr>
-                  <th>วันที่</th>
-                  <th>หมวดหมู่</th>
-                  <th>รายละเอียด</th>
-                  <th className="text-right">จำนวนเงิน</th>
+                  <th>กะ / พนักงาน</th>
+                  <th className="text-right">ยอดขายสด</th>
+                  <th className="text-right">นำส่ง</th>
                 </tr>
               </thead>
               <tbody>
-                {fixedCostDetails.length === 0 ? (
-                  <tr><td colSpan="4" className="text-center text-muted" style={{ padding: '24px' }}>
-                    ยังไม่มีรายจ่ายในหมวดต้นทุนคงที่เดือนนี้
-                    <br />
-                    <span style={{ fontSize: '11px' }}>ตั้งค่าหมวดหมู่เป็น "ต้นทุนคงที่" ที่หน้า Settings → หมวดหมู่รายจ่าย</span>
-                  </td></tr>
-                ) : fixedCostDetails.map(fc => (
-                  <tr key={fc.id}>
-                    <td style={{ fontSize: '12px' }}>{new Date(fc.created_at).toLocaleDateString('th-TH')}</td>
-                    <td><span className="badge badge-outline">{fc.category}</span></td>
-                    <td style={{ fontSize: '12px' }}>{fc.description || '-'}</td>
-                    <td className="text-right text-warning">฿{Number(fc.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                {shiftsData.length === 0 ? (
+                  <tr><td colSpan="3" className="text-center py-10 text-muted">ไม่มีข้อมูลกะที่ปิดแล้วในวันนี้</td></tr>
+                ) : shiftsData.map(sh => (
+                  <tr key={sh.id}>
+                    <td>
+                      <div className="text-xs font-bold">{new Date(sh.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {sh.closed_at ? new Date(sh.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'ยังไม่ปิด'}</div>
+                      <div className="text-[10px] text-muted">โดย: {sh.closed_by || 'N/A'}</div>
+                    </td>
+                    <td className="text-right text-success">+฿{(Number(sh.expected_cash || 0) - Number(sh.opening_cash || 0)).toLocaleString()}</td>
+                    <td className="text-right font-bold">฿{Number(sh.closing_cash || 0).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
-        )}
+      </div>
 
-        {/* Safe Transactions */}
-        <div className="content-card">
-          <div className="card-header">
-            <h3 className="card-title">รายการเคลื่อนไหวเซฟ (Manager Safe)</h3>
+      {/* Section 3: Safe Ledger & P&L Details (Resolution 1.3) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* P&L Details */}
+        <div className="card">
+          <div className="card-header pb-4 border-b">
+            <h3 className="card-title">📈 รายละเอียดกำไรขาดทุน (P&L Details)</h3>
           </div>
-          <div className="table-responsive">
+          <div className="space-y-4 pt-4">
+             <div className="flex justify-between items-center px-2">
+                <span className="text-sm">รายได้จากการขายจริง (Revenue)</span>
+                <span className="font-bold text-info">฿{financialMetrics.actualRevenue.toLocaleString()}</span>
+             </div>
+             <div className="flex justify-between items-center px-2">
+                <span className="text-sm">ต้นทุนขาย (Sales COGS)</span>
+                <span className="font-bold text-warning">-฿{financialMetrics.salesCogs.toLocaleString()}</span>
+             </div>
+             <div className="flex justify-between items-center px-2">
+                <span className="text-sm">รายจ่ายดำเนินงาน (OPEX)</span>
+                <span className="font-bold text-danger">-฿{opexAmount.toLocaleString()}</span>
+             </div>
+             <div className="flex justify-between items-center px-2">
+                <span className="text-sm">ต้นทุนคงที่ (Fixed Costs)</span>
+                <span className="font-bold text-danger">-฿{fixedCostAmount.toLocaleString()}</span>
+             </div>
+             <div className="flex justify-between items-center px-2 pt-2 border-t font-extrabold text-lg">
+                <span>กำไรสุทธิ</span>
+                <span className={netProfit >= 0 ? 'text-success' : 'text-danger'}>
+                  ฿{netProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+             </div>
+          </div>
+        </div>
+
+        {/* Safe Ledger */}
+        <div className="card">
+          <div className="card-header flex justify-between items-center pb-4 border-b">
+            <h3 className="card-title">🧾 ประวัติตู้เซฟ (Safe Ledger)</h3>
+            <button className="btn btn-sm btn-outline" onClick={() => setShowSafeModal(true)}>
+              <DollarSign size={14} /> นำเงินเข้า/ออก (Manual)
+            </button>
+          </div>
+          <div className="table-responsive" style={{ maxHeight: '400px' }}>
             <table className="table">
               <thead>
                 <tr>
-                  <th>วันที่</th>
+                  <th>วัน/เวลา</th>
                   <th>รายการ</th>
-                  <th className="text-right">จำนวนเงิน</th>
+                  <th className="text-right">จำนวน</th>
                 </tr>
               </thead>
               <tbody>
+                {/* We need to fetch safe_transactions specifically for this branch safe */}
+                {/* Note: In a real implementation we would fetch these in fetchData */}
+                {/* For now, we'll placeholder or just reuse the existing transactions state */}
                 {transactions.length === 0 ? (
-                  <tr><td colSpan="3" className="text-center text-muted">ไม่มีรายการเคลื่อนไหว</td></tr>
+                  <tr><td colSpan="3" className="text-center py-6 text-muted">ไม่มีประวัติรายการ</td></tr>
                 ) : transactions.map(tx => (
                   <tr key={tx.id}>
-                    <td>{new Date(tx.created_at).toLocaleString('th-TH')}</td>
+                    <td className="text-[10px]">{new Date(tx.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</td>
                     <td>
-                      <div>
-                        {tx.type === 'in' ? <span className="text-success">นำเข้าจากปิดกะ</span> : 
-                         tx.type === 'out' ? <span className="text-error">นำออกฉุกเฉิน</span> : 
-                         <span className="text-secondary">Owner รับยอด</span>}
+                      <div className="text-xs font-bold">
+                        {tx.type === 'in' ? 'เงินเข้า' : (tx.type === 'out' ? 'เงินออก' : 'ปรับปรุงยอดบัญชี')}
                       </div>
-                      <div className="text-xs text-muted">{tx.reason || '-'}</div>
+                      <div className="text-[10px] text-muted truncate max-w-[150px]">{tx.reason}</div>
                     </td>
-                    <td className="text-right">
-                      <span className={tx.type === 'in' ? 'text-success' : 'text-error'}>
-                        {tx.type === 'in' ? '+' : '-'}฿{Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </span>
+                    <td className={`text-right font-bold ${tx.type === 'in' ? 'text-success' : (tx.type === 'out' ? 'text-danger' : 'text-info')}`}>
+                      {tx.type === 'in' ? '+' : '-'}{Number(tx.amount).toLocaleString()}
                     </td>
                   </tr>
                 ))}
@@ -437,7 +474,7 @@ export default function ProfitDashboard() {
         </div>
       </div>
 
-      {/* Safe Deposit/Withdraw Modal */}
+      {/* Manual Action Modal */}
       {showSafeModal && (
         <div className="modal-overlay" onClick={() => setShowSafeModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -460,22 +497,18 @@ export default function ProfitDashboard() {
                     </label>
                   </div>
                 </div>
-
                 <div className="form-group">
                    <label>จำนวนเงิน (บาท)</label>
                    <input type="number" className="form-control form-input" required min="0.01" step="0.01" value={safeForm.amount} onChange={e => setSafeForm({...safeForm, amount: e.target.value})} />
                 </div>
-                
                 <div className="form-group">
-                   <label>เหตุผลความจำเป็น</label>
-                   <textarea className="form-control form-textarea" required rows="2" placeholder="เช่น เงินทอนตั้งต้นเริ่มสัปดาห์, นำเงินเข้าฝากบัญชีธนาคารกสิกร" value={safeForm.reason} onChange={e => setSafeForm({...safeForm, reason: e.target.value})}></textarea>
+                   <label>เหตุผล</label>
+                   <textarea className="form-control form-textarea" required rows="2" value={safeForm.reason} onChange={e => setSafeForm({...safeForm, reason: e.target.value})}></textarea>
                 </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={() => setShowSafeModal(false)}>ยกเลิก</button>
-                <button type="submit" className={`btn ${safeForm.type === 'in' ? 'btn-success' : 'btn-danger'}`}>
-                  ยืนยันทำรายการ
-                </button>
+                <button type="submit" className="btn btn-primary">ยืนยันทำรายการ</button>
               </div>
             </form>
           </div>

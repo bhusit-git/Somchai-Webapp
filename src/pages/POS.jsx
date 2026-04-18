@@ -140,6 +140,9 @@ export default function POS() {
   // ── Promotions state ──
   const [promotions, setPromotions] = useState([]);
   const [discountLimit] = useState(() => loadDiscountLimit());
+  
+  // ── Cost Resolution state (for COGS Snapshot) ──
+  const [resolvedCosts, setResolvedCosts] = useState({});
 
   // ── Manual Discount state ──
   const [itemDiscounts, setItemDiscounts] = useState({}); // { product_id: { type: 'percent'|'amount', value: N } }
@@ -167,13 +170,15 @@ export default function POS() {
     setLoading(true);
     try {
       const branchId = user?.branch_id;
-      const [catRes, prodRes, custRes, mpRes, promoRes, comboRes] = await Promise.all([
+      const [catRes, prodRes, custRes, mpRes, promoRes, comboRes, bomRes, invRes] = await Promise.all([
         supabase.from('categories').select('*').eq('is_active', true).order('sort_order'),
         supabase.from('products').select('*').order('sort_order'),
         branchId ? supabase.from('customers').select('*').eq('branch_id', branchId).order('name') : Promise.resolve({ data: [] }),
         supabase.from('menu_prices').select('*'),
         supabase.from('promotions').select('*, promotion_item_mappings(*)').eq('is_active', true),
-        supabase.from('product_combo_items').select('*')
+        supabase.from('product_combo_items').select('*'),
+        supabase.from('menu_item_ingredients').select('*'),
+        supabase.from('inventory_items').select('id, cost_per_stock_unit')
       ]);
 
       const comboMap = {};
@@ -196,6 +201,32 @@ export default function POS() {
         mpMap[r.menu_id][r.channel] = { price: r.price, is_available: r.is_available };
       });
       setMenuPrices(mpMap);
+
+      // --- Resolution 4: Resolve Costs for COGS Snapshot ---
+      const invMap = {}; 
+      (invRes.data || []).forEach(i => { invMap[i.id] = i.cost_per_stock_unit; });
+      
+      const resCosts = {};
+      const prodData = prodRes.data || [];
+      const bomData = bomRes.data || [];
+      const comboItems = comboRes.data || [];
+
+      prodData.forEach(p => {
+        const boms = bomData.filter(b => b.menu_item_id === p.id);
+        if (boms.length > 0) {
+          resCosts[p.id] = boms.reduce((s, b) => s + (Number(b.qty_required) * Number(invMap[b.inventory_item_id] || 0)), 0);
+        } else {
+          resCosts[p.id] = Number(p.cost || 0);
+        }
+      });
+      // Combo cost resolution
+      prodData.forEach(p => {
+        if (p.product_type === 'COMBO') {
+          const children = comboItems.filter(ci => ci.combo_product_id === p.id);
+          resCosts[p.id] = children.reduce((s, ci) => s + (Number(resCosts[ci.item_product_id] || 0) * ci.quantity), 0);
+        }
+      });
+      setResolvedCosts(resCosts);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   }
@@ -490,11 +521,12 @@ export default function POS() {
       return {
         transaction_id: txData.id, product_id: item.product_id, product_name: item.product_name,
         quantity: item.quantity, unit_price: item.unit_price,
-        total_price: finalPrice, // Legacy total_price
+        total_price: finalPrice, 
         applied_promotion_id: appliedPromoId,
         original_price: item.total_price,
         discount_amount: Math.round(itemDiscAmt * 100) / 100,
-        final_price: finalPrice
+        final_price: finalPrice,
+        cogs_at_time_of_sale: Math.round((resolvedCosts[item.product_id] || 0) * 100) / 100
       };
     });
 

@@ -40,7 +40,9 @@ export function calculateFinancials(transactions, transactionItems, resolvedCost
   const staffMealCogs = completedItems
     .filter(ti => staffMealTxIds.has(ti.transaction_id))
     .reduce((sum, ti) => {
-      const unitCost = resolvedCosts[ti.product_id] || 0;
+      const unitCost = (ti.cogs_at_time_of_sale !== undefined && ti.cogs_at_time_of_sale !== null) 
+        ? Number(ti.cogs_at_time_of_sale) 
+        : (resolvedCosts[ti.product_id] || 0);
       return sum + (Number(ti.quantity || 0) * unitCost);
     }, 0);
 
@@ -48,7 +50,9 @@ export function calculateFinancials(transactions, transactionItems, resolvedCost
   const salesCogs = completedItems
     .filter(ti => !staffMealTxIds.has(ti.transaction_id))
     .reduce((sum, ti) => {
-      const unitCost = resolvedCosts[ti.product_id] || 0;
+      const unitCost = (ti.cogs_at_time_of_sale !== undefined && ti.cogs_at_time_of_sale !== null) 
+        ? Number(ti.cogs_at_time_of_sale) 
+        : (resolvedCosts[ti.product_id] || 0);
       return sum + (Number(ti.quantity || 0) * unitCost);
     }, 0);
 
@@ -61,9 +65,3 @@ export function calculateFinancials(transactions, transactionItems, resolvedCost
   };
 }
 
-/**
- * Historical Costs Note:
- * Currently using live 'resolvedCosts'. In a future update, 'transaction_items' 
- * should store 'unit_cost_at_time' to account for historical fluctuations.
- * (Tech Debt - SA Reminder 2026-04-17)
- */
