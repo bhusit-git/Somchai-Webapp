@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSettings } from '../../contexts/SettingsContext';
 import { Link } from 'react-router-dom';
 import {
   Chart as ChartJS,
@@ -25,6 +26,7 @@ ChartJS.register(
 
 export default function StoreManagerDashboard() {
   const { user } = useAuth();
+  const { systemConfig } = useSettings();
   
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -43,28 +45,15 @@ export default function StoreManagerDashboard() {
   });
   const [topItems, setTopItems] = useState([]);
   const [chartData, setChartData] = useState({ thisWeek: [], prevWeek: [], labels: [] });
-  
-  const [kpiTargets, setKpiTargets] = useState({
-    dailySalesTarget: 50000,
-    targetFcPercent: 33,
-    targetGpPercent: 60,
-  });
+
+  // Read KPI targets directly from SettingsContext (synced with Supabase)
+  const kpiTargets = {
+    dailySalesTarget: Number(systemConfig?.dailySalesTarget || 10000),
+    targetFcPercent: Number(systemConfig?.targetFcPercent || 35),
+    targetGpPercent: Number(systemConfig?.targetGpPercent || 60),
+  };
 
   useEffect(() => {
-    try {
-      const configStr = localStorage.getItem('systemConfig');
-      if (configStr) {
-        const conf = JSON.parse(configStr);
-        setKpiTargets({
-          dailySalesTarget: Number(conf.dailySalesTarget || 50000),
-          targetFcPercent: Number(conf.targetFcPercent || 33),
-          targetGpPercent: Number(conf.targetGpPercent || 60),
-        });
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
     if (user?.branch_id) {
       loadData();
     }
